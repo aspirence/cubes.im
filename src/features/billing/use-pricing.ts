@@ -1,0 +1,145 @@
+"use client";
+
+import { useMemo } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/client";
+import { useActiveTeam } from "@/features/teams/use-teams";
+import { useAuth } from "@/features/auth/use-auth";
+
+export interface PlatformPricing {
+  base_price_cents: number;
+  base_storage_gb: number;
+  price_per_gb_cents: number;
+  currency: string;
+  benefits: string[];
+}
+
+export const DEFAULT_PRICING: PlatformPricing = {
+  base_price_cents: 1000,
+  base_storage_gb: 100,
+  price_per_gb_cents: 20,
+  currency: "USD",
+  benefits: [],
+};
+
+// platform_pricing / team_subscriptions are newer than the generated types.
+function loose(s: ReturnType<typeof createClient>) {
+  return s as unknown as SupabaseClient;
+}
+
+/** Effective monthly price in cents for a given storage requirement. */
+export function computeMonthlyCents(p: PlatformPricing, storageGb: number): number {
+  const extra = Math.max(0, storageGb - p.base_storage_gb);
+  return p.base_price_cents + extra * p.price_per_gb_cents;
+}
+
+export function money(cents: number, currency = "USD"): string {
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
+  } catch {
+    return `$${(cents / 100).toFixed(2)}`;
+  }
+}
+
+/** Is the signed-in user a platform super-admin? */
+export function useIsPlatformAdmin() {
+  const supabase = useMemo(() => createClient(), []);
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ["platform-admin", user?.id],
+    enabled: Boolean(user?.id),
+    queryFn: async (): Promise<boolean> => {
+      const { data, error } = await loose(supabase).rpc("is_platform_admin");
+      if (error) return false;
+      return Boolean(data);
+    },
+  });
+}
+
+/** The global pricing config (public read). */
+export function usePlatformPricing() {
+  const supabase = useMemo(() => createClient(), []);
+  return useQuery({
+    queryKey: ["platform-pricing"],
+    queryFn: async (): Promise<PlatformPricing> => {
+      const { data, error } = await loose(supabase)
+        .from("platform_pricing")
+        .select("*")
+        .eq("id", true)
+        .maybeSingle();
+      if (error || !data) return DEFAULT_PRICING;
+      return {
+        base_price_cents: Number(data.base_price_cents),
+        base_storage_gb: Number(data.base_storage_gb),
+        price_per_gb_cents: Number(data.price_per_gb_cents),
+        currency: data.currency ?? "USD",
+        benefits: Array.isArray(data.benefits) ? (data.benefits as string[]) : [],
+      };
+    },
+  });
+}
+
+/** Super-admin: save the global pricing config. */
+export function useUpdatePlatformPricing() {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  return useMutation({
+    mutationFn: async (p: PlatformPricing): Promise<void> => {
+      const { error } = await loose(supabase).from("platform_pricing").upsert(
+        {
+          id: true,
+          base_price_cents: p.base_price_cents,
+          base_storage_gb: p.base_storage_gb,
+          price_per_gb_cents: p.price_per_gb_cents,
+          currency: p.currency,
+          benefits: p.benefits,
+          updated_at: new Date().toISOString(),
+          updated_by: user?.id ?? null,
+        },
+        { onConflict: "id" },
+      );
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["platform-pricing"] }),
+  });
+}
+
+/** The active team's chosen storage (drives its effective price). */
+export function useTeamSubscription() {
+  const supabase = useMemo(() => createClient(), []);
+  const { data: team } = useActiveTeam();
+  const teamId = team?.id;
+  return useQuery({
+    queryKey: ["team-subscription", teamId],
+    enabled: Boolean(teamId),
+    queryFn: async (): Promise<{ storage_gb: number; status: string }> => {
+      const { data, error } = await loose(supabase)
+        .from("team_subscriptions")
+        .select("storage_gb, status")
+        .eq("team_id", teamId as string)
+        .maybeSingle();
+      if (error || !data) return { storage_gb: 100, status: "active" };
+      return { storage_gb: Number(data.storage_gb), status: data.status ?? "active" };
+    },
+  });
+}
+
+export function useUpdateTeamStorage() {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+  const { data: team } = useActiveTeam();
+  const teamId = team?.id;
+  return useMutation({
+    mutationFn: async (storageGb: number): Promise<void> => {
+      if (!teamId) throw new Error("No active team");
+      const { error } = await loose(supabase).from("team_subscriptions").upsert(
+        { team_id: teamId, storage_gb: storageGb, updated_at: new Date().toISOString() },
+        { onConflict: "team_id" },
+      );
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["team-subscription", teamId] }),
+  });
+}

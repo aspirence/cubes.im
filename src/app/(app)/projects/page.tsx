@@ -1,0 +1,296 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { App, Button, Segmented, Select, Switch } from "antd";
+import { PlusOutlined, FolderOutlined } from "@ant-design/icons";
+import {
+  useProjects,
+  useProjectStatuses,
+  useProjectHealths,
+} from "@/features/projects/use-projects";
+import { useProjectFolders } from "@/features/projects/use-project-folders";
+import { useProjectCategories } from "@/features/settings/use-categories";
+import { ProjectsTable } from "./projects-table";
+import { ProjectsGrid } from "./projects-grid";
+import { ProjectDrawer } from "./project-drawer";
+import { FoldersModal } from "./folders-modal";
+import { TOKENS } from "./project-skin";
+import type { ProjectRow } from "./types";
+
+type ViewMode = "table" | "grid";
+
+/** Material Symbols label for the segmented control options. */
+function SegLabel({ icon, text }: { icon: string; text: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <span className="material-symbols-rounded" style={{ fontSize: 18 }}>
+        {icon}
+      </span>
+      {text}
+    </span>
+  );
+}
+
+export default function ProjectsPage() {
+  // Used so App context (message/modal) is mounted for child actions.
+  App.useApp();
+
+  const [view, setView] = useState<ViewMode>("grid");
+  const [folderId, setFolderId] = useState<string | undefined>(undefined);
+  const [categoryId, setCategoryId] = useState<string | undefined>(undefined);
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [archived, setArchived] = useState(false);
+
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editing, setEditing] = useState<ProjectRow | null>(null);
+  const [foldersOpen, setFoldersOpen] = useState(false);
+
+  const { data: projects, isLoading } = useProjects({
+    folderId,
+    favoritesOnly,
+    archived,
+  });
+
+  // A favorites-only read drives the star state when the list itself doesn't
+  // embed an `is_favorite` flag.
+  const { data: favoriteProjects } = useProjects({ favoritesOnly: true });
+  const favoriteIds = useMemo(
+    () => new Set((favoriteProjects ?? []).map((p) => p.id)),
+    [favoriteProjects],
+  );
+
+  const { data: folders } = useProjectFolders();
+  const { data: categories } = useProjectCategories();
+  const { data: statuses } = useProjectStatuses();
+  const { data: healths } = useProjectHealths();
+
+  // Category filter is applied client-side (useProjects has no category opt).
+  const visibleProjects = useMemo(() => {
+    const list = (projects ?? []) as ProjectRow[];
+    if (!categoryId) return list;
+    return list.filter((p) => p.category_id === categoryId);
+  }, [projects, categoryId]);
+
+  const folderOptions = useMemo(
+    () => (folders ?? []).map((f) => ({ value: f.id, label: f.name })),
+    [folders],
+  );
+  const categoryOptions = useMemo(
+    () => (categories ?? []).map((c) => ({ value: c.id, label: c.name })),
+    [categories],
+  );
+
+  const openCreate = () => {
+    setEditing(null);
+    setDrawerOpen(true);
+  };
+
+  const openEdit = (project: ProjectRow) => {
+    setEditing(project);
+    setDrawerOpen(true);
+  };
+
+  const count = visibleProjects.length;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Page header */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: 12,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            <h1
+              style={{
+                margin: 0,
+                fontSize: 21,
+                fontWeight: 600,
+                letterSpacing: "-.4px",
+                color: TOKENS.text,
+                lineHeight: 1.2,
+              }}
+            >
+              Projects
+            </h1>
+            <span
+              className="font-mono"
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: TOKENS.textSecondary,
+                background: TOKENS.chipBg,
+                borderRadius: 999,
+                padding: "2px 9px",
+              }}
+            >
+              {count}
+            </span>
+          </div>
+          <div
+            style={{ fontSize: 13, color: TOKENS.textSecondary, marginTop: 4 }}
+          >
+            All projects in the active team.
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Button
+            icon={<FolderOutlined />}
+            onClick={() => setFoldersOpen(true)}
+            style={{ height: 36, borderRadius: 8 }}
+          >
+            Folders
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={openCreate}
+            style={{ height: 36, borderRadius: 8 }}
+          >
+            Create Project
+          </Button>
+        </div>
+      </div>
+
+      {/* Filter / toolbar */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: 12,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 12,
+          }}
+        >
+          <Select
+            allowClear
+            placeholder="All folders"
+            value={folderId}
+            onChange={(v) => setFolderId(v)}
+            options={folderOptions}
+            style={{ minWidth: 160, height: 36 }}
+          />
+          <Select
+            allowClear
+            placeholder="All categories"
+            value={categoryId}
+            onChange={(v) => setCategoryId(v)}
+            options={categoryOptions}
+            style={{ minWidth: 160, height: 36 }}
+          />
+          <label
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 13,
+              color: TOKENS.textSecondary,
+              cursor: "pointer",
+            }}
+          >
+            <Switch
+              checked={favoritesOnly}
+              onChange={setFavoritesOnly}
+              size="small"
+            />
+            Favorites only
+          </label>
+          <label
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 13,
+              color: TOKENS.textSecondary,
+              cursor: "pointer",
+            }}
+          >
+            <Switch checked={archived} onChange={setArchived} size="small" />
+            Archived
+          </label>
+        </div>
+
+        <Segmented<ViewMode>
+          value={view}
+          onChange={(v) => setView(v)}
+          style={{ padding: 3 }}
+          options={[
+            {
+              value: "grid",
+              label: <SegLabel icon="grid_view" text="Grid" />,
+            },
+            {
+              value: "table",
+              label: <SegLabel icon="view_list" text="List" />,
+            },
+          ]}
+          className="projects-view-segmented"
+        />
+      </div>
+
+      {/* Active-pill styling to match the indigo token. */}
+      <style>{`
+        .projects-view-segmented .ant-segmented-item-selected {
+          background: ${TOKENS.accentSoft} !important;
+          color: ${TOKENS.accent} !important;
+        }
+        .projects-view-segmented .ant-segmented-thumb {
+          background: ${TOKENS.accentSoft} !important;
+        }
+        .projects-view-segmented .ant-segmented-item-selected .material-symbols-rounded {
+          color: ${TOKENS.accent};
+        }
+      `}</style>
+
+      {view === "grid" ? (
+        <ProjectsGrid
+          projects={visibleProjects}
+          loading={isLoading}
+          archived={archived}
+          favoriteIds={favoriteIds}
+          statuses={statuses}
+          healths={healths}
+          categories={categories}
+          onEdit={openEdit}
+        />
+      ) : (
+        <ProjectsTable
+          projects={visibleProjects}
+          loading={isLoading}
+          archived={archived}
+          favoriteIds={favoriteIds}
+          statuses={statuses}
+          healths={healths}
+          categories={categories}
+          onEdit={openEdit}
+        />
+      )}
+
+      <ProjectDrawer
+        open={drawerOpen}
+        project={editing}
+        onClose={() => setDrawerOpen(false)}
+      />
+      <FoldersModal open={foldersOpen} onClose={() => setFoldersOpen(false)} />
+    </div>
+  );
+}

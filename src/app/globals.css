@@ -1,0 +1,150 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Minimal global resets. Ant Design ships its own reset (CSS-in-JS), so we keep
+ * this intentionally light and let antd own component styling. Tailwind's
+ * Preflight is disabled in tailwind.config.js for the same reason.
+ */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+a {
+  text-decoration: none;
+}
+
+/* Material Symbols Rounded — thin, Linear-like weight. */
+.material-symbols-rounded {
+  font-variation-settings: "FILL" 0, "wght" 300, "GRAD" 0, "opsz" 24;
+  line-height: 1;
+  flex: none;
+  user-select: none;
+}
+
+/* Geist Mono for numerals in custom UI. */
+.font-mono,
+.tabular {
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
+    monospace;
+  font-feature-settings: "tnum";
+}
+
+/* ==========================================================================
+ * UI refresh — light touches Ant Design tokens can't reach:
+ * soft card elevation, refined scrollbars, hairline dividers, motion.
+ * ========================================================================== */
+
+.ant-card {
+  border-color: #ececf0;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  transition: box-shadow 0.18s ease, border-color 0.18s ease,
+    transform 0.18s ease;
+}
+.ant-card.ant-card-hoverable:hover {
+  box-shadow: 0 6px 18px -6px rgba(16, 24, 40, 0.12);
+  border-color: #d6d7de;
+  transform: translateY(-1px);
+}
+
+.ant-layout-sider {
+  border-right: 1px solid #ececf0;
+}
+.ant-layout-header {
+  border-bottom: 1px solid #ececf0;
+  backdrop-filter: saturate(180%) blur(8px);
+}
+
+.ant-btn {
+  transition: all 0.16s ease;
+}
+
+/* Scrollbars hidden platform-wide — scrolling itself stays fully functional. */
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE / legacy Edge */
+}
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none; /* Chrome / Safari / Edge / Opera */
+}
+
+/* ---------------------------------------------------------------------------
+ * A few regions scroll HORIZONTALLY (data tables, the kanban board, wide task
+ * grids). There the scrollbar is the only cue that content continues off the
+ * right edge, so re-show a slim horizontal-only bar: `width: 0` keeps the
+ * vertical bar hidden, only the horizontal bar's `height` returns. A class /
+ * element selector out-specifies the universal hide above.
+ * ------------------------------------------------------------------------- */
+.wl-hscroll,
+.ant-table-content,
+.ant-table-body {
+  scrollbar-width: thin; /* Firefox */
+}
+.wl-hscroll::-webkit-scrollbar,
+.ant-table-content::-webkit-scrollbar,
+.ant-table-body::-webkit-scrollbar {
+  width: 0;
+  height: 8px;
+  display: block;
+}
+.wl-hscroll::-webkit-scrollbar-thumb,
+.ant-table-content::-webkit-scrollbar-thumb,
+.ant-table-body::-webkit-scrollbar-thumb {
+  background: rgba(16, 24, 40, 0.22);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.wl-hscroll::-webkit-scrollbar-thumb:hover,
+.ant-table-content::-webkit-scrollbar-thumb:hover,
+.ant-table-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(16, 24, 40, 0.38);
+  background-clip: content-box;
+}
+.wl-hscroll::-webkit-scrollbar-track,
+.ant-table-content::-webkit-scrollbar-track,
+.ant-table-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* The gantt/roadmap library paints its own scrollbar strip — the timeline's
+ * only scrub control — so let scrollbars render again inside that subtree. */
+.roadmap-scroll * {
+  scrollbar-width: thin;
+}
+.roadmap-scroll ::-webkit-scrollbar {
+  display: block;
+}
+
+/* Selection in the indigo brand tint. */
+::selection {
+  background: rgba(90, 90, 214, 0.18);
+}
+
+/* Dark-mode overrides (zustand toggles .theme-dark on <html>). */
+.theme-dark .ant-card {
+  border-color: #232733;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.theme-dark .ant-layout-sider,
+.theme-dark .ant-layout-header {
+  border-color: #1e222c;
+}
+.theme-dark .wl-hscroll::-webkit-scrollbar-thumb,
+.theme-dark .ant-table-content::-webkit-scrollbar-thumb,
+.theme-dark .ant-table-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+}
