@@ -118,35 +118,77 @@ function ConversationRow({
   );
 }
 
-/**
- * The chat navigation itself — Channels + Direct Messages sections with their
- * "new" modals. Rendered inside the Chat rail AND embedded below Spaces in the
- * Home/Projects sidebar (ClickUp-style).
- */
-export function ChatNavSections() {
-  const { token } = theme.useToken();
+/** "New channel" modal — admins/owners only (the RPC enforces server-side). */
+export function NewChannelModal({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
   const router = useRouter();
-  const pathname = usePathname();
   const { message } = AntdApp.useApp();
-  const { user } = useAuth();
-
-  const { data: channels, isLoading } = useChatChannels();
-  const isAdmin = useIsTeamAdmin();
-  const { data: members } = useTeamMembers();
   const createChannel = useCreateChannel();
-  const openDm = useOpenDm();
-  // Team-wide message stream keeps the rail's unread counts live.
-  useChatRealtime();
-
-  const [channelModal, setChannelModal] = useState(false);
-  const [dmModal, setDmModal] = useState(false);
-  const [dmUser, setDmUser] = useState<string>();
   const [form] = Form.useForm<{ name: string; topic?: string }>();
 
-  const activeId = pathname.startsWith("/chat/") ? pathname.split("/")[2] : null;
-  const list = channels ?? [];
-  const channelRows = list.filter((c) => c.kind === "channel");
-  const dmRows = list.filter((c) => c.kind === "dm");
+  const submit = async () => {
+    let values: { name: string; topic?: string };
+    try {
+      values = await form.validateFields();
+    } catch {
+      return;
+    }
+    try {
+      const id = await createChannel.mutateAsync(values);
+      onClose();
+      form.resetFields();
+      router.push(`/chat/${id}`);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Couldn't create the channel.");
+    }
+  };
+
+  return (
+    <Modal
+      title="New channel"
+      open={open}
+      onCancel={onClose}
+      onOk={() => void submit()}
+      okText="Create channel"
+      confirmLoading={createChannel.isPending}
+      destroyOnHidden
+    >
+      <Form form={form} layout="vertical" preserve={false}>
+        <Form.Item
+          name="name"
+          label="Name"
+          rules={[{ required: true, message: "Give the channel a name." }]}
+        >
+          <Input prefix={<MIcon name="tag" size={15} />} placeholder="e.g. general" maxLength={60} autoFocus />
+        </Form.Item>
+        <Form.Item name="topic" label="Topic (optional)">
+          <Input placeholder="What is this channel about?" maxLength={240} />
+        </Form.Item>
+      </Form>
+    </Modal>
+  );
+}
+
+/** "New message" modal — anyone can start a DM. */
+export function NewDmModal({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { token } = theme.useToken();
+  const router = useRouter();
+  const { message } = AntdApp.useApp();
+  const { user } = useAuth();
+  const { data: members } = useTeamMembers();
+  const openDm = useOpenDm();
+  const [dmUser, setDmUser] = useState<string>();
 
   const memberOptions = useMemo(
     () =>
@@ -161,34 +203,75 @@ export function ChatNavSections() {
     [members, user?.id],
   );
 
-  const submitChannel = async () => {
-    let values: { name: string; topic?: string };
-    try {
-      values = await form.validateFields();
-    } catch {
-      return;
-    }
-    try {
-      const id = await createChannel.mutateAsync(values);
-      setChannelModal(false);
-      form.resetFields();
-      router.push(`/chat/${id}`);
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : "Couldn't create the channel.");
-    }
+  const close = () => {
+    setDmUser(undefined);
+    onClose();
   };
 
-  const submitDm = async () => {
+  const submit = async () => {
     if (!dmUser) return;
     try {
       const id = await openDm.mutateAsync(dmUser);
-      setDmModal(false);
-      setDmUser(undefined);
+      close();
       router.push(`/chat/${id}`);
     } catch (err) {
       message.error(err instanceof Error ? err.message : "Couldn't open the conversation.");
     }
   };
+
+  return (
+    <Modal
+      title="New message"
+      open={open}
+      onCancel={close}
+      onOk={() => void submit()}
+      okText="Start chat"
+      okButtonProps={{ disabled: !dmUser }}
+      confirmLoading={openDm.isPending}
+      destroyOnHidden
+    >
+      <div style={{ fontSize: 13, marginBottom: 6, color: token.colorTextSecondary }}>
+        Who do you want to message?
+      </div>
+      <MemberSingleSelect
+        style={{ width: "100%" }}
+        value={dmUser}
+        options={memberOptions}
+        onChange={setDmUser}
+        placeholder="Pick a teammate"
+      />
+      {memberOptions.length === 0 ? (
+        <div style={{ marginTop: 10, fontSize: 12.5, color: token.colorTextTertiary }}>
+          No other members in this workspace yet — invite someone from Settings → Members.
+        </div>
+      ) : null}
+      <Button style={{ display: "none" }} />
+    </Modal>
+  );
+}
+
+/**
+ * The chat navigation itself — Channels + Direct Messages sections with their
+ * "new" modals. Rendered inside the Chat rail AND embedded below Spaces in the
+ * Home/Projects sidebar (ClickUp-style).
+ */
+export function ChatNavSections() {
+  const { token } = theme.useToken();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const { data: channels, isLoading } = useChatChannels();
+  const isAdmin = useIsTeamAdmin();
+  // Team-wide message stream keeps the rail's unread counts live.
+  useChatRealtime();
+
+  const [channelModal, setChannelModal] = useState(false);
+  const [dmModal, setDmModal] = useState(false);
+
+  const activeId = pathname.startsWith("/chat/") ? pathname.split("/")[2] : null;
+  const list = channels ?? [];
+  const channelRows = list.filter((c) => c.kind === "channel");
+  const dmRows = list.filter((c) => c.kind === "dm");
 
   const sectionHeader = (label: string, action?: { title: string; onClick: () => void }) => (
     <div
@@ -284,61 +367,8 @@ export function ChatNavSections() {
         )}
       </div>
 
-      {/* New channel — admins/owners only (RPC enforces server-side too). */}
-      <Modal
-        title="New channel"
-        open={channelModal}
-        onCancel={() => setChannelModal(false)}
-        onOk={() => void submitChannel()}
-        okText="Create channel"
-        confirmLoading={createChannel.isPending}
-        destroyOnHidden
-      >
-        <Form form={form} layout="vertical" preserve={false}>
-          <Form.Item
-            name="name"
-            label="Name"
-            rules={[{ required: true, message: "Give the channel a name." }]}
-          >
-            <Input prefix={<MIcon name="tag" size={15} />} placeholder="e.g. general" maxLength={60} autoFocus />
-          </Form.Item>
-          <Form.Item name="topic" label="Topic (optional)">
-            <Input placeholder="What is this channel about?" maxLength={240} />
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      {/* New DM — anyone can start one. */}
-      <Modal
-        title="New message"
-        open={dmModal}
-        onCancel={() => {
-          setDmModal(false);
-          setDmUser(undefined);
-        }}
-        onOk={() => void submitDm()}
-        okText="Start chat"
-        okButtonProps={{ disabled: !dmUser }}
-        confirmLoading={openDm.isPending}
-        destroyOnHidden
-      >
-        <div style={{ fontSize: 13, marginBottom: 6, color: token.colorTextSecondary }}>
-          Who do you want to message?
-        </div>
-        <MemberSingleSelect
-          style={{ width: "100%" }}
-          value={dmUser}
-          options={memberOptions}
-          onChange={setDmUser}
-          placeholder="Pick a teammate"
-        />
-        {memberOptions.length === 0 ? (
-          <div style={{ marginTop: 10, fontSize: 12.5, color: token.colorTextTertiary }}>
-            No other members in this workspace yet — invite someone from Settings → Members.
-          </div>
-        ) : null}
-        <Button style={{ display: "none" }} />
-      </Modal>
+      <NewChannelModal open={channelModal} onClose={() => setChannelModal(false)} />
+      <NewDmModal open={dmModal} onClose={() => setDmModal(false)} />
     </>
   );
 }

@@ -115,17 +115,13 @@ export default function ChatThreadPage() {
 
   return (
     <div
+      className="wl-chat-thread"
       style={{
         display: "flex",
         flexDirection: "column",
-        // Fill the shell content area: viewport minus topbar and main padding.
-        height: "calc(100vh - 58px - 70px)",
-        minHeight: 380,
-        maxWidth: 980,
-        margin: "0 auto",
+        // Full-bleed Slack-style pane: fill the content area edge to edge.
+        height: "calc(100vh - 58px)",
         background: token.colorBgContainer,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        borderRadius: 12,
         overflow: "hidden",
       }}
     >
@@ -235,7 +231,7 @@ export default function ChatThreadPage() {
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "14px 16px" }}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "14px 20px" }}>
         {msgsLoading ? (
           <Skeleton active paragraph={{ rows: 6 }} />
         ) : rows.length === 0 ? (
@@ -284,6 +280,7 @@ export default function ChatThreadPage() {
                   </div>
                 ) : null}
                 <div
+                  className="wl-chat-msg"
                   style={{
                     display: "flex",
                     gap: 10,
@@ -327,44 +324,56 @@ export default function ChatThreadPage() {
         )}
       </div>
 
-      {/* Composer */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-end",
-          gap: 8,
-          padding: "10px 12px",
-          borderTop: `1px solid ${token.colorSplit}`,
-          flex: "none",
-        }}
-      >
-        <Input.TextArea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onPressEnter={(e) => {
-            if (!e.shiftKey) {
-              e.preventDefault();
-              submit();
-            }
+      {/* Composer — Slack-style bordered box with the send action inside. */}
+      <div style={{ padding: "4px 16px 14px", flex: "none" }}>
+        <div
+          className="wl-chat-composer"
+          style={{
+            border: `1px solid ${token.colorBorder}`,
+            borderRadius: 10,
+            background: token.colorBgContainer,
+            display: "flex",
+            alignItems: "flex-end",
+            gap: 6,
+            padding: "4px 6px 4px 4px",
           }}
-          placeholder={`Message ${channel?.kind === "dm" ? title : `#${title}`}`}
-          autoSize={{ minRows: 1, maxRows: 6 }}
-          maxLength={4000}
-          variant="borderless"
-          style={{ flex: 1, fontSize: 13.5, padding: "6px 8px" }}
-        />
-        <Tooltip title="Send (Enter)">
-          <Button
-            type="primary"
-            shape="circle"
-            aria-label="Send message"
-            disabled={!draft.trim()}
-            loading={send.isPending}
-            onClick={submit}
-            icon={<MIcon name="send" size={16} />}
+        >
+          <Input.TextArea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onPressEnter={(e) => {
+              if (!e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            placeholder={`Message ${channel?.kind === "dm" ? title : `#${title}`}`}
+            autoSize={{ minRows: 1, maxRows: 8 }}
+            maxLength={4000}
+            variant="borderless"
+            style={{ flex: 1, fontSize: 13.5, padding: "7px 10px" }}
           />
-        </Tooltip>
+          <Tooltip title="Send (Enter) · Shift+Enter for a new line">
+            <Button
+              type="primary"
+              size="small"
+              aria-label="Send message"
+              disabled={!draft.trim()}
+              loading={send.isPending}
+              onClick={submit}
+              style={{ borderRadius: 8, height: 30, width: 34, marginBottom: 3 }}
+              icon={<MIcon name="send" size={15} />}
+            />
+          </Tooltip>
+        </div>
       </div>
+      <style>{`
+        .wl-chat-thread{margin:-22px -24px -48px;}
+        @media (max-width: 899px){ .wl-chat-thread{margin:-16px -14px -40px;} }
+        .wl-chat-composer:focus-within{border-color:#4a4ad0;box-shadow:0 0 0 2px rgba(74,74,208,.12);}
+        .wl-chat-msg{border-radius:8px;margin:0 -8px;padding-left:8px;padding-right:8px;}
+        .wl-chat-msg:hover{background:${token.colorFillQuaternary};}
+      `}</style>
     </div>
   );
 }
