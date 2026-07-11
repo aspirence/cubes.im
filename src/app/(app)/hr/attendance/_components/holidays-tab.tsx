@@ -220,6 +220,7 @@ export function HolidaysTab() {
         columns={columns}
         dataSource={holidays}
         pagination={{ pageSize: 10, hideOnSinglePage: true }}
+        scroll={{ x: "max-content" }}
       />
 
       {isHrAdmin ? (

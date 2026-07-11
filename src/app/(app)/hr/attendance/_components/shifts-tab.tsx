@@ -290,6 +290,7 @@ export function ShiftsTab() {
         columns={columns}
         dataSource={shifts}
         pagination={{ pageSize: 10, hideOnSinglePage: true }}
+        scroll={{ x: 'max-content' }}
       />
 
       {isHrAdmin ? (

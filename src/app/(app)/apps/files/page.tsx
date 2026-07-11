@@ -114,6 +114,7 @@ export default function FilesHubPage() {
 
   return (
     <div
+      className="wl-files-shell"
       style={{
         display: "flex",
         height: "calc(100vh - 58px)",
@@ -122,6 +123,7 @@ export default function FilesHubPage() {
         overflow: "hidden",
       }}
     >
+      <style>{`@media (max-width:900px){.wl-files-shell{flex-direction:column;height:auto;overflow:visible;margin-left:0;margin-right:0}.wl-files-shell>aside{width:100%;border-right:none;border-bottom:1px solid #ececf0}}`}</style>
       {/* Files rail — projects as the secondary sidebar */}
       <aside
         style={{

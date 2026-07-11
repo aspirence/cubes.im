@@ -248,6 +248,8 @@ export function VideoReviewTab({ projectId }: { projectId: string }) {
           alignItems: "center",
           justifyContent: "space-between",
           gap: 12,
+          flexWrap: "wrap",
+          rowGap: 10,
           marginBottom: 12,
         }}
       >
@@ -260,7 +262,7 @@ export function VideoReviewTab({ projectId }: { projectId: string }) {
             Cuts for this project — organize them into folders.
           </Text>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Button
             icon={<FolderAddOutlined />}
             onClick={() => setFolderModal({ name: "" })}

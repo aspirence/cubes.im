@@ -356,6 +356,7 @@ export function LoansTab() {
         loading={isLoading}
         columns={columns}
         dataSource={loans}
+        scroll={{ x: "max-content" }}
         locale={{
           emptyText: <Empty description="No loans or advances yet" />,
         }}

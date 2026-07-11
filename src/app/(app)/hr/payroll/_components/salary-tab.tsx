@@ -597,6 +597,7 @@ export function SalaryTab() {
                   size="small"
                   columns={columns}
                   dataSource={components}
+                  scroll={{ x: "max-content" }}
                   locale={{
                     emptyText: (
                       <Empty

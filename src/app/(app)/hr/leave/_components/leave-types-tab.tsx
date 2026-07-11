@@ -349,6 +349,7 @@ export function LeaveTypesTab() {
         loading={isLoading}
         columns={columns}
         dataSource={leaveTypes}
+        scroll={{ x: "max-content" }}
         pagination={{ pageSize: 10, hideOnSinglePage: true }}
       />
 

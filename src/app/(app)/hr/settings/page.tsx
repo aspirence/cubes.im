@@ -240,6 +240,7 @@ function DepartmentsTab({ orgUsers }: { orgUsers: OrgUserOption[] }) {
         columns={columns}
         dataSource={departments}
         pagination={{ pageSize: 10, hideOnSinglePage: true }}
+        scroll={{ x: "max-content" }}
       />
 
       <Modal
@@ -407,6 +408,7 @@ function DesignationsTab() {
         columns={columns}
         dataSource={designations}
         pagination={{ pageSize: 10, hideOnSinglePage: true }}
+        scroll={{ x: "max-content" }}
       />
 
       <Modal
@@ -583,6 +585,7 @@ function HrAdminsTab({ orgUsers }: { orgUsers: OrgUserOption[] }) {
         columns={columns}
         dataSource={admins}
         pagination={{ pageSize: 10, hideOnSinglePage: true }}
+        scroll={{ x: "max-content" }}
       />
 
       <Modal

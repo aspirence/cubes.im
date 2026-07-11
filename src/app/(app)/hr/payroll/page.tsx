@@ -539,6 +539,7 @@ function MyPayslipsTab({
           onClick: () => setSelected(r),
           style: { cursor: "pointer" },
         })}
+        scroll={{ x: "max-content" }}
         locale={{ emptyText: <Empty description="No payslips yet" /> }}
         pagination={{ pageSize: 12, hideOnSinglePage: true }}
       />
@@ -630,6 +631,7 @@ function RunPayslipsDrawer({
             onClick: () => setSelected(r),
             style: { cursor: "pointer" },
           })}
+          scroll={{ x: "max-content" }}
           locale={{ emptyText: <Empty description="No payslips in this run" /> }}
           pagination={{ pageSize: 20, hideOnSinglePage: true }}
         />
@@ -776,6 +778,7 @@ function PayrollRunsTab({ companyName }: { companyName: string }) {
         loading={isLoading}
         columns={columns}
         dataSource={runs}
+        scroll={{ x: "max-content" }}
         locale={{ emptyText: <Empty description="No payroll runs yet" /> }}
         pagination={{ pageSize: 12, hideOnSinglePage: true }}
       />
@@ -955,6 +958,7 @@ function ApprovalsSection() {
         loading={isLoading}
         columns={columns}
         dataSource={rows}
+        scroll={{ x: "max-content" }}
         locale={{ emptyText: <Empty description="Nothing to approve" /> }}
         pagination={{ pageSize: 20, hideOnSinglePage: true }}
       />
@@ -1022,6 +1026,7 @@ function ReimbursementsTab({ canApprove }: { canApprove: boolean }) {
         loading={isLoading}
         columns={columns}
         dataSource={rows}
+        scroll={{ x: "max-content" }}
         locale={{ emptyText: <Empty description="No claims yet" /> }}
         pagination={{ pageSize: 12, hideOnSinglePage: true }}
       />

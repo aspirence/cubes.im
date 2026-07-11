@@ -355,6 +355,7 @@ export default function AgentsPage() {
 
   return (
     <>
+      <style>{`@media (max-width:900px){.wl-agents-cols{grid-template-columns:1fr !important}.wl-agents-tasks{grid-template-columns:1fr !important}}`}</style>
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <Card>
           <div
@@ -383,6 +384,7 @@ export default function AgentsPage() {
         </Card>
 
         <div
+          className="wl-agents-cols"
           style={{
             display: "grid",
             gridTemplateColumns: "320px minmax(0, 1fr)",
@@ -624,6 +626,7 @@ export default function AgentsPage() {
               </Card>
 
               <div
+                className="wl-agents-tasks"
                 style={{
                   display: "grid",
                   gridTemplateColumns: "360px minmax(0, 1fr)",

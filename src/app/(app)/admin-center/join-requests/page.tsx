@@ -207,6 +207,7 @@ export default function JoinRequestsAdminPage() {
           loading={reqLoading}
           dataSource={requests ?? []}
           size="middle"
+          scroll={{ x: 'max-content' }}
           pagination={{ pageSize: 15, hideOnSinglePage: true }}
           locale={{ emptyText: <Empty description="No pending requests." /> }}
           columns={[

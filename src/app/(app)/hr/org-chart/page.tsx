@@ -325,23 +325,25 @@ export default function HrOrgChartPage() {
           description="No one matches your search"
         />
       ) : (
-        <Tree
-          treeData={treeData}
-          expandedKeys={effectiveExpanded}
-          onExpand={(keys) => {
-            setAutoExpand(false);
-            setManualExpanded(keys);
-          }}
-          selectable={false}
-          showLine={{ showLeafIcon: false }}
-          blockNode
-          draggable={
-            isHrAdmin && !search
-              ? { icon: false, nodeDraggable: (node) => node.key !== UNASSIGNED_KEY }
-              : false
-          }
-          onDrop={onDrop}
-        />
+        <div style={{ overflowX: "auto" }}>
+          <Tree
+            treeData={treeData}
+            expandedKeys={effectiveExpanded}
+            onExpand={(keys) => {
+              setAutoExpand(false);
+              setManualExpanded(keys);
+            }}
+            selectable={false}
+            showLine={{ showLeafIcon: false }}
+            blockNode
+            draggable={
+              isHrAdmin && !search
+                ? { icon: false, nodeDraggable: (node) => node.key !== UNASSIGNED_KEY }
+                : false
+            }
+            onDrop={onDrop}
+          />
+        </div>
       )}
     </Card>
   );

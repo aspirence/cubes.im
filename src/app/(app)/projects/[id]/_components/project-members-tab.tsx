@@ -219,6 +219,7 @@ export function ProjectMembersTab({ projectId }: { projectId: string }) {
         columns={columns}
         dataSource={members ?? []}
         pagination={{ pageSize: 10, hideOnSinglePage: true }}
+        scroll={{ x: "max-content" }}
       />
 
       <Modal

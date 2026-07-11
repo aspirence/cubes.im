@@ -601,6 +601,7 @@ function TeamTab() {
         loading={isLoading}
         columns={columns}
         dataSource={rows}
+        scroll={{ x: 'max-content' }}
         pagination={{ pageSize: 20, hideOnSinglePage: true }}
       />
     </Card>
@@ -688,6 +689,7 @@ function ApprovalsTab() {
         loading={isLoading}
         columns={columns}
         dataSource={rows}
+        scroll={{ x: 'max-content' }}
         locale={{ emptyText: <Empty description="Nothing to approve" /> }}
         pagination={{ pageSize: 20, hideOnSinglePage: true }}
       />

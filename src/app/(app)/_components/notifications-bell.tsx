@@ -779,7 +779,7 @@ export function NotificationsBell() {
       <Drawer
         title="Notifications"
         placement="right"
-        width={440}
+        width="min(440px, 100vw)"
         open={open}
         onClose={() => setOpen(false)}
         styles={{ body: { paddingTop: 4, paddingInline: 10 } }}

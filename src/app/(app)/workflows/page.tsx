@@ -199,6 +199,7 @@ export default function WorkflowsListPage() {
           columns={columns}
           dataSource={workflows ?? []}
           pagination={{ pageSize: 12, hideOnSinglePage: true }}
+          scroll={{ x: "max-content" }}
         />
       )}
 

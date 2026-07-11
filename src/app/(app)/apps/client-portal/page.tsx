@@ -802,6 +802,7 @@ export default function ClientPortalPage() {
 
   return (
     <div
+      className="wl-portal-shell"
       style={{
         display: "flex",
         height: "calc(100vh - 58px)",
@@ -810,6 +811,7 @@ export default function ClientPortalPage() {
         overflow: "hidden",
       }}
     >
+      <style>{`@media (max-width:900px){.wl-portal-shell{flex-direction:column;height:auto;overflow:visible;margin-left:0;margin-right:0}.wl-portal-shell>aside{width:100%;border-right:none;border-bottom:1px solid #ececf0}}`}</style>
       {/* Rail — portals per client */}
       <aside
         style={{

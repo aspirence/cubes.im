@@ -595,7 +595,7 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", rowGap: 8 }}>
         <Select
           value={effectiveFilter}
           onChange={(v) => setMemberFilter(v)}

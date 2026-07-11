@@ -196,6 +196,7 @@ export default function LabelsSettingsPage() {
         columns={columns}
         dataSource={labels ?? []}
         pagination={{ pageSize: 10, hideOnSinglePage: true }}
+        scroll={{ x: "max-content" }}
       />
 
       <Modal

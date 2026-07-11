@@ -309,7 +309,12 @@ export function ProjectDrawer({ open, project, onClose }: ProjectDrawerProps) {
           />
         </Form.Item>
 
-        <Space size="middle" style={{ display: "flex" }} align="start">
+        <Space
+          size="middle"
+          wrap
+          style={{ display: "flex", width: "100%" }}
+          align="start"
+        >
           <Form.Item label="Status" name="status_id" style={{ flex: 1 }}>
             <Select
               allowClear

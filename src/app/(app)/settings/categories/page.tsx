@@ -198,6 +198,7 @@ export default function CategoriesSettingsPage() {
         columns={columns}
         dataSource={categories ?? []}
         pagination={{ pageSize: 10, hideOnSinglePage: true }}
+        scroll={{ x: "max-content" }}
       />
 
       <Modal

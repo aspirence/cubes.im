@@ -260,7 +260,7 @@ function useIsMobile(): boolean {
   return isMobile;
 }
 
-function TeamSwitcher() {
+function TeamSwitcher({ compact = false }: { compact?: boolean }) {
   const { data: teams, isLoading: teamsLoading } = useTeams();
   const { data: activeTeam, isLoading: activeLoading } = useActiveTeam();
   const setActiveTeam = useSetActiveTeam();
@@ -280,7 +280,8 @@ function TeamSwitcher() {
       }
       loading={teamsLoading || activeLoading || setActiveTeam.isPending}
       placeholder="Select workspace"
-      style={{ minWidth: 168 }}
+      // Narrow on phones so the topbar cluster fits a 360px viewport.
+      style={{ minWidth: compact ? 116 : 168, maxWidth: compact ? 148 : undefined }}
       variant="filled"
       size="small"
     />
@@ -1071,7 +1072,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   alignItems: "center",
                   gap: 5,
                   height: 34,
-                  padding: "0 12px",
+                  padding: isMobile ? "0 9px" : "0 12px",
                   border: "none",
                   background: "#4a4ad0",
                   color: "#fff",
@@ -1082,30 +1083,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 }}
               >
                 <MIcon name="add" size={18} />
-                New
+                {!isMobile ? "New" : null}
               </button>
             </Tooltip>
-            <TeamSwitcher />
-            <Tooltip title={dark ? "Light mode" : "Dark mode"}>
-              <button
-                onClick={toggleTheme}
-                aria-label="Toggle theme"
-                style={{
-                  width: 34,
-                  height: 34,
-                  border: `1px solid ${dark ? "#262b37" : "#e6e7ec"}`,
-                  background: dark ? "#14171f" : "#fff",
-                  borderRadius: 8,
-                  color: dark ? "#cdd2dd" : "#44464f",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <MIcon name={dark ? "light_mode" : "dark_mode"} size={19} />
-              </button>
-            </Tooltip>
+            <TeamSwitcher compact={isMobile} />
+            {!isMobile ? (
+              <Tooltip title={dark ? "Light mode" : "Dark mode"}>
+                <button
+                  onClick={toggleTheme}
+                  aria-label="Toggle theme"
+                  style={{
+                    width: 34,
+                    height: 34,
+                    border: `1px solid ${dark ? "#262b37" : "#e6e7ec"}`,
+                    background: dark ? "#14171f" : "#fff",
+                    borderRadius: 8,
+                    color: dark ? "#cdd2dd" : "#44464f",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <MIcon name={dark ? "light_mode" : "dark_mode"} size={19} />
+                </button>
+              </Tooltip>
+            ) : null}
             <UploadIndicator />
             <NotificationsBell />
           </div>
@@ -1165,6 +1168,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             flex: 1,
             padding: isMobile ? "16px 14px 40px" : "22px 24px 48px",
             minWidth: 0,
+            // Net against stray page-level horizontal overflow on phones;
+            // tables/boards keep their own internal scroll containers.
+            overflowX: isMobile ? "clip" : undefined,
           }}
         >
           {children}

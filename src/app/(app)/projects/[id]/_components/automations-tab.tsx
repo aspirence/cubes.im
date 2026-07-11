@@ -466,6 +466,7 @@ export function AutomationsTab({ projectId }: { projectId: string }) {
           dataSource={automations ?? []}
           pagination={false}
           size="middle"
+          scroll={{ x: "max-content" }}
         />
       )}
 

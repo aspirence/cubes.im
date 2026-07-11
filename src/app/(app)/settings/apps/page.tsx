@@ -439,6 +439,7 @@ export default function AppsSettingsPage() {
             columns={columns}
             dataSource={connections ?? []}
             pagination={{ pageSize: 10, hideOnSinglePage: true }}
+            scroll={{ x: "max-content" }}
           />
         )}
       </Card>

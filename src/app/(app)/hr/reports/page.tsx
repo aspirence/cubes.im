@@ -106,6 +106,7 @@ function BreakdownTable({
       columns={columns}
       dataSource={rows}
       pagination={false}
+      scroll={{ x: "max-content" }}
       locale={{ emptyText: <Empty description="No data" /> }}
       summary={() =>
         rows.length > 0 ? (

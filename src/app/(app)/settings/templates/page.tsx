@@ -344,14 +344,14 @@ function TaskTemplatesSection() {
                   <Space
                     key={field.key}
                     align="baseline"
-                    style={{ display: "flex", marginBottom: 8 }}
+                    style={{ display: "flex", marginBottom: 8, flexWrap: "wrap" }}
                   >
                     <Form.Item
                       name={[field.name, "name"]}
                       style={{ marginBottom: 0, flex: 1 }}
                       rules={[{ required: true, message: "Step name required." }]}
                     >
-                      <Input placeholder="Subtask step" style={{ width: 300 }} />
+                      <Input placeholder="Subtask step" style={{ width: "100%" }} />
                     </Form.Item>
                     <Form.Item
                       name={[field.name, "priority"]}
@@ -393,7 +393,7 @@ function TaskTemplatesSection() {
                   <Space
                     key={field.key}
                     align="baseline"
-                    style={{ display: "flex", marginBottom: 8 }}
+                    style={{ display: "flex", marginBottom: 8, flexWrap: "wrap" }}
                   >
                     <Form.Item
                       name={[field.name, "name"]}
@@ -402,7 +402,7 @@ function TaskTemplatesSection() {
                         { required: true, message: "Task name required." },
                       ]}
                     >
-                      <Input placeholder="Task name" style={{ width: 280 }} />
+                      <Input placeholder="Task name" style={{ width: "100%" }} />
                     </Form.Item>
                     <Form.Item
                       name={[field.name, "priority"]}
@@ -894,13 +894,13 @@ function StatusTemplatesSection() {
                   <Space
                     key={field.key}
                     align="baseline"
-                    style={{ display: "flex", marginBottom: 8 }}
+                    style={{ display: "flex", marginBottom: 8, flexWrap: "wrap" }}
                   >
                     <Form.Item
                       name={[field.name, "name"]}
                       style={{ marginBottom: 0 }}
                     >
-                      <Input placeholder="Status name" style={{ width: 280 }} />
+                      <Input placeholder="Status name" style={{ width: "100%" }} />
                     </Form.Item>
                     <Form.Item
                       name={[field.name, "category"]}

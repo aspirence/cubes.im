@@ -214,6 +214,8 @@ export function CreateTaskModal({
       onCancel={onClose}
       footer={null}
       width={640}
+      // Never exceed a phone viewport; stays 640 on desktop.
+      style={{ maxWidth: "calc(100vw - 32px)" }}
       title={null}
       destroyOnHidden
       styles={{ body: { padding: 0 } }}

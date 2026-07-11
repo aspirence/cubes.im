@@ -93,7 +93,7 @@ export function CardConfigDrawer({
     <Drawer
       title={card ? "Edit card" : "Add card"}
       placement="right"
-      width={400}
+      width="min(400px, calc(100vw - 24px))"
       open={open}
       onClose={onClose}
       extra={
@@ -142,7 +142,7 @@ export function CardConfigDrawer({
         </Field>
 
         {draft.kind === "chart" ? (
-          <Space size={10} style={{ width: "100%" }}>
+          <Space size={10} wrap style={{ width: "100%" }}>
             <Field label="Chart">
               <Select
                 value={draft.chart}
@@ -232,7 +232,7 @@ export function CardConfigDrawer({
               />
             </Field>
 
-            <Space size={10} style={{ width: "100%" }}>
+            <Space size={10} wrap style={{ width: "100%" }}>
               <Field label="Priority">
                 <Select
                   mode="multiple"

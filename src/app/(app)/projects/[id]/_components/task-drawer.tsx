@@ -1044,7 +1044,7 @@ function TaskDrawerContent({
         <div style={{ overflowY: "auto", padding: isPage ? "22px 28px 32px" : "18px 18px 24px" }}>
           <style>{`.td-hdr-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:none;border-radius:8px;background:transparent;cursor:pointer;color:${DT.textSecondary};transition:background .12s;}.td-hdr-btn:hover{background:${DT.hairline};}`}</style>
           {/* Property grid (2-column, ClickUp-style) -------------------- */}
-          <style>{`@media (max-width: 640px){ .td-props { grid-template-columns: 1fr !important; } }`}</style>
+          <style>{`@media (max-width: 640px){ .td-props { grid-template-columns: 1fr !important; } .td-body{ grid-template-columns:1fr !important; } }`}</style>
           <div
             className="td-props"
             style={{

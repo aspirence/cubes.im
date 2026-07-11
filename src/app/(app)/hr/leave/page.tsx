@@ -474,6 +474,7 @@ function MyLeaveTab() {
         dataSource={requests}
         locale={{ emptyText: <Empty description="No leave requests yet" /> }}
         pagination={{ pageSize: 10, hideOnSinglePage: true }}
+        scroll={{ x: "max-content" }}
       />
 
       <ApplyLeaveModal open={applyOpen} onClose={() => setApplyOpen(false)} />
@@ -574,6 +575,7 @@ function ApprovalsTab() {
         dataSource={rows}
         locale={{ emptyText: <Empty description="Nothing to approve" /> }}
         pagination={{ pageSize: 20, hideOnSinglePage: true }}
+        scroll={{ x: "max-content" }}
       />
     </Card>
   );

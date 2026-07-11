@@ -81,6 +81,7 @@ export function TableTab({ projectId }: { projectId: string }) {
         loading={isLoading}
         columns={columns}
         dataSource={tasks ?? []}
+        scroll={{ x: "max-content" }}
         pagination={{ pageSize: 25, hideOnSinglePage: true }}
       />
     </Card>

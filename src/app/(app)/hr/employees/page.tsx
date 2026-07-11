@@ -206,6 +206,7 @@ export default function HREmployeesPage() {
           loading={isLoading || accessLoading}
           columns={columns}
           dataSource={filtered}
+          scroll={{ x: "max-content" }}
           pagination={{ pageSize: 12, hideOnSinglePage: true }}
           locale={{
             emptyText: (

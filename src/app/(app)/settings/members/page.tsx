@@ -230,6 +230,7 @@ export default function MembersSettingsPage() {
           columns={memberColumns}
           dataSource={members}
           pagination={{ pageSize: 10, hideOnSinglePage: true }}
+          scroll={{ x: "max-content" }}
         />
       </Card>
 
@@ -244,6 +245,7 @@ export default function MembersSettingsPage() {
           dataSource={invitations}
           pagination={false}
           locale={{ emptyText: "No pending invitations" }}
+          scroll={{ x: "max-content" }}
         />
       </Card>
 

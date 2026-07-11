@@ -382,6 +382,7 @@ export function DocsTab({ projectId }: { projectId: string }) {
 
   return (
     <div
+      className="docs-shell"
       style={{
         display: "flex",
         border: `1px solid ${token.colorBorderSecondary}`,
@@ -541,6 +542,10 @@ export function DocsTab({ projectId }: { projectId: string }) {
         .wl-doc-page-actions { opacity: 0; transition: opacity .12s ease; }
         .wl-doc-page-row:hover { background: ${token.colorFillTertiary}; }
         .wl-doc-page-row:hover .wl-doc-page-actions { opacity: 1; }
+        @media (max-width:640px){
+          .docs-shell{ flex-direction:column }
+          .docs-shell > aside{ width:100%; flex:none; max-height:220px; border-right:none; border-bottom:1px solid #ececf0 }
+        }
       `}</style>
 
       <PageShareModal
