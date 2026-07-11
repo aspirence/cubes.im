@@ -8,6 +8,7 @@ import {
   Empty,
   Switch,
   Typography,
+  theme,
 } from "antd";
 import type { MenuProps } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
@@ -33,6 +34,7 @@ import { useAuth } from "@/features/auth/use-auth";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
 import { useAllTeamTasks } from "@/features/tasks/use-all-tasks";
 import { useDashboardCards, useSaveDashboardCards } from "@/features/home/use-dashboard";
+import { GettingStarted } from "@/features/home/getting-started";
 import { DashboardCardView } from "@/features/home/dashboard-card";
 import { CardConfigDrawer } from "@/features/home/card-config-drawer";
 import { distinctFacets } from "@/features/home/dashboard-engine";
@@ -98,6 +100,7 @@ function SortableCard({
   onRemove: () => void;
   onResize: (id: string, w: number, h: number | undefined) => void;
 }) {
+  const { token } = theme.useToken();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: card.id, disabled: !editMode });
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -137,7 +140,7 @@ function SortableCard({
         display: "inline-flex",
         alignItems: "center",
         cursor: "grab",
-        color: "#b6b8c0",
+        color: token.colorTextQuaternary,
         touchAction: "none",
         marginRight: 2,
         position: "relative",
@@ -247,7 +250,7 @@ function SortableCard({
                 display: "inline-flex",
                 alignItems: "flex-end",
                 justifyContent: "flex-end",
-                color: preview ? "#4c4cd6" : "#c3c5cc",
+                color: preview ? "#4c4cd6" : token.colorTextQuaternary,
               }}
             >
               {rh.key === "br" ? (
@@ -269,6 +272,7 @@ function SortableCard({
 type DashboardCardProps = Parameters<typeof DashboardCardView>[0];
 
 export default function HomePage() {
+  const { token } = theme.useToken();
   const { message } = AntdApp.useApp();
   const { user, profile } = useAuth();
   const firstName = profile?.name?.split(" ")[0] ?? "there";
@@ -345,11 +349,11 @@ export default function HomePage() {
         <div>
           <h1
             className="wl-home-h1"
-            style={{ fontSize: 21, fontWeight: 600, letterSpacing: "-.4px", color: "#17171c", margin: 0 }}
+            style={{ fontSize: 21, fontWeight: 600, letterSpacing: "-.4px", color: token.colorText, margin: 0 }}
           >
             {greetingForNow()}, {firstName}
           </h1>
-          <p style={{ margin: "4px 0 0", fontSize: 13, color: "#6a6d78" }}>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: token.colorTextSecondary }}>
             {editMode
               ? "Edit mode — add, configure, reorder, or remove cards. Changes save automatically."
               : "Here is what is happening across your work."}
@@ -375,11 +379,14 @@ export default function HomePage() {
             </>
           ) : null}
           <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <Text style={{ fontSize: 13, color: "#6a6d78" }}>Edit mode</Text>
+            <Text style={{ fontSize: 13, color: token.colorTextSecondary }}>Edit mode</Text>
             <Switch checked={editMode} onChange={setEditMode} />
           </div>
         </div>
       </div>
+
+      {/* First-run checklist — only while the workspace is still fresh. */}
+      <GettingStarted tasksCount={tasks.length} tasksLoading={tasksLoading} />
 
       {/* Cards grid */}
       {cards.length === 0 ? (
