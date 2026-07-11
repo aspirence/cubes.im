@@ -16,6 +16,7 @@ interface UIState {
 
 export const DEFAULT_SIDEBAR_PINNED_ITEM_IDS = [
   "/home",
+  "/chat",
   "/schedule",
   "/workflows",
   "/apps",

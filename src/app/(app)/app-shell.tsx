@@ -47,6 +47,7 @@ import { AppActivationButton } from "@/features/apps-platform/app-activation";
 import { isProjectScopedApp } from "@/features/apps-platform/app-scope";
 import { ProjectsSidebar } from "./projects/_components/projects-sidebar";
 import { AppCenterSidebar } from "./apps/_components/app-center-sidebar";
+import { ChatSidebar } from "./chat/_components/chat-sidebar";
 import { CreateTaskModal } from "@/features/tasks/create-task-modal";
 
 /** Material Symbols Rounded glyph. */
@@ -951,6 +952,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <ProjectsSidebar />
           ) : sectionNav.custom === "app-center" ? (
             <AppCenterSidebar />
+          ) : sectionNav.custom === "chat" ? (
+            <ChatSidebar />
           ) : (
             <>
           <div

@@ -24,7 +24,7 @@ export interface SectionNav {
   items: SectionNavEntry[];
   /** When set, the shell renders a custom component in the secondary sidebar
    *  (e.g. the live Projects tree) instead of the static `items` list. */
-  custom?: "projects" | "app-center";
+  custom?: "projects" | "app-center" | "chat";
 }
 
 export const SECTION_NAVS: SectionNav[] = [
@@ -33,6 +33,13 @@ export const SECTION_NAVS: SectionNav[] = [
     title: "Projects",
     icon: "layers",
     custom: "projects",
+    items: [],
+  },
+  {
+    base: "/chat",
+    title: "Chat",
+    icon: "forum",
+    custom: "chat",
     items: [],
   },
   {

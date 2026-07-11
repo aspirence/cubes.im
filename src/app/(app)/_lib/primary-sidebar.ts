@@ -33,6 +33,14 @@ export const CORE_PRIMARY_SIDEBAR_ITEMS: PrimarySidebarItem[] = [
     fixedFirst: true,
   },
   {
+    id: "/chat",
+    key: "/chat",
+    base: "/chat",
+    icon: "forum",
+    label: "Chat",
+    kind: "core",
+  },
+  {
     id: "/schedule",
     key: "/schedule",
     base: "/schedule",
