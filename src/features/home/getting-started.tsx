@@ -68,8 +68,8 @@ export function GettingStarted({
     {
       key: "project",
       icon: "layers",
-      title: "Create your first project",
-      desc: "Projects live inside the Space in your sidebar.",
+      title: "Your first project is ready",
+      desc: "We created “My First Project” in your Space — open it and make it yours.",
       href: "/projects",
       done: (projects ?? []).length > 0,
     },
