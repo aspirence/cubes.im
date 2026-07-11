@@ -202,21 +202,21 @@ export default function Landing() {
         <div className="hero-in">
           <Reveal>
             <h1 className="h1">
-              <span className="ink">Your&nbsp;</span>
-              <span className="silver">next-level</span>
+              <span className="ink">One</span>{" "}
+              <span className="silver">workspace</span>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/brand/cubes.im_logo_big.png" alt="" className="hero-cube" aria-hidden />
               <br />
-              <span className="silver">productivity</span>{" "}
-              <span className="ink">engine.</span>
+              <span className="ink">for everything</span>{" "}
+              <span className="silver">you run.</span>
             </h1>
           </Reveal>
           <Reveal delay={90}>
-            <p className="hero-sub">AI-powered workflows built to move faster and work smarter.</p>
+            <p className="hero-sub">The open-source, all-in-one workspace — projects, docs, review, clients, social and people ops, behind a single login.</p>
           </Reveal>
           <Reveal delay={170}>
             <div className="hero-cta">
-              <Link href="/signup" className="btn navy xl">Boost Productivity</Link>
+              <Link href="/signup" className="btn navy xl">Start free</Link>
             </div>
           </Reveal>
         </div>
@@ -234,9 +234,9 @@ export default function Landing() {
       <footer className="mfoot" id="cta">
         <Reveal>
           <h2 className="mfoot-h">
-            <span className="mf-l1">Work seamlessly with a workspace</span><br />
-            <span className="mf-l2">that&apos;s built to match your pace</span><br />
-            <span className="mf-l3">and </span><span className="mf-ink">exceed your expectations.</span>
+            <span className="mf-l1">One workspace for the work</span><br />
+            <span className="mf-l2">and everything around it.</span><br />
+            <span className="mf-l3">One login. </span><span className="mf-ink">Zero glue work.</span>
           </h2>
         </Reveal>
         <Reveal delay={110}>
@@ -255,6 +255,7 @@ export default function Landing() {
         <div className="mfoot-bar">
           <span>© 2026 Cubes. All rights reserved.</span>
           <nav className="mfoot-legal">
+            <a href="/manifesto">Manifesto</a>
             <a href="/terms">Terms of Service</a>
             <a href="/privacy">Privacy Policy</a>
             <a href="/refunds">Refund Policy</a>
@@ -305,7 +306,7 @@ const CSS = `
 .hero{position:relative;z-index:1;min-height:calc(100vh - 68px);overflow:hidden;}
 .hero-lines{position:absolute;inset:0;z-index:0;background:repeating-linear-gradient(90deg, rgba(20,26,46,.05) 0 1px, transparent 1px 122px);-webkit-mask:linear-gradient(180deg,#000 55%,transparent 96%);mask:linear-gradient(180deg,#000 55%,transparent 96%);}
 .hero-in{position:relative;z-index:2;max-width:1160px;margin:0 auto;padding:96px 28px 0;text-align:left;}
-.h1{font-size:clamp(38px,5.4vw,72px);line-height:1.0;font-weight:800;letter-spacing:-.045em;margin:0;}
+.h1{font-size:clamp(38px,5.4vw,72px);line-height:1.0;font-weight:800;letter-spacing:-.045em;margin:0;overflow-wrap:break-word;}
 .ink{color:#141a2e;}
 .silver{background:linear-gradient(180deg,#c7cfe2,#a4b0ca);-webkit-background-clip:text;background-clip:text;color:transparent;}
 .hero-cube{display:inline-block;vertical-align:middle;margin-left:.14em;margin-top:-.14em;width:1.15em;height:1.15em;object-fit:contain;transform:scaleX(-1);}
@@ -452,11 +453,16 @@ const CSS = `
 }
 @media(max-width:600px){
   .bento{grid-template-columns:1fr;}
-  .hero-in{padding-top:56px;}
-  .cubes{height:44%;}
-  .hero-sub{margin-top:22px;}
-  .h1{font-size:clamp(32px,9.5vw,44px);}
+  .hero{min-height:82vh;}
+  .hero-in{padding:48px 22px 0;}
+  .h1{font-size:clamp(30px,8vw,46px);line-height:1.06;}
+  .hero-sub{margin-top:20px;font-size:15px;}
+  .hero-cta{margin-top:26px;}
+  .hero-cta .btn.xl{width:100%;justify-content:center;}
+  .cubes{height:40%;}
   .m-board{min-width:420px;}
-  .hero{padding-top:44px;}
+  .mfoot-legal{flex-wrap:wrap;justify-content:center;gap:10px 16px;}
+  .mfoot-bar{justify-content:center;text-align:center;}
+  .mfoot-word{font-size:clamp(70px,23vw,110px);}
 }
 `;

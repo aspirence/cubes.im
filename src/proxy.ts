@@ -30,6 +30,7 @@ const PUBLIC_PATHS = [
   "/pricing",
   "/features",
   "/product",
+  "/manifesto",
   // Public early-access request form (no login required to submit).
   "/early-access",
   // Legal pages.

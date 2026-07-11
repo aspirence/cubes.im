@@ -118,6 +118,7 @@ export function MarketingFooter() {
           {MARKETING_NAV.map((n) => (
             <Link key={n.label} href={n.href}>{n.label}</Link>
           ))}
+          <Link href="/manifesto">Manifesto</Link>
         </div>
 
         <div className="foot-col">
@@ -233,7 +234,7 @@ ${FOOT_CSS}
   .nav-links{display:none;}
   .burger{display:inline-flex;}
   .nav-right .btn.navy.sm,.lang{display:none;}
-  .drawer{display:flex;flex-direction:column;gap:4px;position:absolute;top:64px;left:14px;right:14px;background:#fff;border:1px solid #ececf3;border-radius:16px;padding:12px;box-shadow:0 24px 50px -20px rgba(40,30,110,.4);}
+  .drawer{display:flex;flex-direction:column;gap:4px;position:absolute;top:72px;left:22px;right:22px;background:#fff;border:1px solid #ececf3;border-radius:16px;padding:12px;box-shadow:0 24px 50px -20px rgba(40,30,110,.4);}
   .drawer a{padding:11px 12px;border-radius:10px;font-weight:600;font-size:15px;}
   .drawer a:hover{background:#f4f4fb;}
   .faq-grid{grid-template-columns:1fr;}

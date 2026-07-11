@@ -42,6 +42,17 @@ export default function ProductPage() {
         <img src="/brand/product_page_hero.png" alt="Cubes attendance & workforce" />
       </section>
 
+      {/* MANIFESTO TEASER */}
+      <section className="pd-manifesto">
+        <p className="pd-manifesto-t">
+          This is <b>phase one</b> — the workspace ships now, and AT-Cubes hardware comes
+          next. See the full plan and what we&apos;re building toward.
+        </p>
+        <Link href="/manifesto" className="pd-manifesto-link">
+          Read the manifesto <MIcon name="arrow_forward" size={16} />
+        </Link>
+      </section>
+
       {/* PROCESS — how AT-Cubes works, in 3 steps */}
       <section className="pd-proc" aria-label="How AT-Cubes works">
         <div className="pd-proc-grid">
@@ -103,6 +114,11 @@ const CSS = `
 .pd-hero{position:relative;z-index:1;max-width:680px;margin:0 auto;padding:24px 22px 4px;}
 .pd-hero img{display:block;width:100%;height:auto;border-radius:20px;}
 
+.pd-manifesto{position:relative;z-index:1;max-width:680px;margin:0 auto;padding:16px 22px 6px;text-align:center;}
+.pd-manifesto-t{font-size:15px;color:#5b5d6b;line-height:1.6;margin:0;}
+.pd-manifesto-t b{color:#0e0f17;font-weight:700;}
+.pd-manifesto a{display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:700;color:#0e0f17;margin-top:6px;padding:10px 8px;}
+
 .pd-proc{position:relative;z-index:1;max-width:1080px;margin:0 auto;padding:28px 22px 8px;}
 .pd-proc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
 .pd-proc-card{position:relative;overflow:hidden;background:#ecedf1;border-radius:20px;box-shadow:0 14px 34px -30px rgba(16,24,40,.3);}
@@ -116,8 +132,8 @@ const CSS = `
 .pd-ea-h{font-size:clamp(23px,2.8vw,32px);font-weight:800;letter-spacing:-.03em;margin:13px 0 0;color:#0e0f17;line-height:1.08;}
 .pd-ea-sub{font-size:14px;color:#5b5d6b;line-height:1.55;margin:9px 0 0;max-width:440px;}
 .pd-ea-list{display:grid;gap:10px;margin:18px 0 0;}
-.pd-ea-li{display:flex;align-items:center;gap:10px;font-size:14px;color:#2a2c3a;}
-.pd-ea-check{flex:none;width:20px;height:20px;border-radius:999px;background:#17181f;color:#fff;display:inline-flex;align-items:center;justify-content:center;}
+.pd-ea-li{display:flex;align-items:flex-start;gap:10px;font-size:14px;color:#2a2c3a;line-height:1.45;}
+.pd-ea-check{flex:none;width:20px;height:20px;border-radius:999px;background:#17181f;color:#fff;display:inline-flex;align-items:center;justify-content:center;margin-top:1px;}
 .pd-ea-buy{position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:center;text-align:center;background:#f4f4f6;border-radius:24px;padding:28px 24px;color:#0e0f17;}
 .pd-ea-buy-label{font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#6a6e7d;margin-bottom:9px;}
 .pd-ea-price{font-size:clamp(40px,4.4vw,50px);font-weight:800;letter-spacing:-.03em;color:#0e0f17;margin:0;line-height:1;}
