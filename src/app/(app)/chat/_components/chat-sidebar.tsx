@@ -118,8 +118,12 @@ function ConversationRow({
   );
 }
 
-/** Secondary-sidebar rail: channels + direct messages. */
-export function ChatSidebar() {
+/**
+ * The chat navigation itself — Channels + Direct Messages sections with their
+ * "new" modals. Rendered inside the Chat rail AND embedded below Spaces in the
+ * Home/Projects sidebar (ClickUp-style).
+ */
+export function ChatNavSections() {
   const { token } = theme.useToken();
   const router = useRouter();
   const pathname = usePathname();
@@ -229,29 +233,11 @@ export function ChatSidebar() {
   );
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      {/* Header */}
-      <div
-        style={{
-          height: 58,
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          padding: "0 16px",
-          borderBottom: `1px solid ${token.colorBorderSecondary}`,
-          flex: "none",
-        }}
-      >
-        <span style={{ color: token.colorTextTertiary, display: "flex" }}>
-          <MIcon name="forum" size={20} />
-        </span>
-        <span style={{ fontSize: 15, fontWeight: 600, color: token.colorText }}>Chat</span>
-      </div>
-
-      <nav style={{ flex: 1, overflowY: "auto", padding: "2px 8px 14px" }}>
+    <>
+      <div>
         {isLoading ? (
           <div style={{ padding: 12 }}>
-            <Skeleton active paragraph={{ rows: 5 }} title={false} />
+            <Skeleton active paragraph={{ rows: 3 }} title={false} />
           </div>
         ) : (
           <>
@@ -296,7 +282,7 @@ export function ChatSidebar() {
             )}
           </>
         )}
-      </nav>
+      </div>
 
       {/* New channel — admins/owners only (RPC enforces server-side too). */}
       <Modal
@@ -353,6 +339,34 @@ export function ChatSidebar() {
         ) : null}
         <Button style={{ display: "none" }} />
       </Modal>
+    </>
+  );
+}
+
+/** Secondary-sidebar rail for the /chat section: header + the nav sections. */
+export function ChatSidebar() {
+  const { token } = theme.useToken();
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <div
+        style={{
+          height: 58,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "0 16px",
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
+          flex: "none",
+        }}
+      >
+        <span style={{ color: token.colorTextTertiary, display: "flex" }}>
+          <MIcon name="forum" size={20} />
+        </span>
+        <span style={{ fontSize: 15, fontWeight: 600, color: token.colorText }}>Chat</span>
+      </div>
+      <nav style={{ flex: 1, overflowY: "auto", padding: "2px 8px 14px" }}>
+        <ChatNavSections />
+      </nav>
     </div>
   );
 }

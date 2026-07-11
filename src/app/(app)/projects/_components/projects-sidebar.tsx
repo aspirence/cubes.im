@@ -58,6 +58,7 @@ import {
 import { ShareProjectModal } from "./share-project-modal";
 import { useNotifications } from "@/features/notifications/use-notifications";
 import { useMyTasks } from "@/features/home/use-home";
+import { ChatNavSections } from "@/app/(app)/chat/_components/chat-sidebar";
 
 /* -------------------------------------------------------------------------- */
 /* Design tokens (canonical handoff).                                         */
@@ -2121,6 +2122,9 @@ export function ProjectsSidebar() {
             ) : null}
           </>
         )}
+
+        {/* Chat — channels + DMs inline below Spaces (ClickUp-style). */}
+        {!searching ? <ChatNavSections /> : null}
       </div>
 
       <NewSpaceModal
