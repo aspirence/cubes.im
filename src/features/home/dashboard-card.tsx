@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Avatar, Empty, Input, Skeleton, Tag, Tooltip, Typography } from "antd";
+import { Avatar, Empty, Input, Skeleton, Tag, Tooltip, Typography, theme } from "antd";
 import dayjs from "dayjs";
 import type { TeamTaskWithProject } from "@/features/tasks/use-all-tasks";
 import {
@@ -51,6 +51,7 @@ function MetricBody({
   tasks: TeamTaskWithProject[];
   myTeamMemberId: string | undefined;
 }) {
+  const { token } = theme.useToken();
   const metric = card.metric ?? "open";
   const value = computeMetric(tasks, card.filter, metric, myTeamMemberId);
   const label = METRIC_OPTIONS.find((m) => m.value === metric)?.label ?? "";
@@ -59,7 +60,7 @@ function MetricBody({
       ? "#e0663f"
       : metric === "completed-week"
         ? "#3a9d6e"
-        : "#17171c";
+        : token.colorText;
   return (
     <div style={{ padding: "18px 18px 20px" }}>
       <div
@@ -68,7 +69,7 @@ function MetricBody({
       >
         {value}
       </div>
-      <div style={{ marginTop: 6, fontSize: 12.5, color: "#8a8d98" }}>
+      <div style={{ marginTop: 6, fontSize: 12.5, color: token.colorTextTertiary }}>
         {label}
         {card.filter.scope === "me" ? " · you" : ""}
       </div>
@@ -123,6 +124,7 @@ function TasksBody({
   tasks: TeamTaskWithProject[];
   myTeamMemberId: string | undefined;
 }) {
+  const { token } = theme.useToken();
   const rows = visibleTasks(tasks, card.filter, myTeamMemberId).slice(0, card.limit ?? 12);
   if (rows.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No matching tasks" style={{ margin: "20px 0" }} />;
@@ -134,7 +136,7 @@ function TasksBody({
         const due = t.end_date ? dayjs(t.end_date) : null;
         const overdue = due ? due.isBefore(today) && !t.done : false;
         return (
-          <li key={t.id} style={{ borderTop: i === 0 ? "none" : "1px solid #f4f4f6" }}>
+          <li key={t.id} style={{ borderTop: i === 0 ? "none" : `1px solid ${token.colorSplit}` }}>
             <Link
               href={`/projects/${t.project_id}?task=${t.id}`}
               style={{
@@ -160,7 +162,7 @@ function TasksBody({
                   style={{
                     fontSize: 13,
                     fontWeight: 500,
-                    color: "#17171c",
+                    color: token.colorText,
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
@@ -168,7 +170,7 @@ function TasksBody({
                 >
                   {t.name}
                 </div>
-                <div style={{ fontSize: 11.5, color: "#9a9da8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <div style={{ fontSize: 11.5, color: token.colorTextTertiary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {t.project?.name ?? "Project"}
                 </div>
               </div>
@@ -186,7 +188,7 @@ function TasksBody({
                   {t.priority.name}
                 </Tag>
               ) : null}
-              <div style={{ width: 70, textAlign: "right", flex: "none", fontSize: 12, color: overdue ? "#e0663f" : "#9a9da8" }}>
+              <div style={{ width: 70, textAlign: "right", flex: "none", fontSize: 12, color: overdue ? "#e0663f" : token.colorTextTertiary }}>
                 {due ? due.format("MMM D") : "—"}
               </div>
             </Link>
@@ -198,6 +200,7 @@ function TasksBody({
 }
 
 function ActivityBody() {
+  const { token } = theme.useToken();
   const { data, isLoading } = useActivityFeed();
   if (isLoading) return <div style={{ padding: 16 }}><Skeleton active paragraph={{ rows: 4 }} /></div>;
   const items = (data ?? []).slice(0, 8);
@@ -205,7 +208,7 @@ function ActivityBody() {
   return (
     <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
       {items.map((a, i) => (
-        <li key={a.id} style={{ borderTop: i === 0 ? "none" : "1px solid #f4f4f6" }}>
+        <li key={a.id} style={{ borderTop: i === 0 ? "none" : `1px solid ${token.colorSplit}` }}>
           <Link
             href={a.project_id ? `/projects/${a.project_id}?task=${a.task_id}` : "#"}
             style={{ display: "flex", gap: 10, padding: "9px 16px", color: "inherit", textDecoration: "none" }}
@@ -214,14 +217,14 @@ function ActivityBody() {
               {initials(a.author?.name ?? "?")}
             </Avatar>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: 12.5, color: "#17171c", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <div style={{ fontSize: 12.5, color: token.colorText, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 <strong>{a.author?.name ?? "Someone"}</strong> on {a.task_name ?? "a task"}
               </div>
-              <div style={{ fontSize: 11.5, color: "#9a9da8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <div style={{ fontSize: 11.5, color: token.colorTextTertiary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {a.content}
               </div>
             </div>
-            <span style={{ fontSize: 11, color: "#b6b8c0", flex: "none" }}>{dayjs(a.created_at).format("MMM D")}</span>
+            <span style={{ fontSize: 11, color: token.colorTextQuaternary, flex: "none" }}>{dayjs(a.created_at).format("MMM D")}</span>
           </Link>
         </li>
       ))}
@@ -230,6 +233,7 @@ function ActivityBody() {
 }
 
 function TodoBody() {
+  const { token } = theme.useToken();
   const { data: todos } = usePersonalTodos();
   const createTodo = useCreateTodo();
   const updateTodo = useUpdateTodo();
@@ -255,7 +259,7 @@ function TodoBody() {
         style={{ marginBottom: 8 }}
       />
       {list.length === 0 ? (
-        <div style={{ fontSize: 12.5, color: "#9a9da8", padding: "6px 2px" }}>Nothing yet.</div>
+        <div style={{ fontSize: 12.5, color: token.colorTextTertiary, padding: "6px 2px" }}>Nothing yet.</div>
       ) : (
         <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
           {list.map((td) => (
@@ -269,7 +273,7 @@ function TodoBody() {
                 style={{
                   flex: 1,
                   fontSize: 13,
-                  color: td.done ? "#b6b8c0" : "#17171c",
+                  color: td.done ? token.colorTextQuaternary : token.colorText,
                   textDecoration: td.done ? "line-through" : "none",
                 }}
               >
@@ -279,7 +283,7 @@ function TodoBody() {
                 type="button"
                 aria-label="Delete to-do"
                 onClick={() => deleteTodo.mutate(td.id)}
-                style={{ border: "none", background: "transparent", color: "#b6b8c0", cursor: "pointer" }}
+                style={{ border: "none", background: "transparent", color: token.colorTextQuaternary, cursor: "pointer" }}
               >
                 <MIcon name="close" size={15} />
               </button>
@@ -316,6 +320,7 @@ export function DashboardCardView({
   onEdit: () => void;
   onRemove: () => void;
 }) {
+  const { token } = theme.useToken();
   // Height applies to every kind: charts size their canvas via ChartBody, metric
   // cards grow (minHeight), lists get a fixed height + scroll.
   const bodyStyle: React.CSSProperties | undefined =
@@ -330,8 +335,8 @@ export function DashboardCardView({
   return (
     <section
       style={{
-        background: "#fff",
-        border: `1px solid ${editMode ? "#d9d9e6" : "#ececf0"}`,
+        background: token.colorBgContainer,
+        border: `1px solid ${editMode ? token.colorBorder : token.colorBorderSecondary}`,
         borderRadius: 12,
         overflow: "hidden",
         boxShadow: editMode ? "0 0 0 1px rgba(76,76,214,0.08)" : undefined,
@@ -343,7 +348,7 @@ export function DashboardCardView({
           alignItems: "center",
           gap: 8,
           padding: "11px 14px",
-          borderBottom: "1px solid #f2f2f5",
+          borderBottom: `1px solid ${token.colorSplit}`,
         }}
       >
         {editMode && dragHandle ? dragHandle : null}
@@ -392,6 +397,7 @@ function IconBtn({
   disabled?: boolean;
   danger?: boolean;
 }) {
+  const { token } = theme.useToken();
   return (
     <button
       type="button"
@@ -403,7 +409,7 @@ function IconBtn({
         border: "none",
         background: "transparent",
         cursor: disabled ? "not-allowed" : "pointer",
-        color: disabled ? "#d0d1d8" : danger ? "#e0663f" : "#8a8d98",
+        color: disabled ? token.colorTextQuaternary : danger ? "#e0663f" : token.colorTextTertiary,
         display: "inline-flex",
         padding: 3,
         borderRadius: 6,

@@ -1,20 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
+import { theme } from "antd";
 import type { EChartsOption } from "echarts";
 import { EChart, CHART_FONT } from "./echart";
 import type { ChartType } from "./dashboard-types";
 import type { GroupDatum } from "./dashboard-engine";
-
-const AXIS_LABEL = { color: "#9a9da8", fontSize: 11, fontFamily: CHART_FONT };
-const SPLIT_LINE = { lineStyle: { color: "#f0f0f3" } };
-const TOOLTIP = {
-  backgroundColor: "#ffffff",
-  borderColor: "#ececf0",
-  borderWidth: 1,
-  textStyle: { color: "#17171c", fontSize: 12, fontFamily: CHART_FONT },
-  extraCssText: "box-shadow:0 6px 18px -6px rgba(16,24,40,.14);border-radius:8px;",
-} as const;
 
 const gradient = (color: string): unknown => ({
   type: "linear",
@@ -38,8 +29,19 @@ export function GroupedChart({
   chart: ChartType;
   height?: number;
 }) {
+  const { token } = theme.useToken();
   const option = useMemo<EChartsOption>(() => {
     const labels = data.map((d) => d.label);
+    // Theme-derived chart chrome (tracks light/dark via the AntD algorithm).
+    const AXIS_LABEL = { color: token.colorTextTertiary, fontSize: 11, fontFamily: CHART_FONT };
+    const SPLIT_LINE = { lineStyle: { color: token.colorSplit } };
+    const TOOLTIP = {
+      backgroundColor: token.colorBgElevated,
+      borderColor: token.colorBorderSecondary,
+      borderWidth: 1,
+      textStyle: { color: token.colorText, fontSize: 12, fontFamily: CHART_FONT },
+      extraCssText: "box-shadow:0 6px 18px -6px rgba(16,24,40,.14);border-radius:8px;",
+    } as const;
 
     if (chart === "pie" || chart === "donut") {
       const total = data.reduce((s, d) => s + d.value, 0);
@@ -57,7 +59,7 @@ export function GroupedChart({
           icon: "circle",
           itemWidth: 8,
           itemHeight: 8,
-          textStyle: { color: "#6a6d78", fontSize: 12, fontFamily: CHART_FONT },
+          textStyle: { color: token.colorTextSecondary, fontSize: 12, fontFamily: CHART_FONT },
         },
         graphic:
           chart === "donut"
@@ -68,7 +70,7 @@ export function GroupedChart({
                 style: {
                   text: `${total}\ntotal`,
                   textAlign: "center",
-                  fill: "#17171c",
+                  fill: token.colorText,
                   fontSize: 20,
                   fontWeight: 600,
                   lineHeight: 20,
@@ -81,7 +83,7 @@ export function GroupedChart({
             radius: chart === "donut" ? ["55%", "82%"] : "78%",
             center: ["32%", "50%"],
             avoidLabelOverlap: true,
-            itemStyle: { borderColor: "#fff", borderWidth: 2, borderRadius: 4 },
+            itemStyle: { borderColor: token.colorBgContainer, borderWidth: 2, borderRadius: 4 },
             label: { show: false },
             data: data.map((d) => ({
               name: d.label,
@@ -101,7 +103,7 @@ export function GroupedChart({
           type: "category",
           data: labels,
           axisLabel: { ...AXIS_LABEL, interval: 0, rotate: labels.length > 5 ? 30 : 0 },
-          axisLine: { lineStyle: { color: "#ececf0" } },
+          axisLine: { lineStyle: { color: token.colorBorderSecondary } },
           axisTick: { show: false },
         },
         yAxis: {
@@ -117,7 +119,7 @@ export function GroupedChart({
             symbolSize: 7,
             data: data.map((d) => d.value),
             lineStyle: { color: "#5a5ad6", width: 3 },
-            itemStyle: { color: "#5a5ad6", borderColor: "#fff", borderWidth: 2 },
+            itemStyle: { color: "#5a5ad6", borderColor: token.colorBgContainer, borderWidth: 2 },
             areaStyle:
               chart === "area" ? { color: gradient("#5a5ad6") as never } : undefined,
           },
@@ -141,7 +143,7 @@ export function GroupedChart({
           data: rows.map((d) =>
             d.label.length > 18 ? `${d.label.slice(0, 17)}…` : d.label,
           ),
-          axisLabel: { ...AXIS_LABEL, color: "#6a6d78" },
+          axisLabel: { ...AXIS_LABEL, color: token.colorTextSecondary },
           axisLine: { show: false },
           axisTick: { show: false },
         },
@@ -170,7 +172,7 @@ export function GroupedChart({
           interval: 0,
           rotate: labels.length > 4 ? 30 : 0,
         },
-        axisLine: { lineStyle: { color: "#ececf0" } },
+        axisLine: { lineStyle: { color: token.colorBorderSecondary } },
         axisTick: { show: false },
       },
       yAxis: {
@@ -190,7 +192,7 @@ export function GroupedChart({
         },
       ],
     };
-  }, [data, chart]);
+  }, [data, chart, token]);
 
   const isEmpty = data.length === 0 || data.every((d) => d.value === 0);
   if (isEmpty) {
@@ -201,7 +203,7 @@ export function GroupedChart({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          color: "#9a9da8",
+          color: token.colorTextTertiary,
           fontSize: 13,
         }}
       >
