@@ -12,6 +12,7 @@ import {
   Modal,
   Popover,
   Result,
+  Segmented,
   Select,
   Skeleton,
 } from "antd";
@@ -245,10 +246,13 @@ function NavButton({
   children,
   onClick,
   ariaLabel,
+  active,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   ariaLabel?: string;
+  /** Highlighted state (e.g. the Yesterday/Today/Tomorrow jump that matches). */
+  active?: boolean;
 }) {
   const [hover, setHover] = useState(false);
   return (
@@ -266,11 +270,12 @@ function NavButton({
         alignItems: "center",
         justifyContent: "center",
         gap: 4,
-        border: `1px solid ${T.hairline}`,
+        border: `1px solid ${active ? T.accent : T.hairline}`,
         borderRadius: 8,
-        background: hover ? T.rowHover : T.panel,
-        color: T.textPrimary,
+        background: active ? T.accentSoft : hover ? T.rowHover : T.panel,
+        color: active ? T.accent : T.textPrimary,
         fontSize: 13,
+        fontWeight: active ? 600 : 400,
         cursor: "pointer",
       }}
     >
@@ -367,6 +372,8 @@ export default function SchedulePage() {
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [anchor, setAnchor] = useState<Dayjs>(() => dayjs());
+  // Calendar scope: focused day, single week row, or full month grid.
+  const [view, setView] = useState<"day" | "week" | "month">("month");
   // Create-task-on-a-day (calendar hover "+").
   const [createOpen, setCreateOpen] = useState(false);
   const [createDate, setCreateDate] = useState<Dayjs | null>(null);
@@ -382,12 +389,25 @@ export default function SchedulePage() {
   const matchesFilter = (teamMemberId: string) =>
     effectiveFilter === "all" || teamMemberId === effectiveFilter;
 
-  // The visible month grid: whole weeks covering the anchor month.
-  const monthStart = useMemo(() => anchor.startOf("month"), [anchor]);
-  const gridStart = useMemo(() => monthStart.startOf("week"), [monthStart]);
+  // The visible range: whole weeks covering the anchor month (month view),
+  // the anchor's week (week view), or the anchor day itself (day view).
+  const gridStart = useMemo(
+    () =>
+      view === "month"
+        ? anchor.startOf("month").startOf("week")
+        : view === "week"
+          ? anchor.startOf("week")
+          : anchor.startOf("day"),
+    [anchor, view],
+  );
   const gridEnd = useMemo(
-    () => monthStart.endOf("month").endOf("week"),
-    [monthStart],
+    () =>
+      view === "month"
+        ? anchor.endOf("month").endOf("week")
+        : view === "week"
+          ? anchor.endOf("week")
+          : anchor.endOf("day"),
+    [anchor, view],
   );
   const gridDays = useMemo(() => {
     const days: Dayjs[] = [];
@@ -546,7 +566,20 @@ export default function SchedulePage() {
     </span>
   );
 
-  const rangeLabel = anchor.format("MMMM YYYY");
+  const rangeLabel =
+    view === "month"
+      ? anchor.format("MMMM YYYY")
+      : view === "week"
+        ? `${gridStart.format("MMM D")} – ${gridEnd.format("MMM D, YYYY")}`
+        : anchor.format("dddd, MMMM D, YYYY");
+  // "Today" / "Yesterday" / "Tomorrow" when the anchor is one of them.
+  const relativeLabel = anchor.isSame(today, "day")
+    ? "Today"
+    : anchor.isSame(today.subtract(1, "day"), "day")
+      ? "Yesterday"
+      : anchor.isSame(today.add(1, "day"), "day")
+        ? "Tomorrow"
+        : null;
 
   /* ---------------------------------------------------------- header */
 
@@ -612,18 +645,52 @@ export default function SchedulePage() {
           aria-label="Whose calendar"
         />
         <div style={{ width: 1, height: 22, background: T.hairline }} />
+        <Segmented
+          value={view}
+          onChange={(v) => setView(v as "day" | "week" | "month")}
+          options={[
+            { label: "Day", value: "day" },
+            { label: "Week", value: "week" },
+            { label: "Month", value: "month" },
+          ]}
+          aria-label="Calendar view"
+        />
+        <div style={{ width: 1, height: 22, background: T.hairline }} />
         <NavButton
-          ariaLabel="Previous month"
-          onClick={() => setAnchor((a) => a.subtract(1, "month"))}
+          ariaLabel={`Previous ${view}`}
+          onClick={() => setAnchor((a) => a.subtract(1, view))}
         >
           <span className="material-symbols-rounded" style={{ fontSize: 18 }}>
             chevron_left
           </span>
         </NavButton>
-        <NavButton onClick={() => setAnchor(dayjs())}>Today</NavButton>
+        {view === "day" ? (
+          <>
+            <NavButton
+              active={relativeLabel === "Yesterday"}
+              onClick={() => setAnchor(dayjs().subtract(1, "day"))}
+            >
+              Yesterday
+            </NavButton>
+            <NavButton
+              active={relativeLabel === "Today"}
+              onClick={() => setAnchor(dayjs())}
+            >
+              Today
+            </NavButton>
+            <NavButton
+              active={relativeLabel === "Tomorrow"}
+              onClick={() => setAnchor(dayjs().add(1, "day"))}
+            >
+              Tomorrow
+            </NavButton>
+          </>
+        ) : (
+          <NavButton onClick={() => setAnchor(dayjs())}>Today</NavButton>
+        )}
         <NavButton
-          ariaLabel="Next month"
-          onClick={() => setAnchor((a) => a.add(1, "month"))}
+          ariaLabel={`Next ${view}`}
+          onClick={() => setAnchor((a) => a.add(1, view))}
         >
           <span className="material-symbols-rounded" style={{ fontSize: 18 }}>
             chevron_right
@@ -644,7 +711,8 @@ export default function SchedulePage() {
 
   /* ------------------------------------------------------------ body */
 
-  const MAX_VISIBLE = 3;
+  // Week cells are a full row tall, so they can show far more before "+N more".
+  const MAX_VISIBLE = view === "week" ? 10 : 3;
 
   let body: React.ReactNode;
   if (teamLoading || isLoading) {
@@ -680,9 +748,103 @@ export default function SchedulePage() {
         />
       </div>
     );
+  } else if (view === "day") {
+    const iso = anchor.format("YYYY-MM-DD");
+    const chips = chipsByDay.get(iso) ?? [];
+    body = (
+      <div
+        style={{
+          background: T.panel,
+          border: `1px solid ${T.hairline}`,
+          borderRadius: 12,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            padding: "14px 18px",
+            borderBottom: `1px solid ${T.divider}`,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span
+              style={{
+                fontFamily: MONO,
+                fontSize: 15,
+                fontWeight: 700,
+                color: T.textPrimary,
+              }}
+            >
+              {anchor.format("dddd, MMMM D")}
+            </span>
+            {relativeLabel ? (
+              <span
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  color: T.accent,
+                  background: T.accentSoft,
+                  borderRadius: 999,
+                  padding: "2px 10px",
+                }}
+              >
+                {relativeLabel}
+              </span>
+            ) : null}
+          </div>
+          <Button
+            icon={<PlusOutlined />}
+            onClick={() => {
+              setCreateDate(anchor);
+              setCreateOpen(true);
+            }}
+            style={{ height: 30, borderRadius: 8 }}
+          >
+            Add task
+          </Button>
+        </div>
+        <div
+          style={{
+            padding: 14,
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+          }}
+        >
+          {chips.length === 0 ? (
+            <div
+              style={{
+                padding: "36px 0",
+                textAlign: "center",
+                color: T.textTertiary,
+                fontSize: 13,
+              }}
+            >
+              Nothing scheduled for this day.
+            </div>
+          ) : (
+            chips.map((chip) => (
+              <ChipPill
+                key={chip.key}
+                chip={chip}
+                onOpen={(href) => router.push(href)}
+              />
+            ))
+          )}
+        </div>
+      </div>
+    );
   } else {
     const weekdayLabels = Array.from({ length: 7 }, (_, i) =>
-      gridStart.add(i, "day").format("ddd").toUpperCase(),
+      gridStart
+        .add(i, "day")
+        .format(view === "week" ? "ddd D" : "ddd")
+        .toUpperCase(),
     );
     body = (
       <div
@@ -726,7 +888,8 @@ export default function SchedulePage() {
         >
           {gridDays.map((day, i) => {
             const iso = day.format("YYYY-MM-DD");
-            const inMonth = day.month() === anchor.month();
+            const inMonth =
+              view === "week" || day.month() === anchor.month();
             const isToday = day.isSame(today, "day");
             const chips = chipsByDay.get(iso) ?? [];
             const visible = chips.slice(0, MAX_VISIBLE);
@@ -736,7 +899,7 @@ export default function SchedulePage() {
                 key={iso}
                 className="wl-cal-cell"
                 style={{
-                  minHeight: 118,
+                  minHeight: view === "week" ? 320 : 118,
                   padding: "6px 8px",
                   borderRight: (i + 1) % 7 === 0 ? "none" : `1px solid ${T.divider}`,
                   borderBottom:
