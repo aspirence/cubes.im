@@ -151,13 +151,13 @@ export const skillByKey = (key: string): SkillDescriptor | undefined =>
 /* Step capabilities — the Builder palette (agents are added dynamically).    */
 /* -------------------------------------------------------------------------- */
 
-const CONDITION_OPS: { value: string; label: string }[] = [
-  { value: ">", label: "greater than (>)" },
-  { value: ">=", label: "at least (>=)" },
-  { value: "<", label: "less than (<)" },
-  { value: "<=", label: "at most (<=)" },
-  { value: "=", label: "equals (=)" },
-  { value: "!=", label: "not equals (!=)" },
+export const CONDITION_OPS: { value: string; label: string }[] = [
+  { value: ">", label: "is greater than" },
+  { value: ">=", label: "is at least" },
+  { value: "<", label: "is less than" },
+  { value: "<=", label: "is at most" },
+  { value: "=", label: "is equal to" },
+  { value: "!=", label: "is not equal to" },
 ];
 
 export const STEP_CAPABILITIES: StepCapability[] = [

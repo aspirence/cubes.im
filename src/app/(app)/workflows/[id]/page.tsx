@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   App,
@@ -41,6 +41,7 @@ import { useTeamMembers } from "@/features/team-members/use-team-members";
 import { MemberSingleSelect } from "@/features/team-members/member-select";
 import { useProjects } from "@/features/projects/use-projects";
 import {
+  CONDITION_OPS,
   STEP_CAPABILITIES,
   capabilityForStep,
   skillByKey,
@@ -73,14 +74,23 @@ function MIcon({ name, size = 18, color }: { name: string; size?: number; color?
 type Cfg = Record<string, unknown>;
 
 /** Nice one-line summary of a step's config for the canvas card. */
-function stepSummary(step: WorkflowStep, agents: Agent[]): string {
+function stepSummary(
+  step: WorkflowStep,
+  agents: Agent[],
+  steps: WorkflowStep[],
+  index: number,
+): string {
   const cfg = (step.config as Cfg) ?? {};
   if (step.step_type === "agent") {
     const a = agents.find((x) => x.id === cfg.agent_id);
     return a ? `Agent: ${a.name}` : "Agent: (pick one)";
   }
   if (step.step_type === "condition") {
-    return `${cfg.left ?? "…"} ${cfg.op ?? "?"} ${cfg.right ?? "…"}`;
+    const left = cfg.left
+      ? tokenDisplay(String(cfg.left), steps, index, agents)
+      : "…";
+    const op = CONDITION_OPS.find((o) => o.value === cfg.op)?.label ?? "?";
+    return `Continue if ${left} ${op} ${cfg.right ?? "…"}`;
   }
   if (step.step_type === "action") {
     return String(cfg.action ?? "action");
@@ -103,6 +113,12 @@ function isStepComplete(step: WorkflowStep, agents: Agent[]): boolean {
   );
 }
 
+/** "leave_pending" → "Leave pending" — plain words for non-technical users. */
+function humanize(key: string): string {
+  const words = key.replace(/_/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 /** Tokens the "Insert data" picker offers, from upstream steps' outputs. */
 function upstreamTokens(
   steps: WorkflowStep[],
@@ -114,8 +130,10 @@ function upstreamTokens(
     const s = steps[i];
     const cfg = (s.config as Cfg) ?? {};
     const tokens: { label: string; token: string }[] = [];
+    let stepTitle = s.step_key;
     if (s.step_type === "agent") {
       const a = agents.find((x) => x.id === cfg.agent_id);
+      if (a) stepTitle = a.name;
       const skills = Array.isArray(a?.skills) ? (a!.skills as { skill: string }[]) : [];
       for (const sk of skills) {
         const desc = skillByKey(sk.skill);
@@ -125,22 +143,41 @@ function upstreamTokens(
         } else {
           for (const out of desc.outputs) {
             tokens.push({
-              label: `${desc.title} → ${out}`,
+              label: `${desc.title} · ${humanize(out)}`,
               token: `steps.${s.step_key}.${sk.skill}.${out}`,
             });
           }
         }
       }
     } else if (s.step_type === "condition") {
-      tokens.push({ label: "passed", token: `steps.${s.step_key}.passed` });
+      stepTitle = "Condition";
+      tokens.push({ label: "Condition passed", token: `steps.${s.step_key}.passed` });
     } else if (s.step_type === "action" && cfg.action === "notify_user") {
-      tokens.push({ label: "notified", token: `steps.${s.step_key}.notified` });
+      stepTitle = "Notify member";
+      tokens.push({ label: "Notification sent", token: `steps.${s.step_key}.notified` });
     } else if (s.step_type === "action" && cfg.action === "create_task") {
-      tokens.push({ label: "task_id", token: `steps.${s.step_key}.task_id` });
+      stepTitle = "Create task";
+      tokens.push({ label: "Created task id", token: `steps.${s.step_key}.task_id` });
     }
-    if (tokens.length) groups.push({ label: s.step_key, tokens });
+    if (tokens.length) groups.push({ label: `Step ${i + 1} · ${stepTitle}`, tokens });
   }
   return groups;
+}
+
+/** Friendly label for a stored "{{steps.…}}" value (or the raw text itself). */
+function tokenDisplay(
+  value: string,
+  steps: WorkflowStep[],
+  stepIndex: number,
+  agents: Agent[],
+): string {
+  const m = /^\{\{(.+)\}\}$/.exec(value.trim());
+  if (!m) return value;
+  for (const g of upstreamTokens(steps, stepIndex, agents)) {
+    const hit = g.tokens.find((t) => t.token === m[1]);
+    if (hit) return hit.label;
+  }
+  return value;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -303,6 +340,10 @@ export default function WorkflowBuilderPage() {
   const [lastRunId, setLastRunId] = useState<string | null>(null);
   // Canvas chrome
   const [zoom, setZoom] = useState(1);
+  // Drag-to-pan: grab anywhere on the canvas background to move the view.
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [panning, setPanning] = useState(false);
+  const panDrag = useRef<{ startX: number; startY: number; ox: number; oy: number } | null>(null);
   const [pickerAt, setPickerAt] = useState<number | null>(null); // insert index; null = closed
   const [pickerQ, setPickerQ] = useState("");
   const [pickerCat, setPickerCat] = useState<string>("All");
@@ -591,7 +632,7 @@ export default function WorkflowBuilderPage() {
         {[
           { icon: "add", label: "Zoom in", onClick: () => setZoom((z) => Math.min(1.4, +(z + 0.1).toFixed(2))) },
           { icon: "remove", label: "Zoom out", onClick: () => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(2))) },
-          { icon: "fit_screen", label: "Reset zoom", onClick: () => setZoom(1) },
+          { icon: "fit_screen", label: "Reset view", onClick: () => { setZoom(1); setPan({ x: 0, y: 0 }); } },
         ].map((b) => (
           <Tooltip key={b.icon} title={b.label} placement="right">
             <button
@@ -619,11 +660,45 @@ export default function WorkflowBuilderPage() {
         </div>
       </div>
 
-      {/* Canvas ---------------------------------------------------------- */}
-      <div style={{ position: "absolute", inset: 0, overflow: "auto", padding: "84px 24px 60px" }}>
+      {/* Canvas — drag anywhere on the background to pan; wheel scrolls. */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          overflow: "hidden",
+          padding: "84px 24px 60px",
+          cursor: panning ? "grabbing" : "grab",
+          touchAction: "none",
+        }}
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          // Only pan from the background — not nodes, buttons, or inputs.
+          const el = e.target as HTMLElement;
+          if (el.closest(".wl-wf-node, button, input, a, .ant-tag")) return;
+          panDrag.current = { startX: e.clientX, startY: e.clientY, ox: pan.x, oy: pan.y };
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          setPanning(true);
+        }}
+        onPointerMove={(e) => {
+          const d = panDrag.current;
+          if (!d) return;
+          setPan({ x: d.ox + e.clientX - d.startX, y: d.oy + e.clientY - d.startY });
+        }}
+        onPointerUp={() => {
+          panDrag.current = null;
+          setPanning(false);
+        }}
+        onPointerCancel={() => {
+          panDrag.current = null;
+          setPanning(false);
+        }}
+        onWheel={(e) => {
+          setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+        }}
+      >
         <div
           style={{
-            transform: `scale(${zoom})`,
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
             transformOrigin: "top center",
             display: "flex",
             flexDirection: "column",
@@ -781,7 +856,7 @@ export default function WorkflowBuilderPage() {
                             whiteSpace: "nowrap",
                           }}
                         >
-                          {stepSummary(s, agentList)}
+                          {stepSummary(s, agentList, stepList, i)}
                         </div>
                       </div>
                       <Tag style={{ margin: 0, fontSize: 10.5 }}>{s.step_key}</Tag>
@@ -993,6 +1068,134 @@ export default function WorkflowBuilderPage() {
 /* Inspector (unchanged).                                                     */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Point-and-click condition editor for non-technical users: pick a value that
+ * an earlier step produced, choose a plain-language comparison, type the
+ * number/text to compare against — and read the sentence it makes. The raw
+ * "{{steps.…}}" template stays available behind an "advanced" toggle and old
+ * configs load into it automatically.
+ */
+function ConditionBuilder({
+  draft,
+  set,
+  insertGroups,
+}: {
+  draft: Cfg;
+  set: (key: string, value: unknown) => void;
+  insertGroups: { label: string; tokens: { label: string; token: string }[] }[];
+}) {
+  const left = typeof draft.left === "string" ? draft.left : "";
+  const selectOptions = insertGroups.map((g) => ({
+    label: g.label,
+    options: g.tokens.map((t) => ({ value: `{{${t.token}}}`, label: t.label })),
+  }));
+  const knownValues = insertGroups.flatMap((g) => g.tokens.map((t) => `{{${t.token}}}`));
+  // Old / hand-written configs that aren't a known token open in advanced mode.
+  const [advanced, setAdvanced] = useState(() => Boolean(left) && !knownValues.includes(left));
+
+  const leftLabel = left
+    ? insertGroups.flatMap((g) => g.tokens).find((t) => `{{${t.token}}}` === left)?.label ?? left
+    : null;
+  const opLabel = CONDITION_OPS.find((o) => o.value === draft.op)?.label ?? null;
+  const right = draft.right === undefined || draft.right === null ? "" : String(draft.right);
+
+  return (
+    <div>
+      <Typography.Title level={5} style={{ marginTop: 0 }}>
+        Condition
+      </Typography.Title>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12.5 }}>
+        The workflow continues past this step only when the check below is true.
+      </Typography.Paragraph>
+
+      <div style={{ marginBottom: 14 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 4,
+          }}
+        >
+          <Typography.Text style={{ fontSize: 13 }}>
+            Check this value<span style={{ color: "#e0556a" }}> *</span>
+          </Typography.Text>
+          <Button
+            size="small"
+            type="link"
+            style={{ padding: 0, fontSize: 12 }}
+            onClick={() => setAdvanced((v) => !v)}
+          >
+            {advanced ? "Pick from a list" : "Type a custom value"}
+          </Button>
+        </div>
+        {advanced ? (
+          <Input
+            value={left}
+            placeholder="A number, text, or {{data from a step}}"
+            onChange={(e) => set("left", e.target.value)}
+          />
+        ) : insertGroups.length === 0 ? (
+          <Typography.Paragraph type="secondary" style={{ fontSize: 12.5, margin: 0 }}>
+            No data to check yet — add a step <b>before</b> this one that produces
+            data (for example an agent report), and its numbers will show up here.
+          </Typography.Paragraph>
+        ) : (
+          <Select
+            style={{ width: "100%" }}
+            showSearch
+            optionFilterProp="label"
+            placeholder="Pick data from a previous step"
+            value={knownValues.includes(left) ? left : undefined}
+            options={selectOptions}
+            onChange={(v) => set("left", v)}
+          />
+        )}
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <Typography.Text style={{ fontSize: 13 }}>
+          Comparison<span style={{ color: "#e0556a" }}> *</span>
+        </Typography.Text>
+        <Select
+          style={{ width: "100%", marginTop: 4 }}
+          placeholder="How to compare"
+          value={(draft.op as string) || undefined}
+          options={CONDITION_OPS}
+          onChange={(v) => set("op", v)}
+        />
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <Typography.Text style={{ fontSize: 13 }}>Compared to</Typography.Text>
+        <Input
+          style={{ marginTop: 4 }}
+          value={right}
+          placeholder="e.g. 0"
+          onChange={(e) => set("right", e.target.value)}
+        />
+      </div>
+
+      {leftLabel && opLabel ? (
+        <div
+          style={{
+            background: "#f6f7fb",
+            border: `1px solid ${T.border}`,
+            borderRadius: 10,
+            padding: "10px 12px",
+            fontSize: 12.5,
+            lineHeight: 1.55,
+            color: T.textSecondary,
+          }}
+        >
+          Continue only when <b>{leftLabel}</b> {opLabel} <b>{right || "…"}</b>.
+          Otherwise the run stops here.
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function Inspector({
   step,
   agents,
@@ -1036,6 +1239,10 @@ function Inspector({
         </Typography.Paragraph>
       </div>
     );
+  }
+
+  if (step.step_type === "condition") {
+    return <ConditionBuilder draft={draft} set={set} insertGroups={insertGroups} />;
   }
 
   const cap: StepCapability | undefined = capabilityForStep(
