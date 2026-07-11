@@ -58,14 +58,6 @@ export const CORE_PRIMARY_SIDEBAR_ITEMS: PrimarySidebarItem[] = [
     locked: true,
   },
   {
-    id: "/reporting/overview",
-    key: "/reporting/overview",
-    base: "/reporting",
-    icon: "bar_chart",
-    label: "Reporting",
-    kind: "core",
-  },
-  {
     id: "/admin-center/overview",
     key: "/admin-center/overview",
     base: "/admin-center",
