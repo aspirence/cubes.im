@@ -58,15 +58,6 @@ export const CORE_PRIMARY_SIDEBAR_ITEMS: PrimarySidebarItem[] = [
     locked: true,
   },
   {
-    id: "/settings/teams",
-    key: "/settings/teams",
-    base: "/settings/teams",
-    icon: "groups",
-    label: "Workspaces",
-    kind: "core",
-    locked: true,
-  },
-  {
     id: "/reporting/overview",
     key: "/reporting/overview",
     base: "/reporting",
