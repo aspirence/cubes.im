@@ -30,6 +30,7 @@ export const ACTION_NOTIFICATION_TYPES = [
   "mention",
   "assignment",
   "comment",
+  "join_request",
 ] as const;
 
 export function isActionNotification(type: string): boolean {
@@ -258,6 +259,10 @@ export function useNotificationsRealtime() {
         },
         () => {
           queryClient.invalidateQueries({ queryKey: [NOTIFICATIONS_ROOT] });
+          // A join-request approval adds the user to a new workspace server-side;
+          // refresh the team lists so it appears in the switcher immediately.
+          queryClient.invalidateQueries({ queryKey: ["teams"] });
+          queryClient.invalidateQueries({ queryKey: ["active-team"] });
         },
       )
       .subscribe();

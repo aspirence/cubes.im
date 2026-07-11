@@ -535,6 +535,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </div>
   );
 
+  // Onboarding renders as a focused, full-screen flow — no sidebar/topbar chrome.
+  if (pathname === "/setup") {
+    return <>{children}</>;
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: canvas }}>
       {/* Mobile overlay */}

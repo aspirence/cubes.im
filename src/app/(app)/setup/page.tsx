@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, Steps, Button, Space, Form, App as AntdApp, Typography, theme } from "antd";
+import { Button, Space, Form, App as AntdApp } from "antd";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/features/auth/use-auth";
 import { useActiveTeam } from "@/features/teams/use-teams";
@@ -11,10 +11,13 @@ import { useInviteMember } from "@/features/invitations/use-invitations";
 import { useSaveTeamDetails } from "@/features/teams/use-team-details";
 import { seedSampleWorkspace } from "@/features/onboarding/sample-workspace";
 import {
+  ChooseModeStep,
+  JoinStep,
   OrganizationStep,
   DetailsStep,
   StartStep,
   InviteStep,
+  type SetupMode,
   type OrganizationValues,
   type DetailsValues,
   type StartChoice,
@@ -22,16 +25,15 @@ import {
 } from "./steps";
 
 const STEP_ITEMS = [
-  { title: "Workspace" },
-  { title: "Company details" },
-  { title: "Starting point" },
-  { title: "Invite your team" },
+  { title: "Workspace", desc: "Name your organization" },
+  { title: "Company details", desc: "A few optional details" },
+  { title: "Starting point", desc: "Sample data or blank" },
+  { title: "Invite your team", desc: "Add teammates" },
 ];
 
 export default function SetupPage() {
   const router = useRouter();
   const { message } = AntdApp.useApp();
-  const { token } = theme.useToken();
   const supabase = useMemo(() => createClient(), []);
 
   const { profile } = useAuth();
@@ -41,6 +43,7 @@ export default function SetupPage() {
   const inviteMember = useInviteMember();
   const saveDetails = useSaveTeamDetails();
 
+  const [mode, setMode] = useState<SetupMode | "choose">("choose");
   const [current, setCurrent] = useState(0);
   const [invites, setInvites] = useState<InviteEntry[]>([]);
   const [startChoice, setStartChoice] = useState<StartChoice>("sample");
@@ -177,99 +180,160 @@ export default function SetupPage() {
   };
 
   const isLastStep = current === STEP_ITEMS.length - 1;
+  const firstName = profile?.name ? profile.name.split(" ")[0] : "";
+  const darkBtn = { background: "#111319", borderColor: "#111319" } as const;
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        paddingTop: 8,
-      }}
-    >
-      {/* Welcome header */}
-      <div style={{ textAlign: "center", marginBottom: 22 }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/brand/cubes.im_logo_big.png"
-          alt=""
-          style={{ width: 54, height: 54, objectFit: "contain" }}
-        />
-        <h1
-          style={{
-            margin: "10px 0 0",
-            fontSize: 24,
-            fontWeight: 700,
-            letterSpacing: "-.4px",
-            color: token.colorText,
-          }}
-        >
-          Welcome to Cubes{profile?.name ? `, ${profile.name.split(" ")[0]}` : ""} 👋
-        </h1>
-        <Typography.Text type="secondary" style={{ fontSize: 13.5 }}>
-          Let&apos;s set up your workspace — it takes about a minute.
-        </Typography.Text>
-      </div>
+    <div className="ob">
+      <style>{OB_CSS}</style>
 
-      <Card
-        style={{
-          width: "100%",
-          maxWidth: 720,
-          borderRadius: 16,
-          boxShadow: "0 16px 40px -20px rgba(16,24,40,.18)",
-        }}
-      >
-        <Steps
-          current={current}
-          items={STEP_ITEMS}
-          size="small"
-          style={{ marginBottom: 28 }}
-        />
+      {/* LEFT — brand + vertical stepper */}
+      <aside className="ob-rail">
+        <div className="ob-rail-in">
+          <div className="ob-brand">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/cubes.im_logo_big.png" alt="" /> Cubes
+          </div>
 
-        <div style={{ minHeight: 280 }}>
-          {current === 0 ? (
-            <OrganizationStep form={orgForm} initialValues={orgInitialValues} />
+          <div className="ob-welcome">
+            <h1>Welcome{firstName ? `, ${firstName}` : ""} 👋</h1>
+            <p>Let&apos;s set up your workspace — it takes about a minute.</p>
+          </div>
+
+          {mode === "create" ? (
+            <ol className="ob-steps">
+              {STEP_ITEMS.map((s, i) => {
+                const state = i === current ? "on" : i < current ? "done" : "";
+                return (
+                  <li key={s.title} className={`ob-step ${state}`}>
+                    <span className="ob-step-ic">
+                      {i < current ? (
+                        <span className="material-symbols-rounded" aria-hidden style={{ fontSize: 16 }}>check</span>
+                      ) : (
+                        i + 1
+                      )}
+                    </span>
+                    <span className="ob-step-tx">
+                      <span className="ob-step-t">{s.title}</span>
+                      <span className="ob-step-d">{s.desc}</span>
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
           ) : null}
-          {current === 1 ? <DetailsStep form={detailsForm} /> : null}
-          {current === 2 ? (
-            <StartStep value={startChoice} onChange={setStartChoice} />
-          ) : null}
-          {current === 3 ? (
-            <InviteStep invites={invites} onChange={setInvites} />
-          ) : null}
+
+          <div className="ob-rail-foot">🧊 One login. Zero glue work.</div>
         </div>
+      </aside>
 
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            marginTop: 24,
-          }}
-        >
-          <Button onClick={goBack} disabled={current === 0 || submitting}>
-            Back
-          </Button>
+      {/* RIGHT — the active step */}
+      <main className="ob-main">
+        <div className="ob-main-in">
+          {mode === "choose" ? (
+            <ChooseModeStep
+              onChoose={(m) => {
+                setMode(m);
+                if (m === "create") setCurrent(0);
+              }}
+            />
+          ) : mode === "join" ? (
+            <JoinStep
+              onCreateInstead={() => {
+                setMode("create");
+                setCurrent(0);
+              }}
+            />
+          ) : (
+            <>
+              <div className="ob-topline">
+                <span className="ob-count">Step {current + 1} of {STEP_ITEMS.length}</span>
+                <div className="ob-bar">
+                  <span style={{ width: `${((current + 1) / STEP_ITEMS.length) * 100}%` }} />
+                </div>
+              </div>
 
-          <Space>
-            {/* The company-details step is skippable. */}
-            {current === 1 ? (
-              <Button type="text" onClick={skipStep} disabled={submitting}>
-                Skip for now
-              </Button>
-            ) : null}
+              <div className="ob-form">
+                {current === 0 ? (
+                  <OrganizationStep form={orgForm} initialValues={orgInitialValues} />
+                ) : null}
+                {current === 1 ? <DetailsStep form={detailsForm} /> : null}
+                {current === 2 ? (
+                  <StartStep value={startChoice} onChange={setStartChoice} />
+                ) : null}
+                {current === 3 ? (
+                  <InviteStep invites={invites} onChange={setInvites} />
+                ) : null}
+              </div>
 
-            {isLastStep ? (
-              <Button type="primary" loading={submitting} onClick={finish}>
-                {startChoice === "sample" ? "Finish & add sample data" : "Finish"}
-              </Button>
-            ) : (
-              <Button type="primary" onClick={goNext} disabled={submitting}>
-                Next
-              </Button>
-            )}
-          </Space>
+              <div className="ob-nav">
+                <Button
+                  onClick={() => (current === 0 ? setMode("choose") : goBack())}
+                  disabled={submitting}
+                  size="large"
+                >
+                  Back
+                </Button>
+                <Space>
+                  {current === 1 ? (
+                    <Button type="text" onClick={skipStep} disabled={submitting} size="large">
+                      Skip for now
+                    </Button>
+                  ) : null}
+                  {isLastStep ? (
+                    <Button type="primary" size="large" loading={submitting} onClick={finish} style={darkBtn}>
+                      {startChoice === "sample" ? "Finish & add sample data" : "Finish"}
+                    </Button>
+                  ) : (
+                    <Button type="primary" size="large" onClick={goNext} disabled={submitting} style={darkBtn}>
+                      Next
+                    </Button>
+                  )}
+                </Space>
+              </div>
+            </>
+          )}
         </div>
-      </Card>
+      </main>
     </div>
   );
 }
+
+const OB_CSS = `
+.ob{min-height:100vh;display:grid;grid-template-columns:minmax(320px,400px) 1fr;background:#fff;font-family:var(--font-geist-sans),system-ui,sans-serif;}
+.ob-rail{position:relative;overflow:hidden;background:radial-gradient(120% 80% at 0% 0%, #24262f 0%, #15171d 55%, #0c0d11 100%);color:#fff;}
+.ob-rail-in{display:flex;flex-direction:column;min-height:100vh;padding:40px 40px 34px;}
+.ob-brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:19px;letter-spacing:-.02em;color:#fff;}
+.ob-brand img{width:40px;height:40px;object-fit:contain;}
+.ob-welcome{margin-top:40px;}
+.ob-welcome h1{font-size:26px;font-weight:800;letter-spacing:-.02em;margin:0;color:#fff;line-height:1.15;}
+.ob-welcome p{font-size:14px;color:#a4a8b6;margin:12px 0 0;line-height:1.55;max-width:280px;}
+.ob-steps{list-style:none;margin:44px 0 0;padding:0;display:flex;flex-direction:column;gap:4px;}
+.ob-step{display:flex;gap:13px;align-items:center;padding:11px 12px;border-radius:12px;transition:background .16s;}
+.ob-step.on{background:rgba(255,255,255,.06);}
+.ob-step-ic{flex:none;width:28px;height:28px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;background:rgba(255,255,255,.09);color:#c1c5d0;}
+.ob-step.on .ob-step-ic{background:#fff;color:#111319;}
+.ob-step.done .ob-step-ic{background:#3a3d49;color:#fff;}
+.ob-step-tx{display:flex;flex-direction:column;min-width:0;}
+.ob-step-t{font-size:14.5px;font-weight:700;color:#8b8f9e;letter-spacing:-.01em;}
+.ob-step.on .ob-step-t{color:#fff;}
+.ob-step.done .ob-step-t{color:#d5d8e0;}
+.ob-step-d{font-size:12.5px;color:#767b8a;margin-top:1px;}
+.ob-step.on .ob-step-d{color:#a4a8b6;}
+.ob-rail-foot{margin-top:auto;padding-top:32px;font-size:13px;font-weight:600;color:#7f8493;}
+
+.ob-main{display:flex;align-items:center;justify-content:center;padding:44px 24px;min-height:100vh;overflow-y:auto;}
+.ob-main-in{width:100%;max-width:520px;}
+.ob-topline{margin-bottom:28px;}
+.ob-count{font-size:12px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#9a9da8;}
+.ob-bar{height:5px;border-radius:999px;background:#eef0f4;margin-top:10px;overflow:hidden;}
+.ob-bar span{display:block;height:100%;background:#111319;border-radius:999px;transition:width .35s cubic-bezier(.2,.8,.3,1);}
+.ob-form{min-height:300px;}
+.ob-nav{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:28px;padding-top:22px;border-top:1px solid #eef0f4;}
+
+@media(max-width:860px){
+  .ob{grid-template-columns:1fr;}
+  .ob-rail{display:none;}
+  .ob-main{align-items:flex-start;padding:32px 20px;}
+}
+`;

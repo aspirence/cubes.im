@@ -106,6 +106,7 @@ export const SECTION_NAVS: SectionNav[] = [
     items: [
       { key: "/admin-center/overview", label: "Overview", icon: "space_dashboard" },
       { key: "/admin-center/users", label: "Users", icon: "person" },
+      { key: "/admin-center/join-requests", label: "Join requests", icon: "how_to_reg" },
       { key: "/admin-center/teams", label: "Workspaces", icon: "groups" },
       { key: "/admin-center/projects", label: "Projects", icon: "layers" },
       { key: "/admin-center/billing", label: "Billing", icon: "credit_card" },

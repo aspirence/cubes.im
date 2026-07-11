@@ -8,10 +8,16 @@ import {
 } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveTeam } from "@/features/teams/use-teams";
+import { useAuth } from "@/features/auth/use-auth";
 import type { Database } from "@/types/database";
 
 export type EmailInvitation =
   Database["public"]["Tables"]["email_invitations"]["Row"];
+
+/** A pending invitation addressed to the current user, with the team name. */
+export type MyPendingInvitation = EmailInvitation & {
+  teams: { name: string } | null;
+};
 
 const invitationsKey = (teamId: string | undefined) =>
   ["invitations", teamId] as const;
@@ -75,6 +81,31 @@ export function useInviteMember() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: invitationsKey(teamId) });
+    },
+  });
+}
+
+/**
+ * Lists pending invitations addressed to the CURRENT user's email, across every
+ * team (RLS's `email = my email` predicate allows this cross-team read). Used by
+ * the onboarding "Join a workspace" step to surface "you've been invited" offers.
+ */
+export function useMyPendingInvitations() {
+  const supabase = useMemo(() => createClient(), []);
+  const { profile } = useAuth();
+  const email = profile?.email ?? undefined;
+
+  return useQuery({
+    queryKey: ["my-invitations", email],
+    enabled: Boolean(email),
+    queryFn: async (): Promise<MyPendingInvitation[]> => {
+      const { data, error } = await supabase
+        .from("email_invitations")
+        .select("*, teams(name)")
+        .eq("email", email as string)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as unknown as MyPendingInvitation[];
     },
   });
 }

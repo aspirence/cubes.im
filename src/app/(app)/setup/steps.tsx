@@ -8,11 +8,22 @@ import {
   Space,
   Tag,
   Alert,
+  Skeleton,
+  App as AntdApp,
 } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import type { TeamDetailsInput } from "@/features/teams/use-team-details";
 import { WorkspaceDetailsFields } from "@/features/teams/workspace-details-form";
+import {
+  useJoinableOrg,
+  useRequestToJoin,
+} from "@/features/join-requests/use-join-requests";
+import {
+  useMyPendingInvitations,
+  useAcceptInvitation,
+} from "@/features/invitations/use-invitations";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -66,7 +77,7 @@ export function OrganizationStep({
             { max: 255, message: "Organization name is too long." },
           ]}
         >
-          <Input placeholder="Acme Inc." autoComplete="organization" />
+          <Input placeholder="Acme Inc." autoComplete="organization" size="large" />
         </Form.Item>
 
         <Form.Item
@@ -77,12 +88,259 @@ export function OrganizationStep({
             { max: 55, message: "Workspace name must be 55 characters or fewer." },
           ]}
         >
-          <Input placeholder="Acme HQ" />
+          <Input placeholder="Acme HQ" size="large" />
         </Form.Item>
       </Form>
     </>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* Step 0: Create vs Join                                                     */
+/* -------------------------------------------------------------------------- */
+
+export type SetupMode = "create" | "join";
+
+export function ChooseModeStep({
+  onChoose,
+}: {
+  onChoose: (mode: SetupMode) => void;
+}) {
+  const OPTIONS: { key: SetupMode; icon: string; title: string; desc: string }[] = [
+    {
+      key: "create",
+      icon: "add_business",
+      title: "Create a new workspace",
+      desc: "Set up a brand-new organization and workspace for your team.",
+    },
+    {
+      key: "join",
+      icon: "groups",
+      title: "Join my company",
+      desc: "Your company already uses Cubes — request access with your work email.",
+    },
+  ];
+  return (
+    <>
+      <Title level={4} style={{ marginTop: 0 }}>
+        How would you like to start?
+      </Title>
+      <Paragraph type="secondary">
+        Create your own workspace, or join one your company already has.
+      </Paragraph>
+      <div style={{ display: "grid", gap: 12 }}>
+        {OPTIONS.map((opt) => (
+          <div
+            key={opt.key}
+            role="button"
+            tabIndex={0}
+            onClick={() => onChoose(opt.key)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onChoose(opt.key);
+              }
+            }}
+            style={{
+              display: "flex",
+              gap: 14,
+              alignItems: "center",
+              padding: "18px 16px",
+              borderRadius: 14,
+              cursor: "pointer",
+              border: "2px solid #e8e9f0",
+              background: "#fff",
+              transition: "border-color .16s ease, background .16s ease",
+            }}
+          >
+            <span
+              className="material-symbols-rounded"
+              aria-hidden
+              style={{ fontSize: 24, color: "#111319", flex: "none" }}
+            >
+              {opt.icon}
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 14.5, color: "#17171c" }}>{opt.title}</div>
+              <div style={{ fontSize: 13, color: "#6a6d78", marginTop: 4, lineHeight: 1.6 }}>{opt.desc}</div>
+            </div>
+            <span
+              className="material-symbols-rounded"
+              aria-hidden
+              style={{ fontSize: 22, color: "#c1c5d0", marginLeft: "auto" }}
+            >
+              chevron_right
+            </span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Join flow: request access by domain, or accept a pending invitation        */
+/* -------------------------------------------------------------------------- */
+
+const REQUEST_ERRORS: Record<string, string> = {
+  no_matching_org: "We couldn't find a workspace for your email domain.",
+  already_member: "You're already a member of this organization.",
+  already_pending: "You already have a pending request.",
+};
+
+export function JoinStep({ onCreateInstead }: { onCreateInstead: () => void }) {
+  const router = useRouter();
+  const { message } = AntdApp.useApp();
+  const { data: org, isLoading } = useJoinableOrg();
+  const { data: invites } = useMyPendingInvitations();
+  const requestToJoin = useRequestToJoin();
+  const acceptInvite = useAcceptInvitation();
+
+  async function onRequest() {
+    try {
+      await requestToJoin.mutateAsync();
+      message.success("Request sent — we've notified the admins.");
+      router.replace("/home");
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : "";
+      const key = Object.keys(REQUEST_ERRORS).find((k) => raw.includes(k));
+      message.error(key ? REQUEST_ERRORS[key] : "Couldn't send your request — please try again.");
+    }
+  }
+
+  async function onAccept(id: string) {
+    try {
+      await acceptInvite.mutateAsync(id);
+      message.success("You're in!");
+      router.replace("/home");
+    } catch {
+      message.error("Couldn't accept that invitation — it may have expired.");
+    }
+  }
+
+  return (
+    <>
+      <Title level={4} style={{ marginTop: 0 }}>
+        Join your company&apos;s workspace
+      </Title>
+      <Paragraph type="secondary">
+        We match your work email to an organization that already uses Cubes.
+      </Paragraph>
+
+      {isLoading ? (
+        <Skeleton active paragraph={{ rows: 2 }} />
+      ) : org ? (
+        org.already_member ? (
+          <Alert
+            type="success"
+            showIcon
+            message={`You're already a member of ${org.org_name}.`}
+            action={
+              <Button size="small" type="primary" style={DARK_BTN} onClick={() => router.replace("/home")}>
+                Go to workspace
+              </Button>
+            }
+          />
+        ) : org.pending ? (
+          <Alert
+            type="info"
+            showIcon
+            message="Request pending"
+            description={`We've notified the admins at ${org.org_name}. You'll get a notification when you're approved.`}
+          />
+        ) : (
+          <div
+            style={{
+              border: "1px solid #e8e9f0",
+              borderRadius: 14,
+              padding: 18,
+              display: "flex",
+              alignItems: "center",
+              gap: 14,
+            }}
+          >
+            <span className="material-symbols-rounded" aria-hidden style={{ fontSize: 26, color: "#111319" }}>
+              domain
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 15, color: "#17171c" }}>{org.org_name}</div>
+              <div style={{ fontSize: 13, color: "#6a6d78", marginTop: 2 }}>
+                Matched your domain <b>@{org.domain}</b>
+              </div>
+            </div>
+            <Button
+              type="primary"
+              size="large"
+              loading={requestToJoin.isPending}
+              onClick={onRequest}
+              style={DARK_BTN}
+            >
+              Request to join
+            </Button>
+          </div>
+        )
+      ) : (
+        <Alert
+          type="warning"
+          showIcon
+          message="No workspace found for your email domain"
+          description="Ask an admin to invite you by email, or create your own workspace instead."
+        />
+      )}
+
+      {invites && invites.length > 0 ? (
+        <div style={{ marginTop: 22 }}>
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: ".5px",
+              textTransform: "uppercase",
+              color: "#9a9da8",
+              marginBottom: 10,
+            }}
+          >
+            You&apos;ve been invited
+          </div>
+          <div style={{ display: "grid", gap: 10 }}>
+            {invites.map((inv) => (
+              <div
+                key={inv.id}
+                style={{
+                  border: "1px solid #e8e9f0",
+                  borderRadius: 12,
+                  padding: "12px 14px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                }}
+              >
+                <span className="material-symbols-rounded" aria-hidden style={{ fontSize: 22, color: "#111319" }}>
+                  mail
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{inv.teams?.name ?? "A workspace"}</div>
+                  <div style={{ fontSize: 12.5, color: "#6a6d78" }}>Invitation to {inv.email}</div>
+                </div>
+                <Button size="small" loading={acceptInvite.isPending} onClick={() => onAccept(inv.id)}>
+                  Accept
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div style={{ marginTop: 24 }}>
+        <Button type="link" onClick={onCreateInstead} style={{ paddingLeft: 0 }}>
+          ← Create my own workspace instead
+        </Button>
+      </div>
+    </>
+  );
+}
+
+const DARK_BTN = { background: "#111319", borderColor: "#111319" } as const;
 
 /* -------------------------------------------------------------------------- */
 /* Step 2: Company details                                                    */
@@ -177,10 +435,10 @@ export function StartStep({
                 gap: 14,
                 alignItems: "flex-start",
                 padding: "16px 16px",
-                borderRadius: 12,
+                borderRadius: 14,
                 cursor: "pointer",
-                border: `2px solid ${active ? "#4a4ad0" : "#e8e9f0"}`,
-                background: active ? "#f6f7ff" : "#fff",
+                border: `2px solid ${active ? "#111319" : "#e8e9f0"}`,
+                background: active ? "#f6f7f9" : "#fff",
                 transition: "border-color .16s ease, background .16s ease",
               }}
             >
@@ -189,7 +447,7 @@ export function StartStep({
                 aria-hidden
                 style={{
                   fontSize: 24,
-                  color: active ? "#4a4ad0" : "#9a9da8",
+                  color: active ? "#111319" : "#9a9da8",
                   flex: "none",
                   marginTop: 2,
                 }}
@@ -208,7 +466,11 @@ export function StartStep({
                   }}
                 >
                   {opt.title}
-                  {opt.recommended ? <Tag color="geekblue">Recommended</Tag> : null}
+                  {opt.recommended ? (
+                    <Tag style={{ background: "#111319", color: "#fff", border: "none", borderRadius: 999, fontSize: 11, fontWeight: 600, lineHeight: "18px" }}>
+                      Recommended
+                    </Tag>
+                  ) : null}
                 </div>
                 <div style={{ fontSize: 13, color: "#6a6d78", marginTop: 4, lineHeight: 1.6 }}>
                   {opt.desc}
