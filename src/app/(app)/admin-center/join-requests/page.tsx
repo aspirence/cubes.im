@@ -13,6 +13,7 @@ import {
   Table,
   Tag,
   Typography,
+  theme,
 } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -44,6 +45,7 @@ const CLAIM_ERRORS: Record<string, string> = {
 };
 
 export default function JoinRequestsAdminPage() {
+  const { token } = theme.useToken();
   const { message } = App.useApp();
   const supabase = useMemo(() => createClient(), []);
   const { profile } = useAuth();
@@ -199,7 +201,7 @@ export default function JoinRequestsAdminPage() {
 
       {/* Pending requests */}
       <Card styles={{ body: { padding: 0 } }}>
-        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--ant-color-split, #f0f0f0)" }}>
+        <div style={{ padding: "14px 16px", borderBottom: `1px solid ${token.colorSplit}` }}>
           <Text strong>Pending requests</Text>
         </div>
         <Table<JoinRequest>

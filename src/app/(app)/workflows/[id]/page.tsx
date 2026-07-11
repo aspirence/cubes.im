@@ -16,6 +16,7 @@ import {
   Tag,
   Tooltip,
   Typography,
+  theme,
 } from "antd";
 import {
   ArrowDownOutlined,
@@ -51,13 +52,18 @@ import {
 } from "@/lib/workflows/capabilities";
 import { RunHistory } from "./_components/run-history";
 
-const T = {
-  border: "#ececf0",
-  panel: "#fbfbfc",
-  textSecondary: "#6a6d78",
-  textTertiary: "#9a9da8",
-  accent: "#4a4ad0",
-};
+function useT() {
+  const { token } = theme.useToken();
+  return useMemo(
+    () => ({
+      border: token.colorBorderSecondary,
+      textSecondary: token.colorTextSecondary,
+      textTertiary: token.colorTextTertiary,
+      accent: "#4a4ad0",
+    }),
+    [token],
+  );
+}
 
 function MIcon({ name, size = 18, color }: { name: string; size?: number; color?: string }) {
   return (
@@ -317,6 +323,8 @@ export default function WorkflowBuilderPage() {
   const workflowId = params.id;
   const router = useRouter();
   const { message } = App.useApp();
+  const { token } = theme.useToken();
+  const T = useT();
 
   const { data: workflow, isLoading: wfLoading } = useWorkflow(workflowId);
   const { data: steps } = useWorkflowSteps(workflowId);
@@ -481,7 +489,7 @@ export default function WorkflowBuilderPage() {
 
   const connector = (at: number) => (
     <div key={`conn-${at}`} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-      <div style={{ width: 2, height: 18, background: "#d9dbe3" }} />
+      <div style={{ width: 2, height: 18, background: token.colorBorder }} />
       <Tooltip title={canEdit ? "Add a step here" : "Read-only"}>
         <button
           type="button"
@@ -498,7 +506,7 @@ export default function WorkflowBuilderPage() {
             height: 26,
             borderRadius: 13,
             border: "1.5px dashed #b9bcc9",
-            background: "#fff",
+            background: token.colorBgContainer,
             color: T.accent,
             cursor: canEdit ? "pointer" : "not-allowed",
             display: "inline-flex",
@@ -509,7 +517,7 @@ export default function WorkflowBuilderPage() {
           <PlusOutlined style={{ fontSize: 12 }} />
         </button>
       </Tooltip>
-      <div style={{ width: 2, height: 18, background: "#d9dbe3" }} />
+      <div style={{ width: 2, height: 18, background: token.colorBorder }} />
     </div>
   );
 
@@ -520,8 +528,8 @@ export default function WorkflowBuilderPage() {
         height: "calc(100vh - 58px)",
         position: "relative",
         overflow: "hidden",
-        background: "#f6f7f9",
-        backgroundImage: "radial-gradient(#d9dbe3 1.1px, transparent 1.1px)",
+        background: token.colorBgLayout,
+        backgroundImage: `radial-gradient(${token.colorBorderSecondary} 1.1px, transparent 1.1px)`,
         backgroundSize: "22px 22px",
       }}
     >
@@ -535,7 +543,7 @@ export default function WorkflowBuilderPage() {
           display: "flex",
           alignItems: "center",
           gap: 8,
-          background: "#fff",
+          background: token.colorBgContainer,
           border: `1px solid ${T.border}`,
           borderRadius: 12,
           boxShadow: "0 6px 18px -8px rgba(16,24,40,.14)",
@@ -622,7 +630,7 @@ export default function WorkflowBuilderPage() {
           zIndex: 10,
           display: "flex",
           flexDirection: "column",
-          background: "#fff",
+          background: token.colorBgContainer,
           border: `1px solid ${T.border}`,
           borderRadius: 10,
           boxShadow: "0 6px 18px -8px rgba(16,24,40,.12)",
@@ -711,7 +719,7 @@ export default function WorkflowBuilderPage() {
             className="wl-wf-node"
             style={{
               width: NODE_W,
-              background: "#fff",
+              background: token.colorBgContainer,
               border: `1.5px solid ${T.border}`,
               borderRadius: 12,
               boxShadow: "0 4px 14px -8px rgba(16,24,40,.12)",
@@ -727,7 +735,7 @@ export default function WorkflowBuilderPage() {
                 width: 34,
                 height: 34,
                 borderRadius: 9,
-                background: "#eceefb",
+                background: token.colorPrimaryBg,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -752,7 +760,7 @@ export default function WorkflowBuilderPage() {
           {/* Steps */}
           {stepList.length === 0 ? (
             <>
-              <div style={{ width: 2, height: 26, background: "#d9dbe3" }} />
+              <div style={{ width: 2, height: 26, background: token.colorBorder }} />
               <button
                 type="button"
                 disabled={!canEdit}
@@ -778,7 +786,7 @@ export default function WorkflowBuilderPage() {
               >
                 <PlusOutlined style={{ fontSize: 42 }} />
               </button>
-              <div style={{ marginTop: 14, fontWeight: 700, fontSize: 18, color: "#3a3a42" }}>
+              <div style={{ marginTop: 14, fontWeight: 700, fontSize: 18, color: token.colorText }}>
                 Add your first step
               </div>
               <div style={{ color: T.textTertiary, fontSize: 13 }}>
@@ -804,7 +812,7 @@ export default function WorkflowBuilderPage() {
                       className="wl-wf-node"
                       style={{
                         width: NODE_W,
-                        background: "#fff",
+                        background: token.colorBgContainer,
                         border: `1.5px solid ${isSel ? T.accent : T.border}`,
                         borderRadius: 12,
                         boxShadow: isSel
@@ -823,8 +831,8 @@ export default function WorkflowBuilderPage() {
                           width: 22,
                           height: 22,
                           borderRadius: 11,
-                          background: complete ? "#eceefb" : "#fdf5e6",
-                          color: complete ? T.accent : "#b8842a",
+                          background: complete ? token.colorPrimaryBg : token.colorWarningBg,
+                          color: complete ? T.accent : token.colorWarningText,
                           fontSize: 11.5,
                           fontWeight: 700,
                           display: "flex",
@@ -843,7 +851,7 @@ export default function WorkflowBuilderPage() {
                           </span>
                           {!complete ? (
                             <Tooltip title="Incomplete configuration">
-                              <span style={{ color: "#b8842a", fontSize: 12 }}>⚠</span>
+                              <span style={{ color: token.colorWarningText, fontSize: 12 }}>⚠</span>
                             </Tooltip>
                           ) : null}
                         </div>
@@ -946,7 +954,7 @@ export default function WorkflowBuilderPage() {
                 style={{
                   border: `1px solid ${T.border}`,
                   borderRadius: 12,
-                  background: "#fff",
+                  background: token.colorBgContainer,
                   padding: "14px 12px",
                   cursor: t.available && canEdit ? "pointer" : "not-allowed",
                   opacity: t.available ? 1 : 0.55,
@@ -958,7 +966,7 @@ export default function WorkflowBuilderPage() {
                     width: 40,
                     height: 40,
                     borderRadius: 11,
-                    background: "#eceefb",
+                    background: token.colorPrimaryBg,
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -1058,7 +1066,7 @@ export default function WorkflowBuilderPage() {
         .wl-wf-plus { transition: transform .12s ease, border-color .12s ease; }
         .wl-wf-plus:hover { transform: scale(1.12); border-color: #4a4ad0; }
         .wl-wf-tile { transition: border-color .12s ease, box-shadow .12s ease; }
-        .wl-wf-tile:hover { border-color: #c6c8f0; box-shadow: 0 4px 14px -8px rgba(74,74,208,.3); }
+        .wl-wf-tile:hover { border-color: ${token.colorPrimaryBorder}; box-shadow: 0 4px 14px -8px rgba(74,74,208,.3); }
       `}</style>
     </div>
   );
@@ -1084,6 +1092,8 @@ function ConditionBuilder({
   set: (key: string, value: unknown) => void;
   insertGroups: { label: string; tokens: { label: string; token: string }[] }[];
 }) {
+  const { token } = theme.useToken();
+  const T = useT();
   const left = typeof draft.left === "string" ? draft.left : "";
   const selectOptions = insertGroups.map((g) => ({
     label: g.label,
@@ -1179,7 +1189,7 @@ function ConditionBuilder({
       {leftLabel && opLabel ? (
         <div
           style={{
-            background: "#f6f7fb",
+            background: token.colorFillTertiary,
             border: `1px solid ${T.border}`,
             borderRadius: 10,
             padding: "10px 12px",

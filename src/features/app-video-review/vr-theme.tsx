@@ -1,7 +1,8 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
-import { Dropdown, Tag, Typography } from "antd";
+import { Dropdown, Tag, Typography, theme } from "antd";
 import type { MenuProps } from "antd";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -11,18 +12,25 @@ dayjs.extend(relativeTime);
 
 const { Text } = Typography;
 
-/** Video Review palette — the platform's own light/indigo design language. */
-export const VR = {
-  bg: "#f6f7f9",
-  panel: "#ffffff",
-  panelSoft: "#f2f3f5",
-  hairline: "#ececf0",
-  text: "#17171c",
-  textSecondary: "#6a6d78",
-  textTertiary: "#9a9da8",
-  accent: "#4a4ad0",
-  accentSoft: "#eceefb",
-} as const;
+/** Video Review palette — resolved from the active AntD theme so the app
+ *  follows light/dark mode. */
+export function useVR() {
+  const { token } = theme.useToken();
+  return useMemo(
+    () => ({
+      bg: token.colorBgLayout,
+      panel: token.colorBgContainer,
+      panelSoft: token.colorFillTertiary,
+      hairline: token.colorBorderSecondary,
+      text: token.colorText,
+      textSecondary: token.colorTextSecondary,
+      textTertiary: token.colorTextTertiary,
+      accent: "#4a4ad0",
+      accentSoft: token.colorPrimaryBg,
+    }),
+    [token],
+  );
+}
 
 /**
  * Historically forced a dark subtree; the app now follows the platform theme,
@@ -50,6 +58,7 @@ export function VideoGrid({
   videos: VideoWithProject[];
   cardMenu?: (v: VideoWithProject) => MenuProps;
 }) {
+  const VR = useVR();
   return (
     <div
       style={{

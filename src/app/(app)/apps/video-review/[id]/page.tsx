@@ -32,7 +32,7 @@ import {
 import {
   VRThemeProvider,
   StatusChip,
-  VR,
+  useVR,
 } from "@/features/app-video-review/vr-theme";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -272,6 +272,7 @@ function NewVersionModal({
 /** The review workflow: editor + reviewers, apply/save a template, and the
  *  stage actions (send for review → approve / request changes). */
 function WorkflowPanel({ video }: { video: VideoWithProject }) {
+  const VR = useVR();
   const { message } = App.useApp();
   const { data: members } = useTeamMembers();
   const { data: reviewers } = useVideoReviewers(video.id);
@@ -311,9 +312,9 @@ function WorkflowPanel({ video }: { video: VideoWithProject }) {
   return (
     <div
       style={{
-        border: "1px solid #ececf0",
+        border: `1px solid ${VR.hairline}`,
         borderRadius: 12,
-        background: "#fff",
+        background: VR.panel,
         padding: 14,
         display: "flex",
         flexDirection: "column",
@@ -359,9 +360,9 @@ function WorkflowPanel({ video }: { video: VideoWithProject }) {
               fontWeight: 600,
               padding: "5px 4px",
               borderRadius: 6,
-              color: i <= stageStep ? "#fff" : "#8a8d98",
+              color: i <= stageStep ? "#fff" : VR.textTertiary,
               background:
-                i < stageStep ? "#3a9d6e" : i === stageStep ? "#4a4ad0" : "#f2f3f5",
+                i < stageStep ? "#3a9d6e" : i === stageStep ? "#4a4ad0" : VR.panelSoft,
             }}
           >
             {label}
@@ -370,7 +371,7 @@ function WorkflowPanel({ video }: { video: VideoWithProject }) {
       </div>
 
       <div>
-        <Text style={{ fontSize: 12, color: "#6a6d78" }}>Editor</Text>
+        <Text style={{ fontSize: 12, color: VR.textSecondary }}>Editor</Text>
         <Select
           size="small"
           allowClear
@@ -390,7 +391,7 @@ function WorkflowPanel({ video }: { video: VideoWithProject }) {
       </div>
 
       <div>
-        <Text style={{ fontSize: 12, color: "#6a6d78" }}>Reviewers (client / manager)</Text>
+        <Text style={{ fontSize: 12, color: VR.textSecondary }}>Reviewers (client / manager)</Text>
         <div style={{ marginTop: 4 }}>
           <MemberSelect
             value={reviewerIds}
@@ -506,6 +507,7 @@ function WorkflowPanel({ video }: { video: VideoWithProject }) {
 }
 
 export default function VideoReviewScreen() {
+  const VR = useVR();
   const params = useParams<{ id: string }>();
   const id = params?.id;
   const { message } = App.useApp();

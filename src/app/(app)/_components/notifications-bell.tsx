@@ -61,6 +61,9 @@ interface CardTheme {
   tail2: string;
   cardShadowStrong: string;
   cardShadowSoft: string;
+  rowHover: string;
+  rowTitle: string;
+  rowMeta: string;
 }
 
 function cardTheme(dark: boolean): CardTheme {
@@ -82,6 +85,9 @@ function cardTheme(dark: boolean): CardTheme {
         tail2: "#12151c",
         cardShadowStrong: "0 18px 40px -18px rgba(0,0,0,.6)",
         cardShadowSoft: "0 10px 24px -16px rgba(0,0,0,.5)",
+        rowHover: "rgba(255,255,255,.05)",
+        rowTitle: "#e6e9ef",
+        rowMeta: "#8b909e",
       }
     : {
         well: "#f3f4f8",
@@ -101,6 +107,9 @@ function cardTheme(dark: boolean): CardTheme {
         cardShadowStrong:
           "0 18px 40px -18px rgba(16,24,40,.28), 0 4px 10px -6px rgba(16,24,40,.08)",
         cardShadowSoft: "0 10px 24px -16px rgba(16,24,40,.18)",
+        rowHover: "#f7f7fa",
+        rowTitle: "#17171c",
+        rowMeta: "#9a9da8",
       };
 }
 
@@ -184,6 +193,7 @@ const SNOOZE_CHOICES: { key: string; label: string; hours: number }[] = [
  */
 function NotificationRow({
   n,
+  t,
   onOpen,
   onClear,
   onUnread,
@@ -191,6 +201,7 @@ function NotificationRow({
   showActions,
 }: {
   n: Notification;
+  t: CardTheme;
   onOpen: (n: Notification) => void;
   onClear: (n: Notification) => void;
   onUnread: (n: Notification) => void;
@@ -223,7 +234,7 @@ function NotificationRow({
         padding: "10px 12px",
         borderRadius: 8,
         cursor: href ? "pointer" : "default",
-        background: hover ? "#f7f7fa" : unread ? "rgba(76,76,214,0.045)" : "transparent",
+        background: hover ? t.rowHover : unread ? "rgba(76,76,214,0.045)" : "transparent",
       }}
     >
       <Avatar
@@ -237,7 +248,7 @@ function NotificationRow({
           style={{
             fontSize: 13,
             fontWeight: unread ? 600 : 400,
-            color: "#17171c",
+            color: t.rowTitle,
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
@@ -245,7 +256,7 @@ function NotificationRow({
         >
           {n.message ?? "Notification"}
         </div>
-        <div style={{ fontSize: 11.5, color: "#9a9da8" }}>{meta.label}</div>
+        <div style={{ fontSize: 11.5, color: t.rowMeta }}>{meta.label}</div>
       </div>
 
       {/* Right side: actions on hover (or while the snooze menu is open), else
@@ -721,6 +732,7 @@ export function NotificationsBell() {
           <NotificationRow
             key={n.id}
             n={n}
+            t={t}
             onOpen={openNotification}
             onClear={clear}
             onUnread={unread}
@@ -765,7 +777,7 @@ export function NotificationsBell() {
                 borderRadius: 9,
                 fontSize: 10.5,
                 fontWeight: 600,
-                color: "#6a6d78",
+                color: dark ? "#9aa4b6" : "#6a6d78",
                 background: "rgba(128,128,140,0.14)",
                 cursor: "pointer",
               }}

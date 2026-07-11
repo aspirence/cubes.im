@@ -13,6 +13,7 @@ import {
   Switch,
   Tag,
   Typography,
+  theme,
 } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useActiveTeam } from "@/features/teams/use-teams";
@@ -46,17 +47,23 @@ import {
 
 const { Text, Paragraph, Title } = Typography;
 
-const C = {
-  bg: "#fbfbfc",
-  panel: "#ffffff",
-  panelSoft: "#f5f5f8",
-  hairline: "#ececf0",
-  accent: "#4a4ad0",
-  accentSoft: "#eeeefb",
-  text: "#17171c",
-  textSecondary: "#6a6d78",
-  textTertiary: "#9a9da8",
-} as const;
+function usePortalC() {
+  const { token } = theme.useToken();
+  return useMemo(
+    () => ({
+      bg: token.colorBgLayout,
+      panel: token.colorBgContainer,
+      panelSoft: token.colorFillTertiary,
+      hairline: token.colorBorderSecondary,
+      accent: "#4a4ad0",
+      accentSoft: token.colorPrimaryBg,
+      text: token.colorText,
+      textSecondary: token.colorTextSecondary,
+      textTertiary: token.colorTextTertiary,
+    }),
+    [token],
+  );
+}
 
 const ACCENTS = [
   "#4a4ad0",
@@ -122,11 +129,12 @@ function InstallPrompt({
   onInstall: () => void;
   onManage: () => void;
 }) {
+  const C = usePortalC();
   return (
     <div
       style={{
         minHeight: 420,
-        background: "linear-gradient(180deg,#f3f3fd 0%, #f7f6f4 100%)",
+        background: C.panelSoft,
         border: `1px solid ${C.hairline}`,
         borderRadius: 26,
         padding: 28,
@@ -196,6 +204,7 @@ function InstallPrompt({
 /* --------------------------------------------------------------- manager */
 
 function PortalManager({ portal }: { portal: PortalWithMeta }) {
+  const C = usePortalC();
   const { message } = AntdApp.useApp();
   const { data: projects } = useAppActivatedProjects("client_portal");
   const { data: exposed } = usePortalProjects(portal.id);
@@ -388,7 +397,7 @@ function PortalManager({ portal }: { portal: PortalWithMeta }) {
               padding: "0 10px",
               borderRadius: 6,
               border: `1px solid ${C.hairline}`,
-              background: "#fff",
+              background: C.panel,
               fontSize: 12.5,
               color: C.textSecondary,
             }}
@@ -522,7 +531,7 @@ function PortalManager({ portal }: { portal: PortalWithMeta }) {
                     cursor: "pointer",
                     border:
                       portal.accent === color
-                        ? "2px solid #17171c"
+                        ? `2px solid ${C.text}`
                         : "2px solid transparent",
                     outline:
                       portal.accent === color
@@ -717,6 +726,7 @@ function PortalManager({ portal }: { portal: PortalWithMeta }) {
 /* ------------------------------------------------------------------ page */
 
 export default function ClientPortalPage() {
+  const C = usePortalC();
   const router = useRouter();
   const { message } = AntdApp.useApp();
   const { data: activeTeam } = useActiveTeam();
@@ -811,7 +821,7 @@ export default function ClientPortalPage() {
         overflow: "hidden",
       }}
     >
-      <style>{`@media (max-width:900px){.wl-portal-shell{flex-direction:column;height:auto;overflow:visible;margin-left:0;margin-right:0}.wl-portal-shell>aside{width:100%;border-right:none;border-bottom:1px solid #ececf0}}`}</style>
+      <style>{`@media (max-width:900px){.wl-portal-shell{flex-direction:column;height:auto;overflow:visible;margin-left:0;margin-right:0}.wl-portal-shell>aside{width:100%;border-right:none;border-bottom:1px solid ${C.hairline}}}`}</style>
       {/* Rail — portals per client */}
       <aside
         style={{
@@ -1079,13 +1089,6 @@ export default function ClientPortalPage() {
 
 /* ------------------------------------------------- requests + invoices (v2) */
 
-const panelStyle: React.CSSProperties = {
-  background: C.panel,
-  border: `1px solid ${C.hairline}`,
-  borderRadius: 14,
-  padding: 18,
-};
-
 const REQ_META: Record<string, { label: string; color: string }> = {
   new: { label: "New", color: "#3d7de0" },
   accepted: { label: "Accepted", color: "#2f8f5f" },
@@ -1115,10 +1118,17 @@ function StatusChip({ label, color }: { label: string; color: string }) {
 }
 
 function RequestsSection({ portalId }: { portalId: string }) {
+  const C = usePortalC();
   const { message } = AntdApp.useApp();
   const { data: requests } = usePortalRequests(portalId);
   const updateStatus = useUpdateRequestStatus();
   const list = requests ?? [];
+  const panelStyle: React.CSSProperties = {
+    background: C.panel,
+    border: `1px solid ${C.hairline}`,
+    borderRadius: 14,
+    padding: 18,
+  };
   const setStatus = (id: string, status: PortalRequest["status"]) =>
     updateStatus.mutateAsync({ id, portalId, status }).catch(() => message.error("Couldn't update."));
 
@@ -1172,6 +1182,7 @@ const EMPTY_INVOICE = {
 };
 
 function InvoicesSection({ portalId }: { portalId: string }) {
+  const C = usePortalC();
   const { message } = AntdApp.useApp();
   const { data: invoices } = usePortalInvoices(portalId);
   const save = useSaveInvoice();
@@ -1179,6 +1190,12 @@ function InvoicesSection({ portalId }: { portalId: string }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_INVOICE });
   const list = invoices ?? [];
+  const panelStyle: React.CSSProperties = {
+    background: C.panel,
+    border: `1px solid ${C.hairline}`,
+    borderRadius: 14,
+    padding: 18,
+  };
 
   const submit = async () => {
     const amount = Math.round(parseFloat(form.amount || "0") * 100);

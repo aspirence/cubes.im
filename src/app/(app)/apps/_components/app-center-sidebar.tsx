@@ -2,6 +2,7 @@
 
 import { Suspense } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { theme } from "antd";
 import { INTEGRATION_CATEGORIES } from "@/lib/apps-platform/integrations";
 
 function MIcon({ name, size = 18, color }: { name: string; size?: number; color?: string }) {
@@ -32,6 +33,7 @@ export function AppCenterSidebar() {
 }
 
 function AppCenterSidebarInner() {
+  const { token } = theme.useToken();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -60,17 +62,17 @@ function AppCenterSidebarInner() {
           marginBottom: 1,
           fontSize: 13.5,
           fontWeight: on ? 600 : 500,
-          color: on ? "#4a4ad0" : "#494b54",
-          background: on ? "#eceefb" : "transparent",
+          color: on ? "#4a4ad0" : token.colorText,
+          background: on ? token.colorPrimaryBg : "transparent",
         }}
         onMouseEnter={(e) => {
-          if (!on) e.currentTarget.style.background = "#f4f4f6";
+          if (!on) e.currentTarget.style.background = token.colorFillTertiary;
         }}
         onMouseLeave={(e) => {
           if (!on) e.currentTarget.style.background = "transparent";
         }}
       >
-        <MIcon name={item.icon} size={18} color={on ? "#4a4ad0" : "#8a8d98"} />
+        <MIcon name={item.icon} size={18} color={on ? "#4a4ad0" : token.colorTextTertiary} />
         {item.label}
       </button>
     );
@@ -86,7 +88,7 @@ function AppCenterSidebarInner() {
           alignItems: "center",
           gap: 10,
           padding: "0 16px",
-          borderBottom: "1px solid #ececf0",
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
           flex: "none",
         }}
       >
@@ -103,7 +105,7 @@ function AppCenterSidebarInner() {
         >
           <MIcon name="grid_view" size={18} color="#fff" />
         </div>
-        <span style={{ fontSize: 15, fontWeight: 600, color: "#17171c" }}>App Center</span>
+        <span style={{ fontSize: 15, fontWeight: 600, color: token.colorText }}>App Center</span>
       </div>
 
       <nav style={{ flex: 1, overflowY: "auto", padding: 8 }}>
@@ -112,14 +114,14 @@ function AppCenterSidebarInner() {
             fontSize: 10.5,
             fontWeight: 600,
             letterSpacing: 0.5,
-            color: "#9a9da8",
+            color: token.colorTextTertiary,
             padding: "6px 10px 4px",
           }}
         >
           INTEGRATIONS
         </div>
         {RAIL_TOP.map((item) => renderRow(item))}
-        <div style={{ height: 1, background: "#f0f0f3", margin: "8px 6px" }} />
+        <div style={{ height: 1, background: token.colorSplit, margin: "8px 6px" }} />
         {INTEGRATION_CATEGORIES.map((c) =>
           renderRow({ key: c.key, label: c.label, icon: c.icon }),
         )}

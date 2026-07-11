@@ -14,7 +14,7 @@ import { ProjectsTable } from "./projects-table";
 import { ProjectsGrid } from "./projects-grid";
 import { ProjectDrawer } from "./project-drawer";
 import { FoldersModal } from "./folders-modal";
-import { TOKENS } from "./project-skin";
+import { useProjectSkin } from "./project-skin";
 import type { ProjectRow } from "./types";
 
 type ViewMode = "table" | "grid";
@@ -34,6 +34,7 @@ function SegLabel({ icon, text }: { icon: string; text: string }) {
 export default function ProjectsPage() {
   // Used so App context (message/modal) is mounted for child actions.
   App.useApp();
+  const skin = useProjectSkin();
 
   const [view, setView] = useState<ViewMode>("grid");
   const [folderId, setFolderId] = useState<string | undefined>(undefined);
@@ -118,7 +119,7 @@ export default function ProjectsPage() {
                 fontSize: 21,
                 fontWeight: 600,
                 letterSpacing: "-.4px",
-                color: TOKENS.text,
+                color: skin.text,
                 lineHeight: 1.2,
               }}
             >
@@ -129,8 +130,8 @@ export default function ProjectsPage() {
               style={{
                 fontSize: 12,
                 fontWeight: 600,
-                color: TOKENS.textSecondary,
-                background: TOKENS.chipBg,
+                color: skin.textSecondary,
+                background: skin.chipBg,
                 borderRadius: 999,
                 padding: "2px 9px",
               }}
@@ -139,7 +140,7 @@ export default function ProjectsPage() {
             </span>
           </div>
           <div
-            style={{ fontSize: 13, color: TOKENS.textSecondary, marginTop: 4 }}
+            style={{ fontSize: 13, color: skin.textSecondary, marginTop: 4 }}
           >
             All projects in the active team.
           </div>
@@ -203,7 +204,7 @@ export default function ProjectsPage() {
               alignItems: "center",
               gap: 6,
               fontSize: 13,
-              color: TOKENS.textSecondary,
+              color: skin.textSecondary,
               cursor: "pointer",
             }}
           >
@@ -220,7 +221,7 @@ export default function ProjectsPage() {
               alignItems: "center",
               gap: 6,
               fontSize: 13,
-              color: TOKENS.textSecondary,
+              color: skin.textSecondary,
               cursor: "pointer",
             }}
           >
@@ -250,14 +251,14 @@ export default function ProjectsPage() {
       {/* Active-pill styling to match the indigo token. */}
       <style>{`
         .projects-view-segmented .ant-segmented-item-selected {
-          background: ${TOKENS.accentSoft} !important;
-          color: ${TOKENS.accent} !important;
+          background: ${skin.accentSoft} !important;
+          color: ${skin.accent} !important;
         }
         .projects-view-segmented .ant-segmented-thumb {
-          background: ${TOKENS.accentSoft} !important;
+          background: ${skin.accentSoft} !important;
         }
         .projects-view-segmented .ant-segmented-item-selected .material-symbols-rounded {
-          color: ${TOKENS.accent};
+          color: ${skin.accent};
         }
       `}</style>
 

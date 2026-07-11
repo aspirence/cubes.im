@@ -17,7 +17,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Button, Card, Space, Tag, Typography } from "antd";
+import { Button, Card, Space, Tag, Typography, theme } from "antd";
 import { useInstalledApps } from "@/features/apps-platform/use-installed-apps";
 import {
   getPrimarySidebarCatalog,
@@ -56,6 +56,7 @@ function SortablePinnedItem({
   item: PrimarySidebarItem;
   onRemove: (id: string) => void;
 }) {
+  const { token } = theme.useToken();
   const {
     attributes,
     listeners,
@@ -80,9 +81,9 @@ function SortablePinnedItem({
           alignItems: "center",
           gap: 12,
           padding: "12px 14px",
-          border: "1px solid #ececf0",
+          border: `1px solid ${token.colorBorderSecondary}`,
           borderRadius: 12,
-          background: "#fff",
+          background: token.colorBgContainer,
           boxShadow: isDragging ? "0 10px 24px rgba(16,24,40,.12)" : "0 1px 2px rgba(16,24,40,.04)",
         }}
       >
@@ -94,8 +95,8 @@ function SortablePinnedItem({
               width: 30,
               height: 30,
               borderRadius: 8,
-              background: "#f6f7fb",
-              color: "#b0b4bf",
+              background: token.colorFillTertiary,
+              color: token.colorTextQuaternary,
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
@@ -115,8 +116,8 @@ function SortablePinnedItem({
               height: 30,
               borderRadius: 8,
               border: "none",
-              background: "#f6f7fb",
-              color: "#7d8291",
+              background: token.colorFillTertiary,
+              color: token.colorTextTertiary,
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
@@ -133,8 +134,8 @@ function SortablePinnedItem({
             width: 36,
             height: 36,
             borderRadius: 10,
-            background: item.kind === "app" ? "#f4f7ff" : "#f6f7fb",
-            color: item.kind === "app" ? "#4a4ad0" : "#5a6070",
+            background: item.kind === "app" ? token.colorPrimaryBg : token.colorFillTertiary,
+            color: item.kind === "app" ? "#4a4ad0" : token.colorTextSecondary,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -149,7 +150,7 @@ function SortablePinnedItem({
             style={{
               fontSize: 14,
               fontWeight: 600,
-              color: "#17171c",
+              color: token.colorText,
               display: "flex",
               alignItems: "center",
               gap: 8,
@@ -169,7 +170,7 @@ function SortablePinnedItem({
               </Tag>
             ) : null}
           </div>
-          <div style={{ marginTop: 3, fontSize: 12.5, color: "#6a6d78" }}>
+          <div style={{ marginTop: 3, fontSize: 12.5, color: token.colorTextSecondary }}>
             {item.kind === "app"
               ? "Opens the installed app directly from the primary rail."
               : "Shows this workspace area in the primary rail."}
@@ -196,6 +197,7 @@ function AvailableItemCard({
   item: PrimarySidebarItem;
   onAdd: (id: string) => void;
 }) {
+  const { token } = theme.useToken();
   return (
     <div
       style={{
@@ -203,9 +205,9 @@ function AvailableItemCard({
         alignItems: "center",
         gap: 12,
         padding: "12px 14px",
-        border: "1px solid #ececf0",
+        border: `1px solid ${token.colorBorderSecondary}`,
         borderRadius: 12,
-        background: "#fff",
+        background: token.colorBgContainer,
       }}
     >
       <div
@@ -213,8 +215,8 @@ function AvailableItemCard({
           width: 36,
           height: 36,
           borderRadius: 10,
-          background: item.kind === "app" ? "#f4f7ff" : "#f6f7fb",
-          color: item.kind === "app" ? "#4a4ad0" : "#5a6070",
+          background: item.kind === "app" ? token.colorPrimaryBg : token.colorFillTertiary,
+          color: item.kind === "app" ? "#4a4ad0" : token.colorTextSecondary,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -229,7 +231,7 @@ function AvailableItemCard({
           style={{
             fontSize: 14,
             fontWeight: 600,
-            color: "#17171c",
+            color: token.colorText,
             display: "flex",
             alignItems: "center",
             gap: 8,
@@ -244,7 +246,7 @@ function AvailableItemCard({
             {item.kind === "app" ? "Installed app" : "Core"}
           </Tag>
         </div>
-        <div style={{ marginTop: 3, fontSize: 12.5, color: "#6a6d78" }}>
+        <div style={{ marginTop: 3, fontSize: 12.5, color: token.colorTextSecondary }}>
           Add this item to the primary sidebar.
         </div>
       </div>

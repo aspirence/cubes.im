@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
-import { App, Skeleton } from "antd";
+import { App, Skeleton, theme } from "antd";
 import {
   useNotificationSettings,
   useUpdateNotificationSettings,
 } from "@/features/settings/use-notification-settings";
+import { useUIStore } from "@/store/ui-store";
 import { IosToggle } from "../_components/ios-toggle";
 
 type ToggleKey =
@@ -108,14 +109,6 @@ const CATEGORIES: {
   },
 ];
 
-const card: React.CSSProperties = {
-  background: "#ffffff",
-  border: "1px solid #ececf0",
-  borderRadius: 12,
-  boxShadow: "0 1px 2px rgba(16,24,40,.04)",
-  overflow: "hidden",
-};
-
 const iconChip = (bg: string, tint: string): React.CSSProperties => ({
   display: "inline-flex",
   alignItems: "center",
@@ -151,6 +144,8 @@ function Row({
   onChange: (checked: boolean) => void;
   first: boolean;
 }) {
+  const { token } = theme.useToken();
+  const isDark = useUIStore((s) => s.themeMode === "dark");
   return (
     <div
       style={{
@@ -158,11 +153,13 @@ function Row({
         alignItems: "center",
         gap: 14,
         padding: "12px 18px",
-        borderTop: first ? "1px solid #f0f0f3" : "1px solid #f4f4f6",
+        borderTop: first
+          ? `1px solid ${token.colorSplit}`
+          : `1px solid ${token.colorSplit}`,
         opacity: disabled ? 0.55 : 1,
       }}
     >
-      <span style={iconChip(bg, tint)}>
+      <span style={iconChip(isDark ? `${tint}26` : bg, tint)}>
         <span className="material-symbols-rounded" style={{ fontSize: 18 }}>
           {icon}
         </span>
@@ -173,13 +170,13 @@ function Row({
           style={{
             fontSize: 13.5,
             fontWeight: 600,
-            color: "#17171c",
+            color: token.colorText,
             lineHeight: 1.3,
           }}
         >
           {title}
         </div>
-        <div style={{ fontSize: 12.5, color: "#6a6d78", marginTop: 1 }}>
+        <div style={{ fontSize: 12.5, color: token.colorTextSecondary, marginTop: 1 }}>
           {description}
         </div>
       </div>
@@ -197,8 +194,20 @@ function Row({
 
 export default function NotificationsSettingsPage() {
   const { message } = App.useApp();
+  const { token } = theme.useToken();
   const { data: settings, isLoading } = useNotificationSettings();
   const updateSettings = useUpdateNotificationSettings();
+
+  const card = useMemo<React.CSSProperties>(
+    () => ({
+      background: token.colorBgContainer,
+      border: `1px solid ${token.colorBorderSecondary}`,
+      borderRadius: 12,
+      boxShadow: "0 1px 2px rgba(16,24,40,.04)",
+      overflow: "hidden",
+    }),
+    [token],
+  );
 
   const mutedTypes = useMemo(
     () => new Set(settings?.muted_types ?? []),
@@ -250,13 +259,13 @@ export default function NotificationsSettingsPage() {
               fontSize: 21,
               fontWeight: 600,
               letterSpacing: "-.4px",
-              color: "#17171c",
+              color: token.colorText,
               lineHeight: 1.2,
             }}
           >
             Notifications
           </h1>
-          <p style={{ margin: "4px 0 0", fontSize: 13, color: "#6a6d78" }}>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: token.colorTextSecondary }}>
             Choose how you want to be notified.
           </p>
         </div>
@@ -285,13 +294,13 @@ export default function NotificationsSettingsPage() {
               margin: 0,
               fontSize: 16,
               fontWeight: 600,
-              color: "#17171c",
+              color: token.colorText,
               lineHeight: 1.2,
             }}
           >
             Notify me about
           </h2>
-          <p style={{ margin: "4px 0 0", fontSize: 13, color: "#6a6d78" }}>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: token.colorTextSecondary }}>
             {popupOn
               ? "Pick which in-app notifications you want to receive."
               : "Turn on Pop-up notifications above to receive these in-app notifications."}

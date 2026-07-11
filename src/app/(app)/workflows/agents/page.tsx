@@ -18,8 +18,9 @@ import {
   Tag,
   Typography,
   Upload,
+  theme,
 } from "antd";
-import type { UploadProps } from "antd";
+import type { GlobalToken, UploadProps } from "antd";
 import {
   DeleteOutlined,
   PlayCircleOutlined,
@@ -110,8 +111,9 @@ async function toDataUrl(file: File): Promise<string> {
 
 function renderMascot(
   name: string,
-  src?: string | null,
-  size = 72,
+  src: string | null | undefined,
+  size: number,
+  token: GlobalToken,
 ) {
   return (
     <Avatar
@@ -119,7 +121,7 @@ function renderMascot(
       size={size}
       icon={!src ? <RobotOutlined /> : undefined}
       style={{
-        background: src ? "#fff" : "linear-gradient(135deg, #5658e8 0%, #7c6cff 100%)",
+        background: src ? token.colorBgContainer : "linear-gradient(135deg, #5658e8 0%, #7c6cff 100%)",
         flex: "0 0 auto",
       }}
     >
@@ -130,6 +132,7 @@ function renderMascot(
 
 export default function AgentsPage() {
   const { message } = App.useApp();
+  const { token } = theme.useToken();
   const { data: agents, isLoading } = useAgents();
   const createAgent = useCreateAgent();
   const updateAgent = useUpdateAgent();
@@ -429,14 +432,16 @@ export default function AgentsPage() {
                         border:
                           selectedAgentId === agent.id
                             ? "1px solid rgba(86,88,232,0.4)"
-                            : "1px solid #e8eaf2",
+                            : `1px solid ${token.colorBorderSecondary}`,
                         background:
-                          selectedAgentId === agent.id ? "rgba(86,88,232,0.08)" : "#fff",
+                          selectedAgentId === agent.id
+                            ? "rgba(86,88,232,0.08)"
+                            : token.colorBgContainer,
                         cursor: "pointer",
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        {renderMascot(agent.name, config.mascotUrl, 52)}
+                        {renderMascot(agent.name, config.mascotUrl, 52, token)}
                         <div style={{ minWidth: 0, flex: 1 }}>
                           <Typography.Text strong style={{ display: "block", fontSize: 15 }}>
                             {agent.name}
@@ -495,6 +500,7 @@ export default function AgentsPage() {
                       draft.name,
                       pendingMascotPreview ?? draft.config.mascotUrl,
                       72,
+                      token,
                     )}
                     <div>
                       <Typography.Title level={4} style={{ margin: 0 }}>
@@ -659,11 +665,13 @@ export default function AgentsPage() {
                             border:
                               selectedTaskId === task.id
                                 ? "1px solid rgba(86,88,232,0.4)"
-                                : "1px solid #e8eaf2",
+                                : `1px solid ${token.colorBorderSecondary}`,
                             borderRadius: 14,
                             padding: 12,
                             background:
-                              selectedTaskId === task.id ? "rgba(86,88,232,0.06)" : "#fff",
+                              selectedTaskId === task.id
+                                ? "rgba(86,88,232,0.06)"
+                                : token.colorBgContainer,
                             cursor: "pointer",
                           }}
                         >
@@ -836,10 +844,10 @@ export default function AgentsPage() {
                       <div
                         key={context.key}
                         style={{
-                          border: "1px solid #edf0f8",
+                          border: `1px solid ${token.colorBorderSecondary}`,
                           borderRadius: 14,
                           padding: 12,
-                          background: "#fff",
+                          background: token.colorBgContainer,
                         }}
                       >
                         <Tag
@@ -911,8 +919,8 @@ export default function AgentsPage() {
                     <div
                       style={{
                         borderRadius: 16,
-                        border: "1px solid #edf0f8",
-                        background: "#fbfcff",
+                        border: `1px solid ${token.colorBorderSecondary}`,
+                        background: token.colorFillTertiary,
                         padding: 14,
                         minHeight: 220,
                       }}
@@ -944,8 +952,8 @@ export default function AgentsPage() {
                               style={{
                                 borderRadius: 12,
                                 padding: 12,
-                                background: "#fff",
-                                border: "1px solid #edf0f8",
+                                background: token.colorBgContainer,
+                                border: `1px solid ${token.colorBorderSecondary}`,
                               }}
                             >
                               <Typography.Text strong>{lastRun.trainingTask.title}</Typography.Text>
@@ -961,7 +969,7 @@ export default function AgentsPage() {
                             style={{
                               whiteSpace: "pre-wrap",
                               lineHeight: 1.65,
-                              color: "#1f2430",
+                              color: token.colorText,
                             }}
                           >
                             {lastRun.answer}
@@ -1009,6 +1017,7 @@ export default function AgentsPage() {
                   createName || "A",
                   createMascotPreview,
                   88,
+                  token,
                 )}
               </div>
               <Upload

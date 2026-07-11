@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { App, Button, Card, Input, Modal, Space, Typography } from "antd";
+import { App, Button, Card, Input, Modal, Space, Typography, theme } from "antd";
 import { ExclamationCircleFilled } from "@ant-design/icons";
 import { useAuth } from "@/features/auth/use-auth";
 
 const CONFIRM_PHRASE = "DELETE";
 
 export default function AccountSettingsPage() {
+  const { token } = theme.useToken();
   const { message } = App.useApp();
   const router = useRouter();
   const { signOut } = useAuth();
@@ -56,11 +57,11 @@ export default function AccountSettingsPage() {
 
       <Card
         size="small"
-        style={{ borderColor: "#ffccc7", maxWidth: 560 }}
-        styles={{ header: { borderColor: "#ffccc7" } }}
+        style={{ borderColor: token.colorErrorBorder, maxWidth: 560 }}
+        styles={{ header: { borderColor: token.colorErrorBorder } }}
         title={
           <Space>
-            <ExclamationCircleFilled style={{ color: "#cf1322" }} />
+            <ExclamationCircleFilled style={{ color: token.colorError }} />
             <Typography.Text strong>Danger zone</Typography.Text>
           </Space>
         }

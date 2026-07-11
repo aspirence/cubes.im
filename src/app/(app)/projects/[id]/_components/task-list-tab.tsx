@@ -11,6 +11,7 @@ import {
   Select,
   Skeleton,
   Space,
+  theme,
   Tooltip,
 } from "antd";
 import { useTaskDrawer } from "@/store/task-drawer-store";
@@ -37,21 +38,29 @@ type GroupBy = "status" | "priority" | "assignee";
 /* Design tokens (canonical handoff).                                         */
 /* -------------------------------------------------------------------------- */
 
-const T = {
-  accent: "#4a4ad0",
-  canvas: "#f6f7f9",
-  panel: "#ffffff",
-  hairline: "#ececf0",
-  innerDivider: "#f0f0f3",
-  chip: "#f2f3f5",
-  textPrimary: "#17171c",
-  textSecondary: "#6a6d78",
-  textTertiary: "#9a9da8",
-  textFaint: "#a2a5af",
-  overdue: "#c0453c",
-  rowHover: "#fafafb",
-  mono: "var(--font-geist-mono)",
-} as const;
+function useListTokens() {
+  const { token } = theme.useToken();
+  return useMemo(
+    () => ({
+      accent: "#4a4ad0",
+      canvas: token.colorBgLayout,
+      panel: token.colorBgContainer,
+      hairline: token.colorBorderSecondary,
+      innerDivider: token.colorSplit,
+      chip: token.colorFillTertiary,
+      textPrimary: token.colorText,
+      textSecondary: token.colorTextSecondary,
+      textTertiary: token.colorTextTertiary,
+      textFaint: token.colorTextQuaternary,
+      overdue: "#c0453c",
+      rowHover: token.colorFillQuaternary,
+      mono: "var(--font-geist-mono)",
+    }),
+    [token],
+  );
+}
+
+type ListTokens = ReturnType<typeof useListTokens>;
 
 // Grid: NAME / ASSIGNEE / DUE DATE / PRIORITY
 const GRID_COLUMNS = "minmax(0,1fr) 118px 150px 130px";
@@ -141,8 +150,10 @@ function MSIcon({
 
 function AssigneeAvatars({
   assignees,
+  t: T,
 }: {
   assignees: TaskWithRelations["assignees"];
+  t: ListTokens;
 }) {
   if (!assignees || assignees.length === 0) {
     return (
@@ -178,7 +189,7 @@ function AssigneeAvatars({
 }
 
 /** A due-date cell: mono, red when overdue (and not done). */
-function DueDateCell({ task }: { task: TaskWithRelations }) {
+function DueDateCell({ task, t: T }: { task: TaskWithRelations; t: ListTokens }) {
   const iso = task.end_date;
   if (!iso) {
     return <span style={{ fontSize: 12.5, color: T.textTertiary }}>—</span>;
@@ -205,7 +216,7 @@ function DueDateCell({ task }: { task: TaskWithRelations }) {
 }
 
 /** A priority cell: filled flag glyph coloured by priority + label. */
-function PriorityCell({ task }: { task: TaskWithRelations }) {
+function PriorityCell({ task, t: T }: { task: TaskWithRelations; t: ListTokens }) {
   const p = task.priority;
   if (!p?.name) {
     return <span style={{ fontSize: 12.5, color: T.textTertiary }}>—</span>;
@@ -223,7 +234,7 @@ function PriorityCell({ task }: { task: TaskWithRelations }) {
 /* Column header row.                                                         */
 /* -------------------------------------------------------------------------- */
 
-function ColumnHeader() {
+function ColumnHeader({ t: T }: { t: ListTokens }) {
   const cellStyle: React.CSSProperties = {
     fontSize: 10.5,
     fontWeight: 600,
@@ -258,9 +269,10 @@ interface TaskRowProps {
   task: TaskWithRelations;
   groupColor: string;
   onOpen: (taskId: string) => void;
+  t: ListTokens;
 }
 
-function TaskRowItem({ task, groupColor, onOpen }: TaskRowProps) {
+function TaskRowItem({ task, groupColor, onOpen, t: T }: TaskRowProps) {
   const [hover, setHover] = useState(false);
   return (
     <div
@@ -332,17 +344,17 @@ function TaskRowItem({ task, groupColor, onOpen }: TaskRowProps) {
 
       {/* ASSIGNEE */}
       <div style={{ minWidth: 0 }}>
-        <AssigneeAvatars assignees={task.assignees} />
+        <AssigneeAvatars assignees={task.assignees} t={T} />
       </div>
 
       {/* DUE DATE */}
       <div style={{ minWidth: 0 }}>
-        <DueDateCell task={task} />
+        <DueDateCell task={task} t={T} />
       </div>
 
       {/* PRIORITY */}
       <div style={{ minWidth: 0 }}>
-        <PriorityCell task={task} />
+        <PriorityCell task={task} t={T} />
       </div>
     </div>
   );
@@ -369,6 +381,7 @@ interface TaskGroupSectionProps {
   onOpen: (taskId: string) => void;
   onAddTask: (name: string, statusId: string | undefined) => Promise<void>;
   addDisabled: boolean;
+  t: ListTokens;
 }
 
 function TaskGroupSection({
@@ -376,6 +389,7 @@ function TaskGroupSection({
   onOpen,
   onAddTask,
   addDisabled,
+  t: T,
 }: TaskGroupSectionProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [draftName, setDraftName] = useState("");
@@ -469,7 +483,7 @@ function TaskGroupSection({
 
       {!collapsed && (
         <>
-          <ColumnHeader />
+          <ColumnHeader t={T} />
 
           {group.tasks.map((task) => (
             <TaskRowItem
@@ -477,6 +491,7 @@ function TaskGroupSection({
               task={task}
               groupColor={group.color}
               onOpen={onOpen}
+              t={T}
             />
           ))}
 
@@ -658,6 +673,7 @@ function FilterBar({
 
 export function TaskListTab({ projectId }: { projectId: string }) {
   const { message } = App.useApp();
+  const T = useListTokens();
 
   // Live updates: re-fetch tasks when the project's tasks change.
   useTasksRealtime(projectId);
@@ -749,7 +765,7 @@ export function TaskListTab({ projectId }: { projectId: string }) {
         result.push({
           key: "__no_status__",
           title: "No status",
-          color: "#8a8d98",
+          color: T.textTertiary,
           glyph: "radio_button_unchecked",
           tasks: noStatus,
           createStatusId: undefined,
@@ -782,7 +798,7 @@ export function TaskListTab({ projectId }: { projectId: string }) {
         result.push({
           key: "__no_priority__",
           title: "No priority",
-          color: "#8a8d98",
+          color: T.textTertiary,
           glyph: "flag",
           tasks: noPriority,
           createStatusId: undefined,
@@ -821,14 +837,14 @@ export function TaskListTab({ projectId }: { projectId: string }) {
       result.push({
         key: "__unassigned__",
         title: "Unassigned",
-        color: "#8a8d98",
+        color: T.textTertiary,
         glyph: "person",
         tasks: unassigned,
         createStatusId: undefined,
       });
     }
     return result;
-  }, [groupBy, tasks, statuses, priorities, members]);
+  }, [groupBy, tasks, statuses, priorities, members, T]);
 
   /* ----- mutations ----- */
   const handleAddTask = async (name: string, statusId: string | undefined) => {
@@ -947,6 +963,7 @@ export function TaskListTab({ projectId }: { projectId: string }) {
                 onOpen={open}
                 onAddTask={handleAddTask}
                 addDisabled={createTask.isPending}
+                t={T}
               />
             ))}
           </div>

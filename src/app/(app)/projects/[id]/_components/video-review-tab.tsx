@@ -17,7 +17,7 @@ import {
 } from "@/features/app-video-review/use-video-review";
 import { useImportLocalFolder } from "@/features/app-files/use-files";
 import { NewReviewModal } from "@/features/app-video-review/new-review-modal";
-import { VideoGrid, VR } from "@/features/app-video-review/vr-theme";
+import { VideoGrid, useVR } from "@/features/app-video-review/vr-theme";
 import { errMsg } from "@/lib/err";
 import { useIsTeamAdmin } from "@/features/team-members/use-team-members";
 import { useIsProjectAdmin } from "@/features/projects/use-project-members";
@@ -37,6 +37,7 @@ function MIcon({ name, size = 16, color }: { name: string; size?: number; color?
  * with folders to organize its cuts (create/rename/delete + move videos).
  */
 export function VideoReviewTab({ projectId }: { projectId: string }) {
+  const VR = useVR();
   const { message, modal } = App.useApp();
   const { data: videos, isLoading } = useVideoReviewVideos();
   const { data: folders } = useVideoFolders(projectId);

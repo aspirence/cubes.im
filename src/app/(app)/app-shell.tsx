@@ -181,7 +181,7 @@ function SortableSidebarItem({
             width: collapsed ? 18 : 20,
             height: collapsed ? 18 : 20,
             border: "none",
-            background: collapsed ? "#ffffff" : "transparent",
+            background: collapsed ? (dark ? "#20242e" : "#ffffff") : "transparent",
             color: "#9aa4b6",
             padding: 0,
             cursor: "pointer",
@@ -484,10 +484,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       gap: 10,
                       width: "100%",
                       textAlign: "left",
-                      border: "1px solid #ececf0",
+                      border: `1px solid ${dark ? "#272c38" : "#ececf0"}`,
                       borderRadius: 10,
                       padding: "10px 12px",
-                      background: "#fff",
+                      background: dark ? "#191d27" : "#fff",
                       cursor: "pointer",
                     }}
                   >
@@ -496,11 +496,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         width: 30,
                         height: 30,
                         borderRadius: 8,
-                        background: item.kind === "app" ? "#eef1ff" : "#f6f7fb",
+                        background:
+                          item.kind === "app"
+                            ? dark
+                              ? "rgba(74,74,208,.22)"
+                              : "#eef1ff"
+                            : dark
+                              ? "rgba(255,255,255,.06)"
+                              : "#f6f7fb",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        color: item.kind === "app" ? "#4a4ad0" : "#687083",
+                        color:
+                          item.kind === "app"
+                            ? "#4a4ad0"
+                            : dark
+                              ? "#9aa4b6"
+                              : "#687083",
                         flex: "none",
                       }}
                     >
@@ -512,7 +524,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                           display: "block",
                           fontSize: 13.5,
                           fontWeight: 600,
-                          color: "#17171c",
+                          color: dark ? "#e6e9ef" : "#17171c",
                         }}
                       >
                         {item.label}
@@ -666,7 +678,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     height: 26,
                     flex: "none",
                     border: "none",
-                    background: sidebarEditMode ? "#eceefb" : "transparent",
+                    background: sidebarEditMode
+                      ? dark
+                        ? "rgba(74,74,208,.2)"
+                        : "#eceefb"
+                      : "transparent",
                     borderRadius: 6,
                     color: sidebarEditMode ? "#4a4ad0" : "#9a9da8",
                     cursor: "pointer",
@@ -805,10 +821,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       style={{
                         flex: collapsed ? "none" : 1,
                         minHeight: collapsed ? 38 : 36,
-                        border: `1px solid ${sidebarEditMode ? "#d7dcff" : hair}`,
+                        border: `1px solid ${sidebarEditMode ? (dark ? "rgba(74,74,208,.45)" : "#d7dcff") : hair}`,
                         borderRadius: 12,
-                        background: sidebarEditMode ? "#eef1ff" : "transparent",
-                        color: sidebarEditMode ? "#4a4ad0" : "#687083",
+                        background: sidebarEditMode
+                          ? dark
+                            ? "rgba(74,74,208,.2)"
+                            : "#eef1ff"
+                          : "transparent",
+                        color: sidebarEditMode
+                          ? "#4a4ad0"
+                          : dark
+                            ? "#9aa4b6"
+                            : "#687083",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -1158,8 +1182,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     whiteSpace: "nowrap",
                     flex: "none",
                     cursor: "pointer",
-                    color: it.key === secActive ? "#4a4ad0" : "#6a6d78",
-                    background: it.key === secActive ? "#eceefb" : "#f2f3f5",
+                    color:
+                      it.key === secActive
+                        ? "#4a4ad0"
+                        : dark
+                          ? "#9aa4b6"
+                          : "#6a6d78",
+                    background:
+                      it.key === secActive
+                        ? dark
+                          ? "rgba(74,74,208,.2)"
+                          : "#eceefb"
+                        : dark
+                          ? "#1b1f29"
+                          : "#f2f3f5",
                   }}
                 >
                   <MIcon name={it.icon} size={17} />

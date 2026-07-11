@@ -1,5 +1,7 @@
 "use client";
 
+import { theme } from "antd";
+
 /**
  * Real social-platform brand marks (single-path SVG logos) + brand colours, so
  * channels render with recognisable icons instead of monogram letters. Where we
@@ -145,6 +147,7 @@ export function PlatformBadge({
   size?: number;
   avatarUrl?: string | null;
 }) {
+  const { token } = theme.useToken();
   const b = PLATFORM_BRANDS[platform];
   const color = b?.color ?? "#6a6d78";
   if (avatarUrl) {
@@ -165,7 +168,7 @@ export function PlatformBadge({
             height: size * 0.5,
             borderRadius: 999,
             background: color,
-            border: "1.5px solid #fff",
+            border: `1.5px solid ${token.colorBgContainer}`,
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",

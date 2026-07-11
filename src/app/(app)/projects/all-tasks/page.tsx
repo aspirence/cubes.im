@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { App, Avatar, Empty, Skeleton, Tooltip } from "antd";
+import { App, Avatar, Empty, Skeleton, theme, Tooltip } from "antd";
 import { useTaskDrawer } from "@/store/task-drawer-store";
 import {
   useAllTeamTasks,
@@ -14,19 +14,19 @@ import {
 /* Design tokens (canonical handoff).                                         */
 /* -------------------------------------------------------------------------- */
 
-const T = {
-  accent: "#4a4ad0",
-  panel: "#ffffff",
-  hairline: "#ececf0",
-  innerDivider: "#f0f0f3",
-  textPrimary: "#17171c",
-  textSecondary: "#6a6d78",
-  textTertiary: "#9a9da8",
-  textFaint: "#a2a5af",
-  overdue: "#c0453c",
-  rowHover: "#fafafb",
-  mono: "var(--font-geist-mono)",
-} as const;
+type Tokens = {
+  accent: string;
+  panel: string;
+  hairline: string;
+  innerDivider: string;
+  textPrimary: string;
+  textSecondary: string;
+  textTertiary: string;
+  textFaint: string;
+  overdue: string;
+  rowHover: string;
+  mono: string;
+};
 
 // Grid: NAME / PROJECT / ASSIGNEE / DUE DATE / PRIORITY
 const GRID_COLUMNS = "minmax(0,1fr) 172px 118px 128px 118px";
@@ -115,7 +115,13 @@ function MSIcon({
 }
 
 /** A project chip: colour dot + project name. */
-function ProjectChip({ project }: { project: TeamTaskWithProject["project"] }) {
+function ProjectChip({
+  project,
+  T,
+}: {
+  project: TeamTaskWithProject["project"];
+  T: Tokens;
+}) {
   const dot = project.color_code || paletteFor(project.id);
   return (
     <span
@@ -157,8 +163,10 @@ function ProjectChip({ project }: { project: TeamTaskWithProject["project"] }) {
 
 function AssigneeAvatars({
   assignees,
+  T,
 }: {
   assignees: TeamTaskWithProject["assignees"];
+  T: Tokens;
 }) {
   if (!assignees || assignees.length === 0) {
     return <span style={{ fontSize: 12.5, color: T.textTertiary }}>—</span>;
@@ -192,7 +200,7 @@ function AssigneeAvatars({
 }
 
 /** A due-date cell: mono, red when overdue (and not done). */
-function DueDateCell({ task }: { task: TeamTaskWithProject }) {
+function DueDateCell({ task, T }: { task: TeamTaskWithProject; T: Tokens }) {
   const iso = task.end_date;
   if (!iso) {
     return <span style={{ fontSize: 12.5, color: T.textTertiary }}>—</span>;
@@ -216,7 +224,7 @@ function DueDateCell({ task }: { task: TeamTaskWithProject }) {
 }
 
 /** A priority cell: filled flag glyph coloured by priority + label. */
-function PriorityCell({ task }: { task: TeamTaskWithProject }) {
+function PriorityCell({ task, T }: { task: TeamTaskWithProject; T: Tokens }) {
   const p = task.priority;
   if (!p?.name) {
     return <span style={{ fontSize: 12.5, color: T.textTertiary }}>—</span>;
@@ -234,7 +242,7 @@ function PriorityCell({ task }: { task: TeamTaskWithProject }) {
 /* Column header row.                                                         */
 /* -------------------------------------------------------------------------- */
 
-function ColumnHeader() {
+function ColumnHeader({ T }: { T: Tokens }) {
   const cellStyle: React.CSSProperties = {
     fontSize: 10.5,
     fontWeight: 600,
@@ -270,9 +278,10 @@ interface TaskRowProps {
   task: TeamTaskWithProject;
   groupColor: string;
   onOpen: (task: TeamTaskWithProject) => void;
+  T: Tokens;
 }
 
-function TaskRowItem({ task, groupColor, onOpen }: TaskRowProps) {
+function TaskRowItem({ task, groupColor, onOpen, T }: TaskRowProps) {
   const [hover, setHover] = useState(false);
   return (
     <div
@@ -337,22 +346,22 @@ function TaskRowItem({ task, groupColor, onOpen }: TaskRowProps) {
 
       {/* PROJECT */}
       <div style={{ minWidth: 0 }}>
-        <ProjectChip project={task.project} />
+        <ProjectChip project={task.project} T={T} />
       </div>
 
       {/* ASSIGNEE */}
       <div style={{ minWidth: 0 }}>
-        <AssigneeAvatars assignees={task.assignees} />
+        <AssigneeAvatars assignees={task.assignees} T={T} />
       </div>
 
       {/* DUE DATE */}
       <div style={{ minWidth: 0 }}>
-        <DueDateCell task={task} />
+        <DueDateCell task={task} T={T} />
       </div>
 
       {/* PRIORITY */}
       <div style={{ minWidth: 0 }}>
-        <PriorityCell task={task} />
+        <PriorityCell task={task} T={T} />
       </div>
     </div>
   );
@@ -374,9 +383,11 @@ interface TaskGroup {
 function TaskGroupSection({
   group,
   onOpen,
+  T,
 }: {
   group: TaskGroup;
   onOpen: (task: TeamTaskWithProject) => void;
+  T: Tokens;
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -449,13 +460,14 @@ function TaskGroupSection({
 
       {!collapsed && (
         <>
-          <ColumnHeader />
+          <ColumnHeader T={T} />
           {group.tasks.map((task) => (
             <TaskRowItem
               key={task.id}
               task={task}
               groupColor={group.color}
               onOpen={onOpen}
+              T={T}
             />
           ))}
         </>
@@ -472,6 +484,24 @@ export default function AllTasksPage() {
   App.useApp();
   const router = useRouter();
   const openDrawer = useTaskDrawer((s) => s.open);
+  const { token } = theme.useToken();
+
+  const T = useMemo<Tokens>(
+    () => ({
+      accent: "#4a4ad0",
+      panel: token.colorBgContainer,
+      hairline: token.colorBorderSecondary,
+      innerDivider: token.colorSplit,
+      textPrimary: token.colorText,
+      textSecondary: token.colorTextSecondary,
+      textTertiary: token.colorTextTertiary,
+      textFaint: token.colorTextQuaternary,
+      overdue: "#c0453c",
+      rowHover: token.colorFillQuaternary,
+      mono: "var(--font-geist-mono)",
+    }),
+    [token],
+  );
 
   const { data, isLoading } = useAllTeamTasks();
   const tasks = useMemo(() => data ?? [], [data]);
@@ -513,14 +543,14 @@ export default function AllTasksPage() {
       result.push({
         key: "__no_status__",
         title: "No status",
-        color: "#8a8d98",
+        color: T.textTertiary,
         glyph: "radio_button_unchecked",
         sortOrder: Number.MAX_SAFE_INTEGER,
         tasks: noStatus,
       });
     }
     return result;
-  }, [tasks]);
+  }, [tasks, T]);
 
   /* ----- row click: open shared drawer, fall back to project ----- */
   const handleOpen = (task: TeamTaskWithProject) => {
@@ -629,6 +659,7 @@ export default function AllTasksPage() {
               key={group.key}
               group={group}
               onOpen={handleOpen}
+              T={T}
             />
           ))}
         </div>

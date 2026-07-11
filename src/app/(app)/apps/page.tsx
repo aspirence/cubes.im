@@ -14,6 +14,7 @@ import {
   Tag,
   Tooltip,
   Typography,
+  theme,
 } from "antd";
 import {
   useInstalledApps,
@@ -87,6 +88,7 @@ export default function AppCenterPage() {
 function AppCenterInner() {
   const router = useRouter();
   const { message } = App.useApp();
+  const { token } = theme.useToken();
 
   const { data: installed } = useInstalledApps();
   const { data: isTeamAdmin } = useIsTeamAdmin();
@@ -159,9 +161,9 @@ function AppCenterInner() {
         className="wl-app-card"
         style={{
           textAlign: "left",
-          border: "1px solid #ececf0",
+          border: `1px solid ${token.colorBorderSecondary}`,
           borderRadius: 12,
-          background: "#fff",
+          background: token.colorBgContainer,
           padding: 16,
           display: "flex",
           gap: 12,
@@ -434,7 +436,7 @@ function AppCenterInner() {
 
       <style>{`
         .wl-app-card { transition: border-color .12s ease, box-shadow .12s ease; }
-        .wl-app-card:hover { border-color: #d6d7de; box-shadow: 0 4px 14px -6px rgba(16,24,40,.12); }
+        .wl-app-card:hover { border-color: ${token.colorBorder}; box-shadow: 0 4px 14px -6px rgba(16,24,40,.12); }
       `}</style>
     </div>
   );

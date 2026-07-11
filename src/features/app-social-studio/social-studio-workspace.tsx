@@ -12,6 +12,7 @@ import {
   Select,
   Tag,
   Typography,
+  theme,
 } from "antd";
 import { useProject } from "@/features/projects/use-projects";
 import { useAppActivatedProjects } from "@/features/apps-platform/app-scope";
@@ -53,25 +54,32 @@ const { Title, Paragraph } = Typography;
 const { TextArea } = Input;
 
 // Aligned to the platform design language (indigo primary, neutral greys,
-// #ececf0 hairlines) so Social Studio reads as part of Cubes rather than a
+// token hairlines) so Social Studio reads as part of Cubes rather than a
 // separate product. Semantic status colors (red/green/gold) are kept.
-const C = {
-  bg: "#f6f7f9",
-  panel: "#ffffff",
-  panelSoft: "#f5f6f8",
-  hair: "#ececf0",
-  text: "#17171c",
-  textSecondary: "#6a6d78",
-  textTertiary: "#9a9da8",
-  accent: "#4a4ad0",
-  accentSoft: "rgba(74,74,208,0.10)",
-  accentDeep: "#3a3ab0",
-  mint: "#2f9c9c",
-  lavender: "#7a5af5",
-  red: "#c0453c",
-  green: "#2f8f5f",
-  gold: "#b8842a",
-};
+// Neutral surfaces/text derive from AntD theme tokens so dark mode works.
+function useC() {
+  const { token } = theme.useToken();
+  return useMemo(
+    () => ({
+      bg: token.colorBgLayout,
+      panel: token.colorBgContainer,
+      panelSoft: token.colorFillTertiary,
+      hair: token.colorBorderSecondary,
+      text: token.colorText,
+      textSecondary: token.colorTextSecondary,
+      textTertiary: token.colorTextTertiary,
+      accent: "#4a4ad0",
+      accentSoft: "rgba(74,74,208,0.10)",
+      accentDeep: "#3a3ab0",
+      mint: "#2f9c9c",
+      lavender: "#7a5af5",
+      red: "#c0453c",
+      green: "#2f8f5f",
+      gold: "#b8842a",
+    }),
+    [token],
+  );
+}
 
 /** Resolve a platform's brand meta with a safe fallback for unknown values. */
 function brandMeta(platform: string): { label: string; mono: string; color: string } {
@@ -140,6 +148,7 @@ function PlatformChip({
   platform: SocialPlatform;
   handle?: string | null;
 }) {
+  const C = useC();
   const meta = brandMeta(platform);
   return (
     <span
@@ -149,7 +158,7 @@ function PlatformChip({
         gap: 7,
         padding: "5px 8px",
         borderRadius: 999,
-        background: "rgba(255,255,255,0.72)",
+        background: C.panel,
         border: `1px solid ${C.hair}`,
         fontSize: 11.5,
         color: C.textSecondary,
@@ -186,6 +195,7 @@ function MetricCard({
   detail: string;
   tone: string;
 }) {
+  const C = useC();
   return (
     <div
       style={{
@@ -233,6 +243,7 @@ function ViewTab({
   label: string;
   onClick: () => void;
 }) {
+  const C = useC();
   return (
     <button
       type="button"
@@ -242,8 +253,8 @@ function ViewTab({
         padding: "0 14px",
         borderRadius: 12,
         border: "none",
-        background: active ? C.text : "#fff",
-        color: active ? "#fff" : C.textSecondary,
+        background: active ? C.text : C.panel,
+        color: active ? C.panel : C.textSecondary,
         display: "inline-flex",
         alignItems: "center",
         gap: 8,
@@ -252,7 +263,7 @@ function ViewTab({
         boxShadow: active ? "0 12px 30px rgba(30,29,25,0.16)" : "none",
       }}
     >
-      <MIcon name={icon} size={17} color={active ? "#fff" : C.textTertiary} />
+      <MIcon name={icon} size={17} color={active ? C.panel : C.textTertiary} />
       {label}
     </button>
   );
@@ -267,6 +278,7 @@ function EmptyPanel({
   desc: string;
   action?: React.ReactNode;
 }) {
+  const C = useC();
   return (
     <div
       style={{
@@ -297,6 +309,7 @@ function PostCard({
   post: SocialPostWithRelations;
   onStatusChange: (post: SocialPostWithRelations, status: SocialPostStatus) => void;
 }) {
+  const C = useC();
   const nextAction: Partial<Record<SocialPostStatus, { label: string; to: SocialPostStatus }>> = {
     draft: { label: "Send approval", to: "pending_approval" },
     pending_approval: { label: "Schedule", to: "scheduled" },
@@ -320,7 +333,7 @@ function PostCard({
   return (
     <div
       style={{
-        background: "#fff",
+        background: C.panel,
         border: `1px solid ${C.hair}`,
         borderRadius: 16,
         padding: 14,
@@ -391,11 +404,12 @@ function InstallPrompt({
   onInstall: () => void;
   onManage: () => void;
 }) {
+  const C = useC();
   return (
     <div
       style={{
         minHeight: 420,
-        background: "linear-gradient(180deg,#f4f4fb 0%, #f6f7f9 100%)",
+        background: C.panelSoft,
         border: `1px solid ${C.hair}`,
         borderRadius: 26,
         padding: 28,
@@ -484,6 +498,8 @@ export function SocialStudioWorkspace({
   embedded?: boolean;
 }) {
   const router = useRouter();
+  const { token } = theme.useToken();
+  const C = useC();
   const { message } = App.useApp();
   const { data: activeTeam } = useActiveTeam();
   const { data: installedApps } = useInstalledApps();
@@ -861,7 +877,7 @@ export function SocialStudioWorkspace({
           <div
             key={campaign.id}
             style={{
-              background: "#fff",
+              background: C.panel,
               border: `1px solid ${C.hair}`,
               borderRadius: 18,
               padding: 16,
@@ -1086,7 +1102,7 @@ export function SocialStudioWorkspace({
                   border: `1px solid ${C.hair}`,
                   borderRadius: 16,
                   padding: 14,
-                  background: file.mime?.startsWith("image/") ? "#f6f7f9" : "#fff",
+                  background: file.mime?.startsWith("image/") ? C.bg : C.panel,
                 }}
               >
                 <div
@@ -1210,7 +1226,7 @@ export function SocialStudioWorkspace({
                       {channel.engagements.toLocaleString()} engagements
                     </div>
                   </div>
-                  <div style={{ height: 8, borderRadius: 999, background: "#ececf0", overflow: "hidden" }}>
+                  <div style={{ height: 8, borderRadius: 999, background: token.colorSplit, overflow: "hidden" }}>
                     <div
                       style={{
                         width: `${Math.max(10, Math.min(100, channel.engagements / Math.max(stats.engagements, 1) * 100))}%`,
@@ -1350,7 +1366,7 @@ export function SocialStudioWorkspace({
               flex: "none",
               minHeight: 0,
               borderRight: `1px solid ${C.hair}`,
-              background: "#ffffff",
+              background: C.panel,
               padding: "16px 10px",
               display: "flex",
               flexDirection: "column",
@@ -1558,7 +1574,7 @@ export function SocialStudioWorkspace({
                       padding: "10px 6px",
                       borderRadius: 12,
                       cursor: "pointer",
-                      background: active ? `${meta.color}14` : "#fff",
+                      background: active ? `${meta.color}14` : C.panel,
                       border: `1.5px solid ${active ? meta.color : C.hair}`,
                       transition: "all 120ms",
                     }}

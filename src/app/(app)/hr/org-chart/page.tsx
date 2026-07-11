@@ -13,6 +13,7 @@ import {
   Tag,
   Tree,
   Typography,
+  theme,
 } from "antd";
 import type { DataNode, TreeProps } from "antd/es/tree";
 import { InfoCircleOutlined, TeamOutlined, UserOutlined } from "@ant-design/icons";
@@ -134,6 +135,7 @@ function buildTree(employees: HrEmployeeWithRelations[]): {
 }
 
 export default function HrOrgChartPage() {
+  const { token } = theme.useToken();
   const { message } = App.useApp();
   const { isHrAdmin } = useHrAccess();
   const { data, isLoading, isError, error } = useHrEmployees();
@@ -193,7 +195,7 @@ export default function HrOrgChartPage() {
         ...node,
         title:
           isMatch && typeof node.title !== "function" ? (
-            <span style={{ background: "#fffbe6", borderRadius: 4 }}>
+            <span style={{ background: token.colorWarningBg, borderRadius: 4 }}>
               {node.title as React.ReactNode}
             </span>
           ) : (

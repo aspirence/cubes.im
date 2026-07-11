@@ -24,7 +24,7 @@ import { NewReviewModal } from "@/features/app-video-review/new-review-modal";
 import {
   VRThemeProvider,
   VideoGrid,
-  VR,
+  useVR,
 } from "@/features/app-video-review/vr-theme";
 
 const { Text } = Typography;
@@ -38,6 +38,7 @@ function MIcon({ name, size = 18, color }: { name: string; size?: number; color?
 }
 
 function StatCard({ icon, label, value, tone }: { icon: string; label: string; value: number; tone?: string }) {
+  const VR = useVR();
   return (
     <div
       style={{
@@ -87,6 +88,7 @@ function QuickAction({
   gradient: string;
   onClick: () => void;
 }) {
+  const VR = useVR();
   return (
     <button
       type="button"
@@ -137,6 +139,7 @@ function QuickAction({
 }
 
 export default function VideoReviewHubPage() {
+  const VR = useVR();
   const { data: activeTeam } = useActiveTeam();
   const teamAdmin = useIsTeamAdmin();
   const { data: projects } = useAppActivatedProjects("video_review");

@@ -21,6 +21,7 @@ import {
   Spin,
   Switch,
   Tag,
+  theme,
   Typography,
 } from "antd";
 import {
@@ -292,6 +293,7 @@ function PreviewDrawer({
   companyName: string;
   onClose: () => void;
 }) {
+  const { token } = theme.useToken();
   return (
     <Drawer
       title={preview?.title ?? "Preview"}
@@ -328,8 +330,8 @@ function PreviewDrawer({
           </Space>
           <div
             style={{
-              background: "#fff",
-              border: "1px solid #f0f0f0",
+              background: token.colorBgContainer,
+              border: `1px solid ${token.colorSplit}`,
               borderRadius: 12,
               padding: 20,
               lineHeight: 1.7,

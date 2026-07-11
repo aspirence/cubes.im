@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { App, Input, Modal, Segmented, Select, Typography, Upload } from "antd";
+import { App, Input, Modal, Segmented, Select, Typography, Upload, theme } from "antd";
 import type { UploadFile } from "antd";
 import { VideoCameraOutlined } from "@ant-design/icons";
 import { useProjects } from "@/features/projects/use-projects";
@@ -57,6 +57,7 @@ export function NewReviewModal({
   defaultTaskId?: string | null;
   onCreated?: (id: string) => void;
 }) {
+  const { token } = theme.useToken();
   const { message } = App.useApp();
   const { data: projects } = useProjects();
   const create = useCreateVideoReview();
@@ -135,7 +136,7 @@ export function NewReviewModal({
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8 }}>
         <div>
-          <Text style={{ fontSize: 12.5, color: "#6a6d78" }}>Title</Text>
+          <Text style={{ fontSize: 12.5, color: token.colorTextSecondary }}>Title</Text>
           <Input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -146,7 +147,7 @@ export function NewReviewModal({
         </div>
         {selectedProjectId && (folders ?? []).length > 0 ? (
           <div>
-            <Text style={{ fontSize: 12.5, color: "#6a6d78" }}>Folder (optional)</Text>
+            <Text style={{ fontSize: 12.5, color: token.colorTextSecondary }}>Folder (optional)</Text>
             <Select
               allowClear
               placeholder="No folder"
@@ -159,7 +160,7 @@ export function NewReviewModal({
         ) : null}
         {defaultProjectId ? null : (
           <div>
-            <Text style={{ fontSize: 12.5, color: "#6a6d78" }}>Project (optional)</Text>
+            <Text style={{ fontSize: 12.5, color: token.colorTextSecondary }}>Project (optional)</Text>
             <Select
               allowClear
               showSearch
@@ -178,7 +179,7 @@ export function NewReviewModal({
         )}
         {selectedProjectId ? (
           <div>
-            <Text style={{ fontSize: 12.5, color: "#6a6d78" }}>Task (optional)</Text>
+            <Text style={{ fontSize: 12.5, color: token.colorTextSecondary }}>Task (optional)</Text>
             <Select
               allowClear
               showSearch
@@ -195,7 +196,7 @@ export function NewReviewModal({
           </div>
         ) : null}
         <div>
-          <Text style={{ fontSize: 12.5, color: "#6a6d78" }}>Source</Text>
+          <Text style={{ fontSize: 12.5, color: token.colorTextSecondary }}>Source</Text>
           <Segmented
             block
             value={source}

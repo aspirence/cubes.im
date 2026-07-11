@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { ProjectActions, FavoriteStar } from "./project-actions";
 import { resolveClientName } from "./project-display";
 import {
-  TOKENS,
+  useProjectSkin,
   MONO,
   SemanticPill,
   ProgressBar,
@@ -52,6 +52,7 @@ function ListRow({
   isLast: boolean;
 }) {
   const router = useRouter();
+  const skin = useProjectSkin();
   const [hover, setHover] = useState(false);
 
   const isFavorite = project.is_favorite ?? favoriteIds.has(project.id);
@@ -62,7 +63,7 @@ function ListRow({
     healths,
     categories,
   );
-  const barColor = project.color_code || TOKENS.bar;
+  const barColor = project.color_code || skin.bar;
   const avatars = projectAvatars(project);
 
   const go = () => router.push(`/projects/${project.id}?tab=tasks`);
@@ -85,8 +86,8 @@ function ListRow({
         padding: "10px 16px",
         minWidth: 720,
         cursor: "pointer",
-        background: hover ? TOKENS.rowHover : TOKENS.card,
-        borderBottom: isLast ? "none" : `1px solid ${TOKENS.divider}`,
+        background: hover ? skin.rowHover : skin.card,
+        borderBottom: isLast ? "none" : `1px solid ${skin.divider}`,
         transition: "background .12s ease",
       }}
     >
@@ -102,7 +103,7 @@ function ListRow({
             width: 9,
             height: 9,
             borderRadius: 3,
-            background: project.color_code || TOKENS.bar,
+            background: project.color_code || skin.bar,
           }}
         />
         <div style={{ minWidth: 0 }}>
@@ -110,7 +111,7 @@ function ListRow({
             style={{
               fontSize: 13,
               fontWeight: 600,
-              color: TOKENS.text,
+              color: skin.text,
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
@@ -125,7 +126,7 @@ function ListRow({
               style={{
                 fontSize: 11,
                 fontWeight: 600,
-                color: TOKENS.textTertiary,
+                color: skin.textTertiary,
                 letterSpacing: ".3px",
                 fontFamily: MONO,
               }}
@@ -140,7 +141,7 @@ function ListRow({
       <div
         style={{
           fontSize: 13,
-          color: clientName ? TOKENS.textSecondary : TOKENS.textFaint,
+          color: clientName ? skin.textSecondary : skin.textFaint,
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
@@ -154,7 +155,7 @@ function ListRow({
         {status ? (
           <SemanticPill label={status.name} color={status.color} dot />
         ) : (
-          <span style={{ color: TOKENS.textFaint }}>—</span>
+          <span style={{ color: skin.textFaint }}>—</span>
         )}
       </div>
 
@@ -168,7 +169,7 @@ function ListRow({
               style={{
                 fontSize: 12,
                 fontWeight: 600,
-                color: TOKENS.text,
+                color: skin.text,
                 width: 34,
                 textAlign: "right",
                 flex: "none",
@@ -180,7 +181,7 @@ function ListRow({
         ) : (
           <span
             className="font-mono"
-            style={{ fontSize: 12, color: TOKENS.textFaint }}
+            style={{ fontSize: 12, color: skin.textFaint }}
           >
             {project.tasks_counter ?? 0} tasks
           </span>
@@ -217,6 +218,8 @@ export function ProjectsTable({
   categories,
   onEdit,
 }: ProjectsTableProps) {
+  const skin = useProjectSkin();
+
   if (loading) {
     return (
       <div style={{ textAlign: "center", padding: 48 }}>
@@ -237,10 +240,10 @@ export function ProjectsTable({
     <div
       className="wl-hscroll"
       style={{
-        border: `1px solid ${TOKENS.hairline}`,
+        border: `1px solid ${skin.hairline}`,
         borderRadius: 12,
-        background: TOKENS.card,
-        boxShadow: TOKENS.cardShadow,
+        background: skin.card,
+        boxShadow: skin.cardShadow,
         overflowX: "auto",
       }}
     >
@@ -252,13 +255,13 @@ export function ProjectsTable({
           gap: 12,
           padding: "9px 16px",
           minWidth: 720,
-          borderBottom: `1px solid ${TOKENS.hairline}`,
+          borderBottom: `1px solid ${skin.hairline}`,
           fontSize: 11.5,
           fontWeight: 600,
           letterSpacing: ".3px",
           textTransform: "uppercase",
-          color: TOKENS.textTertiary,
-          background: TOKENS.canvas,
+          color: skin.textTertiary,
+          background: skin.canvas,
           borderTopLeftRadius: 12,
           borderTopRightRadius: 12,
         }}

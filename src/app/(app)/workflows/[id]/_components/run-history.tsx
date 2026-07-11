@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Empty, Table, Tag, Typography } from "antd";
+import { Empty, Table, Tag, Typography, theme } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
   useWorkflowRuns,
@@ -21,6 +21,7 @@ const statusColor = (s: string) =>
           : "blue";
 
 function StepTimeline({ runId }: { runId: string }) {
+  const { token } = theme.useToken();
   const { data } = useWorkflowRun(runId);
   const stepRuns = data?.stepRuns ?? [];
   if (stepRuns.length === 0) {
@@ -35,7 +36,7 @@ function StepTimeline({ runId }: { runId: string }) {
             display: "flex",
             gap: 10,
             padding: "8px 0",
-            borderBottom: "1px solid #f0f0f3",
+            borderBottom: `1px solid ${token.colorSplit}`,
           }}
         >
           <Tag style={{ margin: 0, height: 22 }}>{sr.step_key}</Tag>
@@ -48,17 +49,17 @@ function StepTimeline({ runId }: { runId: string }) {
             </Typography.Text>
             {sr.input && Object.keys(sr.input as object).length > 0 ? (
               <details style={{ marginTop: 4 }}>
-                <summary style={{ fontSize: 11.5, color: "#9a9da8", cursor: "pointer" }}>
+                <summary style={{ fontSize: 11.5, color: token.colorTextTertiary, cursor: "pointer" }}>
                   input
                 </summary>
                 <pre
                   style={{
                     margin: "4px 0 0",
                     fontSize: 11.5,
-                    color: "#6a6d78",
+                    color: token.colorTextSecondary,
                     maxHeight: 120,
                     overflow: "auto",
-                    background: "#fafafb",
+                    background: token.colorFillTertiary,
                     padding: 8,
                     borderRadius: 6,
                   }}
@@ -83,10 +84,10 @@ function StepTimeline({ runId }: { runId: string }) {
                 style={{
                   margin: "4px 0 0",
                   fontSize: 11.5,
-                  color: "#494b54",
+                  color: token.colorText,
                   maxHeight: 160,
                   overflow: "auto",
-                  background: "#fafafb",
+                  background: token.colorFillTertiary,
                   padding: 8,
                   borderRadius: 6,
                 }}

@@ -17,6 +17,7 @@ import {
   Tag,
   Tooltip,
   Typography,
+  theme,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
@@ -171,6 +172,7 @@ interface ConnFormValues {
 }
 
 export default function AppsSettingsPage() {
+  const { token } = theme.useToken();
   const { message } = App.useApp();
   const { data: connections, isLoading } = useAppConnections();
   const { data: isAdmin } = useIsOrgAdmin();
@@ -306,7 +308,7 @@ export default function AppsSettingsPage() {
         key: "name",
         render: (name: string, record) => (
           <Space>
-            <span style={{ color: "#8a8d98" }}>
+            <span style={{ color: token.colorTextTertiary }}>
               {providerDef(record.provider)?.icon}
             </span>
             <span>{name}</span>
@@ -401,7 +403,7 @@ export default function AppsSettingsPage() {
             <Card key={p.key} size="small" styles={{ body: { padding: 14 } }}>
               <Space direction="vertical" size={6} style={{ width: "100%" }}>
                 <Space>
-                  <span style={{ fontSize: 18, color: "#6a6d78" }}>{p.icon}</span>
+                  <span style={{ fontSize: 18, color: token.colorTextSecondary }}>{p.icon}</span>
                   <Typography.Text strong>{p.label}</Typography.Text>
                   {!p.available ? <Tag>Coming soon</Tag> : null}
                 </Space>

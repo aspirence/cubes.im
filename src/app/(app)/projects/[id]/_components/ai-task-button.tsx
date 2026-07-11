@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { App, Button, Input, Modal, Tag, Typography } from "antd";
+import { App, Button, Input, Modal, Tag, Typography, theme } from "antd";
 import { ThunderboltOutlined } from "@ant-design/icons";
 import { useAiCreateTask, type AiCreateTaskResult } from "@/features/ai/use-ai";
 
@@ -15,6 +15,7 @@ const { Text } = Typography;
  */
 export function AiTaskButton({ projectId }: { projectId: string }) {
   const { message } = App.useApp();
+  const { token } = theme.useToken();
   const aiCreate = useAiCreateTask();
 
   const [open, setOpen] = useState(false);
@@ -103,7 +104,7 @@ export function AiTaskButton({ projectId }: { projectId: string }) {
                 flexDirection: "column",
                 gap: 6,
                 padding: "8px 10px",
-                background: "#f6f7f9",
+                background: token.colorFillTertiary,
                 borderRadius: 8,
               }}
             >

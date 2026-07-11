@@ -8,6 +8,7 @@ import {
   Button,
   Modal,
   Switch,
+  theme,
   Tooltip,
 } from "antd";
 import {
@@ -39,15 +40,6 @@ function sharingErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof Error) return err.message;
   return fallback;
 }
-
-const C = {
-  accent: "#4a4ad0",
-  hairline: "#ececf0",
-  inner: "#f0f0f3",
-  textPrimary: "#17171c",
-  textSecondary: "#6a6d78",
-  textTertiary: "#9a9da8",
-} as const;
 
 function MIcon({
   name,
@@ -96,6 +88,18 @@ export function ShareProjectModal({
   onClose,
 }: ShareProjectModalProps) {
   const { message, modal } = AntdApp.useApp();
+  const { token } = theme.useToken();
+  const C = useMemo(
+    () => ({
+      accent: "#4a4ad0",
+      hairline: token.colorBorderSecondary,
+      inner: token.colorSplit,
+      textPrimary: token.colorText,
+      textSecondary: token.colorTextSecondary,
+      textTertiary: token.colorTextTertiary,
+    }),
+    [token],
+  );
   const { data: activeTeam } = useActiveTeam();
   const { user } = useAuth();
   const updateProject = useUpdateProject();
@@ -487,7 +491,7 @@ export function ShareProjectModal({
                   padding: "0 10px",
                   borderRadius: 6,
                   border: `1px solid ${C.hairline}`,
-                  background: "#fff",
+                  background: token.colorBgContainer,
                   fontSize: 12.5,
                   color: C.textSecondary,
                 }}

@@ -1,7 +1,9 @@
 "use client";
 
+import { theme } from "antd";
+
 /**
- * iOS-style toggle: a 38x22 pill track (#4a4ad0 on / #d3d5dd off) with an 18px
+ * iOS-style toggle: a 38x22 pill track (#4a4ad0 on / theme off-track) with an 18px
  * white knob that slides (left 2px off / 18px on). Purely presentational — it
  * mirrors the same `checked` / `onChange` contract as an AntD Switch so it can
  * be dropped in over existing boolean-preference wiring.
@@ -19,6 +21,7 @@ export function IosToggle({
   loading?: boolean;
   "aria-label"?: string;
 }) {
+  const { token } = theme.useToken();
   const isBusy = Boolean(disabled || loading);
 
   return (
@@ -38,7 +41,7 @@ export function IosToggle({
         border: "none",
         borderRadius: 999,
         cursor: isBusy ? "not-allowed" : "pointer",
-        background: checked ? "#4a4ad0" : "#d3d5dd",
+        background: checked ? "#4a4ad0" : token.colorTextQuaternary,
         opacity: isBusy ? 0.6 : 1,
         transition: "background .18s ease",
         outline: "none",

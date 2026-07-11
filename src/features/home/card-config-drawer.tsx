@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Divider, Drawer, Input, Segmented, Select, Space, Switch, Typography } from "antd";
+import { Divider, Drawer, Input, Segmented, Select, Space, Switch, Typography, theme } from "antd";
 import { useProjects } from "@/features/projects/use-projects";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
 import { MemberSelect } from "@/features/team-members/member-select";
@@ -32,9 +32,10 @@ function blankCard(): DashboardCard {
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  const { token } = theme.useToken();
   return (
     <div>
-      <Text style={{ fontSize: 12.5, color: "#6a6d78" }}>{label}</Text>
+      <Text style={{ fontSize: 12.5, color: token.colorTextSecondary }}>{label}</Text>
       <div style={{ marginTop: 4 }}>{children}</div>
     </div>
   );

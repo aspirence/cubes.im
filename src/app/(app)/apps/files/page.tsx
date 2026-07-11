@@ -1,23 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Typography } from "antd";
+import { theme, Typography } from "antd";
 import { useActiveTeam } from "@/features/teams/use-teams";
 import { useAppActivatedProjects } from "@/features/apps-platform/app-scope";
 import { useTeamFiles } from "@/features/app-files/use-files";
 import { FilesBrowser } from "@/features/app-files/files-browser";
 
 const { Text } = Typography;
-
-const C = {
-  bg: "#f6f7f9",
-  hairline: "#ececf0",
-  text: "#17171c",
-  textSecondary: "#6a6d78",
-  textTertiary: "#9a9da8",
-  accent: "#2f9c9c",
-  accentSoft: "rgba(47,156,156,0.12)",
-};
 
 function MIcon({ name, size = 17, color }: { name: string; size?: number; color?: string }) {
   return (
@@ -29,6 +19,19 @@ function MIcon({ name, size = 17, color }: { name: string; size?: number; color?
 
 /** Files hub — projects live in the app's own secondary rail. */
 export default function FilesHubPage() {
+  const { token } = theme.useToken();
+  const C = useMemo(
+    () => ({
+      bg: token.colorBgLayout,
+      hairline: token.colorBorderSecondary,
+      text: token.colorText,
+      textSecondary: token.colorTextSecondary,
+      textTertiary: token.colorTextTertiary,
+      accent: "#2f9c9c",
+      accentSoft: "rgba(47,156,156,0.12)",
+    }),
+    [token],
+  );
   const { data: activeTeam } = useActiveTeam();
   const { data: projects } = useAppActivatedProjects("files");
   const { data: files } = useTeamFiles();
@@ -123,7 +126,7 @@ export default function FilesHubPage() {
         overflow: "hidden",
       }}
     >
-      <style>{`@media (max-width:900px){.wl-files-shell{flex-direction:column;height:auto;overflow:visible;margin-left:0;margin-right:0}.wl-files-shell>aside{width:100%;border-right:none;border-bottom:1px solid #ececf0}}`}</style>
+      <style>{`@media (max-width:900px){.wl-files-shell{flex-direction:column;height:auto;overflow:visible;margin-left:0;margin-right:0}.wl-files-shell>aside{width:100%;border-right:none;border-bottom:1px solid ${token.colorBorderSecondary}}}`}</style>
       {/* Files rail — projects as the secondary sidebar */}
       <aside
         style={{
@@ -131,7 +134,7 @@ export default function FilesHubPage() {
           flex: "none",
           minHeight: 0,
           borderRight: `1px solid ${C.hairline}`,
-          background: "#fff",
+          background: token.colorBgContainer,
           padding: "16px 10px",
           display: "flex",
           flexDirection: "column",

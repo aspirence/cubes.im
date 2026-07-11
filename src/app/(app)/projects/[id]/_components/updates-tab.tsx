@@ -173,6 +173,7 @@ interface ProjectCommentEntry {
  * trigger notifies them.
  */
 export function UpdatesTab({ projectId }: { projectId: string }) {
+  const { token } = theme.useToken();
   const { message } = App.useApp();
 
   const { data: commentsRaw, isLoading } = useProjectComments(projectId);
@@ -307,7 +308,7 @@ export function UpdatesTab({ projectId }: { projectId: string }) {
           style={{
             marginTop: 16,
             padding: "12px 14px",
-            background: "#f6f7f9",
+            background: token.colorFillTertiary,
             borderRadius: 8,
             display: "flex",
             flexDirection: "column",

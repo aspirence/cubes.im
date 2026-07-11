@@ -11,6 +11,7 @@ import {
   Modal,
   Select,
   Switch,
+  theme,
 } from "antd";
 import type { MenuProps } from "antd";
 import {
@@ -62,21 +63,27 @@ import { useMyTasks } from "@/features/home/use-home";
 /* Design tokens (canonical handoff).                                         */
 /* -------------------------------------------------------------------------- */
 
-const T = {
-  accent: "#4a4ad0",
-  soft: "#eceefb",
-  panel: "#ffffff",
-  sidebar: "#fbfbfc",
-  hairline: "#ececf0",
-  inner: "#f0f0f3",
-  textPrimary: "#17171c",
-  textSecondary: "#6a6d78",
-  textTertiary: "#9a9da8",
-  textFaint: "#a2a5af",
-  rowText: "#494b54",
-  rowHover: "#eef0f3",
-  dotFallback: "#8a8d98",
-} as const;
+function useSidebarTokens() {
+  const { token } = theme.useToken();
+  return useMemo(
+    () => ({
+      accent: "#4a4ad0",
+      soft: token.colorPrimaryBg,
+      panel: token.colorBgContainer,
+      sidebar: token.colorBgLayout,
+      hairline: token.colorBorderSecondary,
+      inner: token.colorSplit,
+      textPrimary: token.colorText,
+      textSecondary: token.colorTextSecondary,
+      textTertiary: token.colorTextTertiary,
+      textFaint: token.colorTextQuaternary,
+      rowText: token.colorTextSecondary,
+      rowHover: token.colorFillTertiary,
+      dotFallback: "#8a8d98",
+    }),
+    [token],
+  );
+}
 
 const MAX_DEPTH = 6;
 
@@ -113,6 +120,7 @@ function Swatch({
   size?: number;
   radius?: number;
 }) {
+  const T = useSidebarTokens();
   return (
     <span
       aria-hidden
@@ -160,6 +168,7 @@ function Row({
   forceShowActions?: boolean;
   title?: string;
 }) {
+  const T = useSidebarTokens();
   const [hover, setHover] = useState(false);
   const showActions = hoverActions != null && (hover || forceShowActions);
   const bg = active ? T.soft : hover ? T.rowHover : "transparent";
@@ -242,6 +251,7 @@ function GroupLabel({
   children: React.ReactNode;
   action?: React.ReactNode;
 }) {
+  const T = useSidebarTokens();
   return (
     <div
       style={{
@@ -269,6 +279,7 @@ function GroupLabel({
 
 /** A muted mono count. */
 function Count({ n }: { n: number }) {
+  const T = useSidebarTokens();
   return (
     <span
       className="font-mono"
@@ -299,6 +310,7 @@ function SidebarProjectRow({
   onOpen: () => void;
   menuItems: MenuProps["items"];
 }) {
+  const T = useSidebarTokens();
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -404,6 +416,7 @@ function SpaceNode({
   renderProject: (p: ProjectWithRelations, indent: number) => React.ReactNode;
   spaceMenu: (folder: ProjectFolder, depth: number) => MenuProps["items"];
 }) {
+  const T = useSidebarTokens();
   // Accordion among this node's children: at most one expanded at a time.
   const [expandedChildId, setExpandedChildId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -650,6 +663,7 @@ function ColorPicker({
   value: string;
   onChange: (color: string) => void;
 }) {
+  const T = useSidebarTokens();
   const current = value.toLowerCase();
   const isPreset = COLOR_SWATCHES.some((c) => c === current);
   return (
@@ -732,6 +746,7 @@ function EditSpaceModal({
   folder: ProjectFolder | null;
   onClose: () => void;
 }) {
+  const T = useSidebarTokens();
   const { message } = AntdApp.useApp();
   const updateFolder = useUpdateFolder();
   const [name, setName] = useState("");
@@ -815,6 +830,7 @@ function NewProjectInSpaceModal({
   onClose: () => void;
   onCreated: (projectId: string) => void;
 }) {
+  const T = useSidebarTokens();
   const { message } = AntdApp.useApp();
   const createProject = useCreateProject();
   const updateProject = useUpdateProject();
@@ -1046,6 +1062,7 @@ function EditProjectModal({
   project: ProjectWithRelations | null;
   onClose: () => void;
 }) {
+  const T = useSidebarTokens();
   const { message } = AntdApp.useApp();
   const updateProject = useUpdateProject();
   const [name, setName] = useState("");
@@ -1127,6 +1144,7 @@ function SaveProjectTemplateModal({
   project: ProjectWithRelations | null;
   onClose: () => void;
 }) {
+  const T = useSidebarTokens();
   const { message } = AntdApp.useApp();
   const saveAsTemplate = useSaveProjectAsTemplate();
   const [name, setName] = useState("");
@@ -1303,6 +1321,7 @@ function RenameSpaceModal({
 /* -------------------------------------------------------------------------- */
 
 function SkeletonRows() {
+  const T = useSidebarTokens();
   return (
     <div style={{ padding: "4px 2px" }}>
       {[0, 1, 2, 3, 4].map((i) => (
@@ -1346,6 +1365,7 @@ function SkeletonRows() {
 
 /** Small count pill for the Home nav (red = attention, grey = plain count). */
 function CountPill({ count, tone }: { count: number; tone: "red" | "grey" }) {
+  const T = useSidebarTokens();
   if (count <= 0) return null;
   return (
     <span
@@ -1380,6 +1400,7 @@ function HomeNavItems({
   pathname: string;
   onNavigate: (path: string) => void;
 }) {
+  const T = useSidebarTokens();
   const { data: notif } = useNotifications();
   const { data: myTasks } = useMyTasks();
 
@@ -1434,6 +1455,7 @@ function HomeNavItems({
 }
 
 export function ProjectsSidebar() {
+  const T = useSidebarTokens();
   const router = useRouter();
   const pathname = usePathname();
   const { message, modal } = AntdApp.useApp();

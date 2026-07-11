@@ -17,6 +17,7 @@ import {
   Space,
   Spin,
   Tag,
+  theme,
   Timeline,
   Tooltip,
   Typography,
@@ -148,19 +149,25 @@ const drawerRowKey = (taskId: string) => ["task-drawer-row", taskId] as const;
 /* Design tokens (canonical handoff).                                         */
 /* -------------------------------------------------------------------------- */
 
-const DT = {
-  accent: "#4a4ad0",
-  panel: "#ffffff",
-  hairline: "#ececf0",
-  innerDivider: "#f0f0f3",
-  chip: "#f2f3f5",
-  textPrimary: "#17171c",
-  textSecondary: "#6a6d78",
-  textTertiary: "#9a9da8",
-  textFaint: "#a2a5af",
-  overdue: "#c0453c",
-  mono: "var(--font-geist-mono)",
-} as const;
+function useDrawerTokens() {
+  const { token } = theme.useToken();
+  return useMemo(
+    () => ({
+      accent: "#4a4ad0",
+      panel: token.colorBgContainer,
+      hairline: token.colorBorderSecondary,
+      innerDivider: token.colorSplit,
+      chip: token.colorFillTertiary,
+      textPrimary: token.colorText,
+      textSecondary: token.colorTextSecondary,
+      textTertiary: token.colorTextTertiary,
+      textFaint: token.colorTextQuaternary,
+      overdue: "#c0453c",
+      mono: "var(--font-geist-mono)",
+    }),
+    [token],
+  );
+}
 
 // Solid avatar palette (white text).
 const AVATAR_PALETTE = [
@@ -277,6 +284,7 @@ function MetaRow({
   /** Legacy no-op (removed border table). */
   last?: boolean;
 }) {
+  const DT = useDrawerTokens();
   return (
     <div
       style={{
@@ -346,6 +354,7 @@ function SolidAvatar({
 
 export function TaskDrawer() {
   const { taskId, close } = useTaskDrawer();
+  const DT = useDrawerTokens();
   const open = taskId != null;
 
   return (
@@ -372,6 +381,7 @@ export function TaskDrawer() {
  * `/projects/[id]/tasks/[taskId]` route.
  */
 export function TaskDetailPage({ taskId }: { taskId: string }) {
+  const DT = useDrawerTokens();
   return (
     <div
       style={{
@@ -431,6 +441,8 @@ function TaskDrawerContent({
   onClose?: () => void;
 }) {
   const { message } = App.useApp();
+  const { token } = theme.useToken();
+  const DT = useDrawerTokens();
   const queryClient = useQueryClient();
   const router = useRouter();
   const { open: openTaskInDrawer, close: closeTaskDrawer } = useTaskDrawer();
@@ -1604,7 +1616,7 @@ function TaskDrawerContent({
                       style={{
                         border: `1px solid ${DT.hairline}`,
                         borderRadius: 10,
-                        background: "#fff",
+                        background: DT.panel,
                         padding: "12px 14px",
                         textAlign: "left",
                         cursor: "pointer",
@@ -1762,7 +1774,7 @@ function TaskDrawerContent({
             style={{
               marginTop: 10,
               padding: "10px 12px",
-              background: "#f6f7f9",
+              background: token.colorFillTertiary,
               borderRadius: 8,
               display: "flex",
               flexDirection: "column",
@@ -1840,7 +1852,7 @@ function TaskDrawerContent({
             display: "flex",
             flexDirection: "column",
             minHeight: 0,
-            background: "#fcfcfd",
+            background: token.colorBgLayout,
           }}
         >
           <div style={{ flex: "1 1 auto", overflowY: "auto", padding: "16px 16px 12px" }}>
@@ -1991,6 +2003,7 @@ function TaskDrawerContent({
 /* -------------------------------------------------------------------------- */
 
 function SectionDivider() {
+  const DT = useDrawerTokens();
   return (
     <div
       aria-hidden
@@ -2006,6 +2019,7 @@ function SectionHeading({
   children: React.ReactNode;
   count?: number;
 }) {
+  const DT = useDrawerTokens();
   return (
     <div
       style={{

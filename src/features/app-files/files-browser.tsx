@@ -18,6 +18,7 @@ import {
   Tooltip,
   Typography,
   Upload,
+  theme,
 } from "antd";
 import type { MenuProps, UploadFile } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -122,6 +123,7 @@ function PreviewDrawer({
   file: FileWithMeta | null;
   onClose: () => void;
 }) {
+  const { token } = theme.useToken();
   const { profile } = useAuth();
   const { data: url } = useFileUrl(file);
   const mime = file?.mime ?? "";
@@ -154,7 +156,7 @@ function PreviewDrawer({
               <audio src={url} controls style={{ width: "100%" }} />
             </div>
           ) : (
-            <div style={{ padding: 28, textAlign: "center", color: "#9a9da8", background: "#fff" }}>
+            <div style={{ padding: 28, textAlign: "center", color: token.colorTextTertiary, background: token.colorBgContainer }}>
               No inline preview for this type.
               {file.allow_download ? (
                 <div style={{ marginTop: 12 }}>
@@ -203,6 +205,7 @@ function PreviewDrawer({
  * hidden — folders belong to a scope).
  */
 export function FilesBrowser({ projectId }: { projectId?: string | null }) {
+  const { token } = theme.useToken();
   const { message } = App.useApp();
   const router = useRouter();
   const { data: files, isLoading } = useTeamFiles();
@@ -524,16 +527,16 @@ export function FilesBrowser({ projectId }: { projectId?: string | null }) {
           gap: 6,
           padding: "4px 10px",
           borderRadius: 8,
-          border: `1px solid ${on ? "#4a4ad0" : "#ececf0"}`,
-          background: on ? "#eceefb" : "#fff",
-          color: on ? "#4a4ad0" : "#6a6d78",
+          border: `1px solid ${on ? "#4a4ad0" : token.colorBorderSecondary}`,
+          background: on ? token.colorPrimaryBg : token.colorBgContainer,
+          color: on ? "#4a4ad0" : token.colorTextSecondary,
           fontSize: 12.5,
           fontWeight: on ? 600 : 500,
           cursor: "pointer",
         }}
       >
         {label}
-        <span style={{ fontSize: 11, color: on ? "#4a4ad0" : "#9a9da8" }}>{count}</span>
+        <span style={{ fontSize: 11, color: on ? "#4a4ad0" : token.colorTextTertiary }}>{count}</span>
       </button>
     );
     return menu ? (
@@ -591,7 +594,7 @@ export function FilesBrowser({ projectId }: { projectId?: string | null }) {
           chip(
             f.id,
             <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-              <MIcon name="folder" size={14} color={activeFolder === f.id ? "#4a4ad0" : "#9a9da8"} />
+              <MIcon name="folder" size={14} color={activeFolder === f.id ? "#4a4ad0" : token.colorTextTertiary} />
               {f.name}
             </span>,
             countFor(f.id),
@@ -672,7 +675,7 @@ export function FilesBrowser({ projectId }: { projectId?: string | null }) {
 
           {projectId === undefined ? (
             <div>
-              <Text style={{ fontSize: 12.5, color: "#6a6d78" }}>Project (optional)</Text>
+              <Text style={{ fontSize: 12.5, color: token.colorTextSecondary }}>Project (optional)</Text>
               <Select
                 allowClear
                 showSearch
@@ -688,7 +691,7 @@ export function FilesBrowser({ projectId }: { projectId?: string | null }) {
 
           {folderList.length > 0 ? (
             <div>
-              <Text style={{ fontSize: 12.5, color: "#6a6d78" }}>Folder (optional)</Text>
+              <Text style={{ fontSize: 12.5, color: token.colorTextSecondary }}>Folder (optional)</Text>
               <Select
                 allowClear
                 placeholder="No folder"

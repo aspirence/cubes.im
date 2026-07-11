@@ -15,6 +15,7 @@ import {
   Segmented,
   Select,
   Skeleton,
+  theme,
 } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
@@ -44,24 +45,30 @@ import { useScheduleTasks } from "@/features/schedule/use-schedule-tasks";
 
 /* ------------------------------------------------------------------ tokens */
 
-const T = {
-  accent: "#4a4ad0",
-  accentBar: "#5a5ad6",
-  accentSoft: "#eceefb",
-  canvas: "#f6f7f9",
-  panel: "#ffffff",
-  hairline: "#ececf0",
-  divider: "#f0f0f3",
-  chipBg: "#f2f3f5",
-  rowHover: "#fafafb",
-  eventBg: "#fafafb",
-  textPrimary: "#17171c",
-  textSecondary: "#6a6d78",
-  textTertiary: "#9a9da8",
-  textFaint: "#a2a5af",
-  warnFg: "#b8842a",
-  warnBg: "#fdf5e6",
-} as const;
+function useT() {
+  const { token } = theme.useToken();
+  return useMemo(
+    () => ({
+      accent: "#4a4ad0",
+      accentBar: "#5a5ad6",
+      accentSoft: token.colorPrimaryBg,
+      canvas: token.colorBgLayout,
+      panel: token.colorBgContainer,
+      hairline: token.colorBorderSecondary,
+      divider: token.colorSplit,
+      chipBg: token.colorFillTertiary,
+      rowHover: token.colorFillQuaternary,
+      eventBg: token.colorFillQuaternary,
+      textPrimary: token.colorText,
+      textSecondary: token.colorTextSecondary,
+      textTertiary: token.colorTextTertiary,
+      textFaint: token.colorTextQuaternary,
+      warnFg: token.colorWarningText,
+      warnBg: token.colorWarningBg,
+    }),
+    [token],
+  );
+}
 
 const MONO = "var(--font-geist-mono)";
 
@@ -254,6 +261,7 @@ function NavButton({
   /** Highlighted state (e.g. the Yesterday/Today/Tomorrow jump that matches). */
   active?: boolean;
 }) {
+  const T = useT();
   const [hover, setHover] = useState(false);
   return (
     <button
@@ -301,6 +309,7 @@ function ChipPill({
   chip: DayChip;
   onOpen: (href: string) => void;
 }) {
+  const T = useT();
   const clickable = Boolean(chip.href);
   const tone =
     chip.kind === "leave" || chip.kind === "holiday"
@@ -357,6 +366,7 @@ function memberInitials(name: string): string {
 /* ------------------------------------------------------------------ page */
 
 export default function SchedulePage() {
+  const T = useT();
   const router = useRouter();
   const { user } = useAuth();
   const isAdmin = useIsTeamAdmin();

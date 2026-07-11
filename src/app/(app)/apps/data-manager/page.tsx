@@ -17,6 +17,7 @@ import {
   Tag,
   Typography,
   Upload,
+  theme,
 } from "antd";
 import type { UploadProps } from "antd";
 import {
@@ -72,6 +73,7 @@ interface PendingImport {
 export default function DataManagerPage() {
   const router = useRouter();
   const { message } = AntdApp.useApp();
+  const { token } = theme.useToken();
   const { data: activeTeam } = useActiveTeam();
 
   const { installed, enabled, isLoading: appLoading } = useInstalledApp("data_manager");
@@ -428,7 +430,7 @@ export default function DataManagerPage() {
         </Card>
 
         {/* Danger zone */}
-        <Card style={{ borderColor: "#ffccc7" }}>
+        <Card style={{ borderColor: token.colorErrorBorder }}>
           <Title level={5} style={{ marginTop: 0 }}>
             <ExclamationCircleFilled style={{ color: "#cf1322", marginRight: 8 }} />
             Danger zone

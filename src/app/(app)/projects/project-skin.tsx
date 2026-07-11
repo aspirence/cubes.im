@@ -7,7 +7,9 @@
  * health / category / client embeds + is_favorite). No new endpoints.
  */
 
+import { useMemo } from "react";
 import type { CSSProperties } from "react";
+import { theme } from "antd";
 import type { ProjectRow, ProjectStatus, ProjectHealth } from "./types";
 import type { ProjectCategory } from "@/features/settings/use-categories";
 import {
@@ -18,25 +20,33 @@ import {
 
 /* ---------------------------------------------------------------- tokens -- */
 
-export const TOKENS = {
-  accent: "#4a4ad0",
-  accentSoft: "#eceefb",
-  bar: "#5a5ad6",
-  canvas: "#f6f7f9",
-  card: "#ffffff",
-  hairline: "#ececf0",
-  divider: "#f0f0f3",
-  chipBg: "#f2f3f5",
-  text: "#17171c",
-  textSecondary: "#6a6d78",
-  textTertiary: "#9a9da8",
-  textFaint: "#a2a5af",
-  star: "#eab308",
-  rowHover: "#fafafb",
-  cardHoverBorder: "#d6d7de",
-  cardShadow: "0 1px 2px rgba(16,24,40,.04)",
-  cardHoverShadow: "0 6px 18px -6px rgba(16,24,40,.12)",
-} as const;
+export function useProjectSkin() {
+  const { token } = theme.useToken();
+  return useMemo(
+    () => ({
+      accent: "#4a4ad0",
+      accentSoft: token.colorPrimaryBg,
+      bar: "#5a5ad6",
+      canvas: token.colorBgLayout,
+      card: token.colorBgContainer,
+      hairline: token.colorBorderSecondary,
+      divider: token.colorSplit,
+      chipBg: token.colorFillTertiary,
+      text: token.colorText,
+      textSecondary: token.colorTextSecondary,
+      textTertiary: token.colorTextTertiary,
+      textFaint: token.colorTextQuaternary,
+      star: "#eab308",
+      rowHover: token.colorFillQuaternary,
+      cardHoverBorder: token.colorBorder,
+      cardShadow: "0 1px 2px rgba(16,24,40,.04)",
+      cardHoverShadow: "0 6px 18px -6px rgba(16,24,40,.12)",
+    }),
+    [token],
+  );
+}
+
+export type ProjectSkin = ReturnType<typeof useProjectSkin>;
 
 /** Solid avatar / category palette (white text). */
 export const AVATAR_PALETTE = [
@@ -172,12 +182,13 @@ export function CategoryChip({
   label: string;
   color: string | null | undefined;
 }) {
+  const skin = useProjectSkin();
   return (
     <span
       style={{
         ...pillBase,
-        background: TOKENS.chipBg,
-        color: TOKENS.textSecondary,
+        background: skin.chipBg,
+        color: skin.textSecondary,
       }}
     >
       <span
@@ -186,7 +197,7 @@ export function CategoryChip({
           width: 6,
           height: 6,
           borderRadius: 999,
-          background: color || TOKENS.textTertiary,
+          background: color || skin.textTertiary,
           display: "inline-block",
         }}
       />
@@ -223,6 +234,7 @@ export function ProgressBar({
   color: string;
   height?: number;
 }) {
+  const skin = useProjectSkin();
   const pct = Math.max(0, Math.min(100, value));
   return (
     <div
@@ -230,7 +242,7 @@ export function ProgressBar({
         flex: 1,
         height,
         borderRadius: 999,
-        background: TOKENS.divider,
+        background: skin.divider,
         overflow: "hidden",
         minWidth: 60,
       }}
@@ -286,6 +298,7 @@ export function AvatarStack({
   avatars: AvatarSpec[];
   size?: number;
 }) {
+  const skin = useProjectSkin();
   return (
     <div style={{ display: "inline-flex", alignItems: "center" }}>
       {avatars.map((a, i) => (
@@ -304,7 +317,7 @@ export function AvatarStack({
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
-            border: "2px solid #fff",
+            border: `2px solid ${skin.card}`,
             zIndex: avatars.length - i,
             fontFamily: MONO,
             letterSpacing: "-.3px",

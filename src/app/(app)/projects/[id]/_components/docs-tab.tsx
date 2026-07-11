@@ -544,7 +544,7 @@ export function DocsTab({ projectId }: { projectId: string }) {
         .wl-doc-page-row:hover .wl-doc-page-actions { opacity: 1; }
         @media (max-width:640px){
           .docs-shell{ flex-direction:column }
-          .docs-shell > aside{ width:100%; flex:none; max-height:220px; border-right:none; border-bottom:1px solid #ececf0 }
+          .docs-shell > aside{ width:100%; flex:none; max-height:220px; border-right:none; border-bottom:1px solid ${token.colorBorderSecondary} }
         }
       `}</style>
 

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { ProjectActions, FavoriteStar } from "./project-actions";
 import { resolveClientName } from "./project-display";
 import {
-  TOKENS,
+  useProjectSkin,
   MONO,
   SemanticPill,
   CategoryChip,
@@ -47,6 +47,7 @@ function ProjectCard({
   onEdit: (project: ProjectRow) => void;
 }) {
   const router = useRouter();
+  const skin = useProjectSkin();
   const [hover, setHover] = useState(false);
 
   const isFavorite = project.is_favorite ?? favoriteIds.has(project.id);
@@ -57,7 +58,7 @@ function ProjectCard({
     healths,
     categories,
   );
-  const barColor = project.color_code || TOKENS.bar;
+  const barColor = project.color_code || skin.bar;
   const avatars = projectAvatars(project);
 
   const go = () => router.push(`/projects/${project.id}?tab=tasks`);
@@ -76,12 +77,12 @@ function ProjectCard({
         display: "flex",
         flexDirection: "column",
         gap: 12,
-        background: TOKENS.card,
-        border: `1px solid ${hover ? TOKENS.cardHoverBorder : TOKENS.hairline}`,
+        background: skin.card,
+        border: `1px solid ${hover ? skin.cardHoverBorder : skin.hairline}`,
         borderRadius: 12,
         padding: 15,
         cursor: "pointer",
-        boxShadow: hover ? TOKENS.cardHoverShadow : TOKENS.cardShadow,
+        boxShadow: hover ? skin.cardHoverShadow : skin.cardShadow,
         transform: hover ? "translateY(-2px)" : "none",
         transition: "box-shadow .15s ease, transform .15s ease, border-color .15s ease",
       }}
@@ -96,7 +97,7 @@ function ProjectCard({
             width: 10,
             height: 10,
             borderRadius: 3,
-            background: project.color_code || TOKENS.bar,
+            background: project.color_code || skin.bar,
           }}
         />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -104,7 +105,7 @@ function ProjectCard({
             style={{
               fontSize: 14,
               fontWeight: 600,
-              color: TOKENS.text,
+              color: skin.text,
               lineHeight: 1.25,
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -117,7 +118,7 @@ function ProjectCard({
           <div
             style={{
               fontSize: 12,
-              color: TOKENS.textSecondary,
+              color: skin.textSecondary,
               marginTop: 2,
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -166,23 +167,23 @@ function ProjectCard({
           alignItems: "center",
           justifyContent: "space-between",
           fontSize: 12,
-          color: TOKENS.textSecondary,
+          color: skin.textSecondary,
         }}
       >
         <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
           <span
             className="material-symbols-rounded"
-            style={{ fontSize: 15, color: TOKENS.textTertiary }}
+            style={{ fontSize: 15, color: skin.textTertiary }}
           >
             checklist
           </span>
-          <span className="font-mono" style={{ color: TOKENS.text, fontWeight: 600 }}>
+          <span className="font-mono" style={{ color: skin.text, fontWeight: 600 }}>
             {project.tasks_counter ?? 0}
           </span>
           <span>tasks</span>
         </span>
         {progress !== null ? (
-          <span className="font-mono" style={{ color: TOKENS.text, fontWeight: 600 }}>
+          <span className="font-mono" style={{ color: skin.text, fontWeight: 600 }}>
             {progress}%
           </span>
         ) : null}
@@ -200,7 +201,7 @@ function ProjectCard({
           alignItems: "center",
           justifyContent: "space-between",
           paddingTop: 4,
-          borderTop: `1px solid ${TOKENS.divider}`,
+          borderTop: `1px solid ${skin.divider}`,
           marginTop: "auto",
         }}
       >
@@ -211,7 +212,7 @@ function ProjectCard({
             style={{
               fontSize: 11,
               fontWeight: 600,
-              color: TOKENS.textTertiary,
+              color: skin.textTertiary,
               letterSpacing: ".3px",
               fontFamily: MONO,
             }}
