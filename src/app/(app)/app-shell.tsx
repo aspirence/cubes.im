@@ -32,6 +32,7 @@ import {
   useSetActiveTeam,
 } from "@/features/teams/use-teams";
 import { useInstalledApps } from "@/features/apps-platform/use-installed-apps";
+import { useIsPlatformAdmin } from "@/features/billing/use-pricing";
 import { NotificationsBell } from "./_components/notifications-bell";
 import { UploadIndicator } from "@/features/uploads/upload-indicator";
 import { getSectionNav, activeSectionKey } from "./_lib/section-nav";
@@ -332,6 +333,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/apps/");
   const forceRail = !!sectionNav || isCanvasRoute;
   const secActive = sectionNav ? activeSectionKey(sectionNav, pathname) : "";
+  // Platform-wide (super-admin) entries are hidden from everyone else; the
+  // pages themselves stay RPC-gated as defense in depth.
+  const { data: isPlatformAdmin } = useIsPlatformAdmin();
+  const secItems = (sectionNav?.items ?? []).filter(
+    (it) => "type" in it || !it.superAdminOnly || isPlatformAdmin,
+  );
 
   // Collapse is purely route-driven: rail on section/canvas pages, always
   // expanded (with no manual collapse) everywhere else.
@@ -941,7 +948,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </span>
           </div>
           <nav style={{ flex: 1, overflowY: "auto", padding: 8 }}>
-            {sectionNav.items.map((it, i) =>
+            {secItems.map((it, i) =>
               "type" in it ? (
                 <div
                   key={`div-${i}`}
@@ -1131,7 +1138,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               background: dark ? "#0f131b" : "#fff",
             }}
           >
-            {sectionNav.items
+            {secItems
               .filter(
                 (it): it is { key: string; label: string; icon: string } =>
                   !("type" in it),

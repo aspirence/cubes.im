@@ -9,7 +9,13 @@
 
 export type SectionNavEntry =
   | { type: "divider" }
-  | { key: string; label: string; icon: string };
+  | {
+      key: string;
+      label: string;
+      icon: string;
+      /** Only rendered for platform super-admins (is_platform_admin RPC). */
+      superAdminOnly?: boolean;
+    };
 
 export interface SectionNav {
   base: string;
@@ -110,8 +116,8 @@ export const SECTION_NAVS: SectionNav[] = [
       { key: "/admin-center/teams", label: "Workspaces", icon: "groups" },
       { key: "/admin-center/projects", label: "Projects", icon: "layers" },
       { key: "/admin-center/billing", label: "Billing", icon: "credit_card" },
-      { key: "/admin-center/pricing", label: "Pricing", icon: "sell" },
-      { key: "/admin-center/early-access", label: "Early access", icon: "bolt" },
+      { key: "/admin-center/pricing", label: "Pricing", icon: "sell", superAdminOnly: true },
+      { key: "/admin-center/early-access", label: "Early access", icon: "bolt", superAdminOnly: true },
     ],
   },
 ];
