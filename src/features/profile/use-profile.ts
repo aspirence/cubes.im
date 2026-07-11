@@ -6,7 +6,6 @@ import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/types/database";
 
 export type Profile = Database["public"]["Tables"]["users"]["Row"];
-export type LanguageType = Database["public"]["Enums"]["language_type"];
 
 /** Query key for the auth profile. Invalidated after profile mutations so any
  * React-Query-backed consumer (and the active-team derived data) re-reads. */
@@ -65,35 +64,3 @@ export function useUpdatePassword() {
   });
 }
 
-/**
- * Updates the current user's UI language (public.users.language). Invalidates
- * the profile so the active language refreshes.
- */
-export function useUpdateLanguage() {
-  const supabase = useMemo(() => createClient(), []);
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (language: LanguageType): Promise<Profile> => {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-      if (userError) throw userError;
-      if (!user) throw new Error("Not authenticated");
-
-      const { data, error } = await supabase
-        .from("users")
-        .update({ language })
-        .eq("id", user.id)
-        .select("*")
-        .single();
-
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: profileKey });
-    },
-  });
-}
