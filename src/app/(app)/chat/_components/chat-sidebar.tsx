@@ -324,45 +324,77 @@ export function ChatNavSections() {
           </div>
         ) : (
           <>
-            {sectionHeader(
-              "Channels",
-              isAdmin ? { title: "New channel", onClick: () => setChannelModal(true) } : undefined,
-            )}
-            {channelRows.length === 0 ? (
-              <div style={{ padding: "4px 10px", fontSize: 12.5, color: token.colorTextTertiary }}>
-                {isAdmin
-                  ? "No channels yet — create the first one."
-                  : "No channels yet — an admin can create one."}
-              </div>
-            ) : (
-              channelRows.map((c) => (
-                <ConversationRow
-                  key={c.id}
-                  c={c}
-                  active={c.id === activeId}
-                  onOpen={() => router.push(`/chat/${c.id}`)}
-                />
-              ))
-            )}
+            {/* Channels — hidden entirely for non-admins until one exists. */}
+            {channelRows.length > 0 || isAdmin ? (
+              <>
+                {sectionHeader(
+                  "Channels",
+                  isAdmin
+                    ? { title: "New channel", onClick: () => setChannelModal(true) }
+                    : undefined,
+                )}
+                {channelRows.map((c) => (
+                  <ConversationRow
+                    key={c.id}
+                    c={c}
+                    active={c.id === activeId}
+                    onOpen={() => router.push(`/chat/${c.id}`)}
+                  />
+                ))}
+                {isAdmin ? (
+                  <a
+                    className="wl-chat-ghost"
+                    onClick={() => setChannelModal(true)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 9,
+                      height: 32,
+                      padding: "0 10px",
+                      borderRadius: 7,
+                      cursor: "pointer",
+                      fontSize: 13,
+                      color: token.colorTextTertiary,
+                    }}
+                  >
+                    <MIcon name="add" size={16} />
+                    Add channel
+                  </a>
+                ) : null}
+              </>
+            ) : null}
 
             {sectionHeader("Direct messages", {
               title: "New message",
               onClick: () => setDmModal(true),
             })}
-            {dmRows.length === 0 ? (
-              <div style={{ padding: "4px 10px", fontSize: 12.5, color: token.colorTextTertiary }}>
-                Message a teammate one-to-one.
-              </div>
-            ) : (
-              dmRows.map((c) => (
-                <ConversationRow
-                  key={c.id}
-                  c={c}
-                  active={c.id === activeId}
-                  onOpen={() => router.push(`/chat/${c.id}`)}
-                />
-              ))
-            )}
+            {dmRows.map((c) => (
+              <ConversationRow
+                key={c.id}
+                c={c}
+                active={c.id === activeId}
+                onOpen={() => router.push(`/chat/${c.id}`)}
+              />
+            ))}
+            <a
+              className="wl-chat-ghost"
+              onClick={() => setDmModal(true)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+                height: 32,
+                padding: "0 10px",
+                borderRadius: 7,
+                cursor: "pointer",
+                fontSize: 13,
+                color: token.colorTextTertiary,
+              }}
+            >
+              <MIcon name="add" size={16} />
+              New message
+            </a>
+            <style>{`.wl-chat-ghost:hover{background:${token.colorFillQuaternary};color:${token.colorTextSecondary};}`}</style>
           </>
         )}
       </div>
