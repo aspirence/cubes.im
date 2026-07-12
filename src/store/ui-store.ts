@@ -19,6 +19,7 @@ export const DEFAULT_SIDEBAR_PINNED_ITEM_IDS = [
   "/chat",
   "/schedule",
   "/workflows",
+  "/people",
   "/apps",
   "/admin-center/overview",
   "/settings/profile",

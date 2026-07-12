@@ -57,6 +57,14 @@ export const CORE_PRIMARY_SIDEBAR_ITEMS: PrimarySidebarItem[] = [
     kind: "core",
   },
   {
+    id: "/people",
+    key: "/people",
+    base: "/people",
+    icon: "groups",
+    label: "Teams",
+    kind: "core",
+  },
+  {
     id: "/apps",
     key: "/apps",
     base: "/apps",

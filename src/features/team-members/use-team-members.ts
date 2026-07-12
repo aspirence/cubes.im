@@ -31,6 +31,7 @@ export type TeamMember = {
     avatar_url: string | null;
   } | null;
   role: Pick<Role, "id" | "name" | "admin_role" | "owner" | "default_role"> | null;
+  job_title: { id: string; name: string } | null;
 };
 
 const teamMembersKey = (teamId: string | undefined) =>
@@ -55,7 +56,8 @@ export function useTeamMembers() {
         .select(
           `id, team_id, user_id, role_id, member_type, active, created_at,
            user:users!team_members_user_id_fk ( id, name, email, avatar_url ),
-           role:roles!team_members_role_id_fk ( id, name, admin_role, owner, default_role )`,
+           role:roles!team_members_role_id_fk ( id, name, admin_role, owner, default_role ),
+           job_title:job_titles!team_members_job_title_id_fk ( id, name )`,
         )
         .eq("team_id", teamId as string)
         .order("created_at", { ascending: true });
