@@ -14,6 +14,7 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   theme,
 } from "antd";
@@ -32,10 +33,13 @@ import {
 } from "@/features/team-members/use-team-members";
 import {
   useSetMemberType,
+  useTransferOwnership,
   MEMBER_TYPES,
   memberTypeMeta,
   type MemberType,
 } from "@/features/permissions/use-permissions";
+import { useAuth } from "@/features/auth/use-auth";
+import { useActiveTeam } from "@/features/teams/use-teams";
 import {
   useInvitations,
   useInviteMember,
@@ -71,11 +75,32 @@ export default function MembersSettingsPage() {
   const removeMember = useRemoveMember();
   const inviteMember = useInviteMember();
   const setMemberType = useSetMemberType();
+  const transferOwnership = useTransferOwnership();
   const isAdmin = useIsTeamAdmin();
+  const { user } = useAuth();
+  const { data: activeTeam } = useActiveTeam();
 
+  // The current user is the workspace owner if their own membership row is 'owner'.
+  const iAmOwner = useMemo(
+    () => (membersData ?? []).some((m) => m.user_id === user?.id && m.member_type === "owner"),
+    [membersData, user?.id],
+  );
+
+  const handleTransfer = (toUserId: string) => {
+    if (!activeTeam?.id) return;
+    transferOwnership.mutate(
+      { teamId: activeTeam.id, toUserId },
+      {
+        onSuccess: () => message.success("Ownership transferred."),
+        onError: (e) => message.error(e instanceof Error ? e.message : "Couldn't transfer ownership."),
+      },
+    );
+  };
+
+  // Owner is assigned only via "Transfer ownership" (keeps exactly one owner).
   const tierOptions = useMemo(
     () =>
-      MEMBER_TYPES.map((t) => ({
+      MEMBER_TYPES.filter((t) => t.value !== "owner").map((t) => ({
         value: t.value,
         label: (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
@@ -163,7 +188,8 @@ export default function MembersSettingsPage() {
       width: 210,
       render: (_, record) => {
         const meta = memberTypeMeta(record.member_type);
-        if (!isAdmin) {
+        // Owner rows are read-only; ownership changes go through Transfer.
+        if (!isAdmin || record.member_type === "owner") {
           return (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
               <span className="material-symbols-rounded" aria-hidden style={{ fontSize: 16, color: meta.tone }}>
@@ -188,22 +214,40 @@ export default function MembersSettingsPage() {
     {
       title: "Actions",
       key: "actions",
-      width: 100,
+      width: 130,
       align: "right",
       render: (_, record) => (
-        <Popconfirm
-          title="Remove this member?"
-          okText="Remove"
-          okButtonProps={{ danger: true }}
-          onConfirm={() => handleRemove(record.id)}
-        >
-          <Button
-            type="text"
-            danger
-            icon={<DeleteOutlined />}
-            aria-label="Remove member"
-          />
-        </Popconfirm>
+        <Space size={2}>
+          {iAmOwner && record.user_id && record.member_type !== "owner" ? (
+            <Popconfirm
+              title="Transfer ownership?"
+              description={`Make ${memberName(record)} the workspace owner. You'll become an admin.`}
+              okText="Transfer"
+              onConfirm={() => handleTransfer(record.user_id as string)}
+            >
+              <Tooltip title="Transfer ownership">
+                <Button
+                  type="text"
+                  icon={<span className="material-symbols-rounded" style={{ fontSize: 18 }}>workspace_premium</span>}
+                  aria-label="Transfer ownership"
+                />
+              </Tooltip>
+            </Popconfirm>
+          ) : null}
+          <Popconfirm
+            title="Remove this member?"
+            okText="Remove"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => handleRemove(record.id)}
+          >
+            <Button
+              type="text"
+              danger
+              icon={<DeleteOutlined />}
+              aria-label="Remove member"
+            />
+          </Popconfirm>
+        </Space>
       ),
     },
   ];
