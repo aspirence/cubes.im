@@ -226,7 +226,7 @@ export default function Landing() {
       <section className="trust">
         <span>Trusted by fast-moving teams</span>
         <div className="trust-logos">
-          {["Waple", "Growout", "fps.video", "Aspirence"].map((n) => <span key={n}>{n}</span>)}
+          {["Waple", "Growout", "fps.video", "Aspirence", "The Cyber Dispatch"].map((n) => <span key={n}>{n}</span>)}
         </div>
       </section>
 
