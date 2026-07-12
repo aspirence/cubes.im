@@ -290,7 +290,7 @@ export default function ProfileSettingsPage() {
         </Button>
       </div>
 
-      {/* Section header */}
+      {/* Section header — the Save/Cancel actions live once, in the footer. */}
       <div className="wl-set-head">
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 16.5, fontWeight: 700, color: token.colorText }}>
@@ -300,7 +300,6 @@ export default function ProfileSettingsPage() {
             Update your photo and personal details here.
           </Text>
         </div>
-        {saveButtons}
       </div>
 
       <Form<ProfileValues>
