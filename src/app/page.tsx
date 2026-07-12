@@ -460,7 +460,6 @@ const CSS = `
   .hero-cube{width:.9em;height:.9em;margin-left:.06em;margin-top:-.1em;}
   .hero-sub{margin-top:18px;font-size:15px;}
   .hero-cta{margin-top:24px;}
-  .hero-cta .btn.xl{width:100%;justify-content:center;}
   /* Fuller cube field, closer to the CTA — kills the mid-hero dead space. */
   .cubes{height:50%;}
   .m-board{min-width:420px;}
