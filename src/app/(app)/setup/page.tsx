@@ -300,7 +300,10 @@ export default function SetupPage() {
 }
 
 const OB_CSS = `
-.ob{min-height:100vh;display:grid;grid-template-columns:minmax(320px,400px) 1fr;background:#fff;font-family:var(--font-geist-sans),system-ui,sans-serif;}
+/* Without this, min-height:100vh + padding (content-box default) makes the
+   rail/main render taller than the viewport → a bogus scrollbar + dead space. */
+.ob,.ob *{box-sizing:border-box;}
+.ob{height:100vh;display:grid;grid-template-columns:minmax(320px,400px) 1fr;background:#fff;font-family:var(--font-geist-sans),system-ui,sans-serif;overflow:hidden;}
 .ob-rail{position:relative;overflow:hidden;background:radial-gradient(120% 80% at 0% 0%, #24262f 0%, #15171d 55%, #0c0d11 100%);color:#fff;}
 .ob-rail-in{display:flex;flex-direction:column;min-height:100vh;padding:40px 40px 34px;}
 .ob-brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:19px;letter-spacing:-.02em;color:#fff;}
