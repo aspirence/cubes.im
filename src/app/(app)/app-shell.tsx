@@ -17,13 +17,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import {
-  App as AntdApp,
-  Popover,
-  Select,
-  Tooltip,
-  Typography,
-} from "antd";
+import { App as AntdApp, Popover, Select, Tooltip } from "antd";
 import { useUIStore } from "@/store/ui-store";
 import { useAuth } from "@/features/auth/use-auth";
 import {
@@ -317,11 +311,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
-  const [sidebarHovered, setSidebarHovered] = useState(false);
   const [sidebarEditMode, setSidebarEditMode] = useState(false);
-  const [addMenuAnchor, setAddMenuAnchor] = useState<
-    "header" | "footer" | null
-  >(null);
+  // The "More" rail item's popover (add items + reorder) — always-visible entry
+  // point that replaces the old hover-revealed add/edit affordances.
+  const [manageMenuOpen, setManageMenuOpen] = useState(false);
   // Close the mobile drawer on route change — the render-time reset idiom
   // (React "adjusting state during render") instead of a setState-in-effect.
   const [drawerPath, setDrawerPath] = useState(pathname);
@@ -400,7 +393,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const handleAddSidebarItem = (id: string) => {
     setSidebarPinnedItems([...primaryNavItems.map((item) => item.id), id]);
-    setAddMenuAnchor(null);
+    setManageMenuOpen(false);
+  };
+
+  const enterReorder = () => {
+    setManageMenuOpen(false);
+    setSidebarEditMode(true);
   };
 
   const handleRemoveSidebarItem = (id: string) => {
@@ -455,15 +453,81 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   };
 
-  const setAddMenuOpen = (anchor: "header" | "footer", open: boolean) => {
-    setAddMenuAnchor(open ? anchor : null);
+  // Chip used by both the Reorder row and the add-item rows in the popover.
+  const menuRowStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    width: "100%",
+    textAlign: "left",
+    border: `1px solid ${dark ? "#272c38" : "#ececf0"}`,
+    borderRadius: 10,
+    padding: "10px 12px",
+    background: dark ? "#191d27" : "#fff",
+    cursor: "pointer",
   };
+  const menuChipStyle = (accent: boolean): React.CSSProperties => ({
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    background: accent
+      ? dark
+        ? "rgba(74,74,208,.22)"
+        : "#eef1ff"
+      : dark
+        ? "rgba(255,255,255,.06)"
+        : "#f6f7fb",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: accent ? "#4a4ad0" : dark ? "#9aa4b6" : "#687083",
+    flex: "none",
+  });
 
-  const addMenuContent = (
-      <div style={{ width: 300, maxHeight: 360, overflowY: "auto" }}>
-        <div
-          style={{
-            font: "600 10.5px var(--font-geist-sans)",
+  const manageMenuContent = (
+    <div style={{ width: 296, maxHeight: 440, overflowY: "auto" }}>
+      <div
+        style={{
+          font: "600 10.5px var(--font-geist-sans)",
+          color: "#8a8d98",
+          textTransform: "uppercase",
+          letterSpacing: ".7px",
+          marginBottom: 10,
+        }}
+      >
+        Customize sidebar
+      </div>
+
+      {/* Reorder / remove — enters edit mode on the rail. */}
+      <button type="button" onClick={enterReorder} style={menuRowStyle}>
+        <span style={menuChipStyle(true)}>
+          <MIcon name="drag_indicator" size={18} />
+        </span>
+        <span style={{ minWidth: 0, flex: 1 }}>
+          <span
+            style={{
+              display: "block",
+              fontSize: 13.5,
+              fontWeight: 600,
+              color: dark ? "#e6e9ef" : "#17171c",
+            }}
+          >
+            Reorder &amp; remove
+          </span>
+          <span
+            style={{ display: "block", fontSize: 12, color: "#8a8d98", marginTop: 1 }}
+          >
+            Drag to reorder, hover to remove
+          </span>
+        </span>
+        <MIcon name="chevron_right" size={18} />
+      </button>
+
+      <div style={{ height: 1, background: hair, margin: "14px 0" }} />
+
+      <div
+        style={{
+          font: "600 10.5px var(--font-geist-sans)",
           color: "#8a8d98",
           textTransform: "uppercase",
           letterSpacing: ".7px",
@@ -564,9 +628,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </div>
       ) : (
-        <Typography.Text type="secondary">
-          No more items to add right now.
-        </Typography.Text>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 2px",
+            fontSize: 12.5,
+            color: "#8a8d98",
+          }}
+        >
+          <MIcon name="check_circle" size={16} />
+          <span>Everything&apos;s already on your sidebar.</span>
+        </div>
       )}
     </div>
   );
@@ -592,11 +666,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Sidebar */}
       <aside
-        onMouseEnter={() => setSidebarHovered(true)}
-        onMouseLeave={() => {
-          setSidebarHovered(false);
-          setAddMenuAnchor(null);
-        }}
         style={{
           position: "fixed",
           top: 0,
@@ -651,71 +720,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             </div>
           ) : null}
-          {showLabel && !isMobile ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <Popover
-                content={addMenuContent}
-                trigger="click"
-                open={addMenuAnchor === "header"}
-                onOpenChange={(open) => setAddMenuOpen("header", open)}
-                placement="bottomRight"
-              >
-                <button
-                  aria-label="Add sidebar item"
-                  style={{
-                    width: 26,
-                    height: 26,
-                    flex: "none",
-                    border: "none",
-                    background: "transparent",
-                    borderRadius: 6,
-                    color: "#9a9da8",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    opacity: sidebarHovered || addMenuAnchor === "header" ? 1 : 0,
-                    pointerEvents:
-                      sidebarHovered || addMenuAnchor === "header"
-                        ? "auto"
-                        : "none",
-                    transition: "opacity .16s ease",
-                  }}
-                >
-                  <MIcon name="add" size={18} />
-                </button>
-              </Popover>
-              <Tooltip title={sidebarEditMode ? "Done editing" : "Edit sidebar"}>
-                <button
-                  onClick={() => setSidebarEditMode((v) => !v)}
-                  aria-label="Edit sidebar"
-                  style={{
-                    width: 26,
-                    height: 26,
-                    flex: "none",
-                    border: "none",
-                    background: sidebarEditMode
-                      ? dark
-                        ? "rgba(74,74,208,.2)"
-                        : "#eceefb"
-                      : "transparent",
-                    borderRadius: 6,
-                    color: sidebarEditMode ? "#4a4ad0" : "#9a9da8",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    opacity: sidebarHovered || sidebarEditMode ? 1 : 0,
-                    pointerEvents:
-                      sidebarHovered || sidebarEditMode ? "auto" : "none",
-                    transition: "opacity .16s ease, background .16s ease",
-                  }}
-                >
-                  <MIcon name="edit" size={17} />
-                </button>
-              </Tooltip>
-            </div>
-          ) : null}
         </div>
 
         {/* Nav */}
@@ -755,120 +759,111 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {primaryNavItems.map(navItem)}
             </SortableContext>
           </DndContext>
+          {/* Always-visible "More" — the single entry point for customizing the
+              rail (add items + reorder). Replaces the old hover-revealed
+              add/edit controls. While reordering it becomes a prominent Done. */}
           {!isMobile ? (
-            <div
-              style={{
-                marginTop: "auto",
-                paddingTop: collapsed ? 10 : 16,
-                display: "grid",
-                gap: 8,
-              }}
-            >
+            <div style={{ marginTop: "auto", paddingTop: collapsed ? 10 : 12 }}>
               <div
                 style={{
-                  opacity:
-                    sidebarHovered || addMenuAnchor !== null || sidebarEditMode
-                      ? 1
-                      : 0,
-                  transform:
-                    sidebarHovered || addMenuAnchor !== null || sidebarEditMode
-                      ? "translateY(0)"
-                      : "translateY(12px)",
-                  pointerEvents:
-                    sidebarHovered || addMenuAnchor !== null || sidebarEditMode
-                      ? "auto"
-                      : "none",
-                  transition: "opacity .2s ease, transform .22s ease",
+                  height: 1,
+                  background: hair,
+                  margin: collapsed ? "0 6px 8px" : "0 2px 8px",
                 }}
-              >
-                <div
+              />
+              {sidebarEditMode ? (
+                <button
+                  type="button"
+                  onClick={() => setSidebarEditMode(false)}
+                  aria-label="Done editing sidebar"
+                  title="Done editing"
                   style={{
-                    borderRadius: 16,
-                    border: `1px solid ${hair}`,
-                    background: dark ? "rgba(255,255,255,.04)" : "#ffffff",
-                    boxShadow: dark
-                      ? "0 10px 24px rgba(0,0,0,.18)"
-                      : "0 10px 24px rgba(16,24,40,.08)",
-                    padding: collapsed ? 8 : 10,
+                    width: "100%",
+                    height: 34,
+                    border: "none",
+                    borderRadius: 8,
+                    background: "#4a4ad0",
+                    color: "#fff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    fontSize: 13.5,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    boxShadow: "0 8px 20px rgba(74,74,208,.24)",
+                    paddingInline: collapsed ? 0 : 12,
                   }}
                 >
-                  <div
+                  <MIcon name="check_circle" size={18} />
+                  {!collapsed ? <span>Done</span> : null}
+                </button>
+              ) : (
+                <Popover
+                  content={manageMenuContent}
+                  trigger="click"
+                  open={manageMenuOpen}
+                  onOpenChange={setManageMenuOpen}
+                  placement={collapsed ? "rightBottom" : "topLeft"}
+                >
+                  <button
+                    type="button"
+                    aria-label="Customize sidebar"
+                    title="More"
+                    onMouseEnter={(e) => {
+                      if (!manageMenuOpen)
+                        e.currentTarget.style.background = dark
+                          ? "#1b1f29"
+                          : "#eef0f3";
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!manageMenuOpen)
+                        e.currentTarget.style.background = "transparent";
+                    }}
                     style={{
                       display: "flex",
-                      flexDirection: collapsed ? "column" : "row",
-                      gap: 8,
+                      alignItems: "center",
+                      gap: 11,
+                      width: "100%",
+                      height: 34,
+                      padding: collapsed ? 0 : "0 10px",
+                      justifyContent: collapsed ? "center" : "flex-start",
+                      border: "none",
+                      borderRadius: 7,
+                      cursor: "pointer",
+                      fontSize: 13.5,
+                      fontWeight: 500,
+                      color: manageMenuOpen
+                        ? "#4a4ad0"
+                        : dark
+                          ? "#9aa4b6"
+                          : "#494b54",
+                      background: manageMenuOpen
+                        ? dark
+                          ? "rgba(74,74,208,.2)"
+                          : "#eceefb"
+                        : "transparent",
+                      transition: "background .18s ease, color .18s ease",
                     }}
                   >
-                    <Popover
-                      content={addMenuContent}
-                      trigger="click"
-                      open={addMenuAnchor === "footer"}
-                      onOpenChange={(open) => setAddMenuOpen("footer", open)}
-                      placement={collapsed ? "rightBottom" : "topLeft"}
-                    >
-                      <button
-                        type="button"
-                        aria-label="Add more sidebar items"
+                    <MIcon name="more_horiz" size={20} />
+                    {showLabel ? (
+                      <span
                         style={{
                           flex: 1,
-                          minHeight: collapsed ? 38 : 36,
-                          border: "none",
-                          borderRadius: 12,
-                          background: "#4a4ad0",
-                          color: "#fff",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: 8,
-                          fontWeight: 600,
-                          cursor: "pointer",
-                          boxShadow: "0 10px 24px rgba(74,74,208,.24)",
-                          paddingInline: collapsed ? 0 : 14,
+                          minWidth: 0,
+                          textAlign: "left",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
                         }}
                       >
-                        <MIcon name="add" size={18} />
-                        {!collapsed ? <span>Add more</span> : null}
-                      </button>
-                    </Popover>
-                    <button
-                      type="button"
-                      onClick={() => setSidebarEditMode((v) => !v)}
-                      aria-label={sidebarEditMode ? "Done editing sidebar" : "Edit sidebar"}
-                      style={{
-                        flex: collapsed ? "none" : 1,
-                        minHeight: collapsed ? 38 : 36,
-                        border: `1px solid ${sidebarEditMode ? (dark ? "rgba(74,74,208,.45)" : "#d7dcff") : hair}`,
-                        borderRadius: 12,
-                        background: sidebarEditMode
-                          ? dark
-                            ? "rgba(74,74,208,.2)"
-                            : "#eef1ff"
-                          : "transparent",
-                        color: sidebarEditMode
-                          ? "#4a4ad0"
-                          : dark
-                            ? "#9aa4b6"
-                            : "#687083",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 8,
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        paddingInline: collapsed ? 0 : 14,
-                      }}
-                    >
-                      <MIcon
-                        name={sidebarEditMode ? "check_circle" : "edit"}
-                        size={18}
-                      />
-                      {!collapsed ? (
-                        <span>{sidebarEditMode ? "Done" : "Reorder"}</span>
-                      ) : null}
-                    </button>
-                  </div>
-                </div>
-              </div>
+                        More
+                      </span>
+                    ) : null}
+                  </button>
+                </Popover>
+              )}
             </div>
           ) : null}
         </nav>
