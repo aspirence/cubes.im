@@ -28,7 +28,6 @@ import {
 import {
   useTeamMembers,
   useRemoveMember,
-  useRoles,
   useIsTeamAdmin,
 } from "@/features/team-members/use-team-members";
 import {
@@ -45,13 +44,13 @@ import {
   useInviteMember,
 } from "@/features/invitations/use-invitations";
 
-import type { TeamMember, Role } from "@/features/team-members/use-team-members";
+import type { TeamMember } from "@/features/team-members/use-team-members";
 import type { EmailInvitation } from "@/features/invitations/use-invitations";
 
 interface InviteFormValues {
   email: string;
   name: string;
-  role_id?: string;
+  member_type?: string;
 }
 
 function memberName(m: TeamMember): string {
@@ -69,7 +68,6 @@ export default function MembersSettingsPage() {
   const { message } = App.useApp();
 
   const { data: membersData, isLoading: membersLoading } = useTeamMembers();
-  const { data: rolesData } = useRoles();
   const { data: invitationsData, isLoading: invitationsLoading } =
     useInvitations();
   const removeMember = useRemoveMember();
@@ -125,15 +123,7 @@ export default function MembersSettingsPage() {
   };
 
   const members: TeamMember[] = membersData ?? [];
-  const roles: Role[] = rolesData ?? [];
   const invitations: EmailInvitation[] = invitationsData ?? [];
-
-  // Owner is assigned once at account creation and moved only via transfer —
-  // never an invite/assignment choice.
-  const roleOptions = useMemo(
-    () => roles.filter((r) => !r.owner).map((r) => ({ value: r.id, label: r.name })),
-    [roles],
-  );
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [form] = Form.useForm<InviteFormValues>();
@@ -155,7 +145,7 @@ export default function MembersSettingsPage() {
       await inviteMember.mutateAsync({
         email: values.email.trim(),
         name: values.name.trim(),
-        roleId: values.role_id,
+        memberType: values.member_type ?? "member",
       });
       message.success("Invitation sent.");
       setInviteOpen(false);
@@ -377,11 +367,26 @@ export default function MembersSettingsPage() {
           >
             <Input placeholder="person@example.com" type="email" />
           </Form.Item>
-          <Form.Item label="Role" name="role_id">
+          <Form.Item label="Role" name="member_type" initialValue="member">
             <Select
-              options={roleOptions}
-              placeholder="Default role (Member)"
-              allowClear
+              options={MEMBER_TYPES.filter((t) => t.value !== "owner").map((t) => ({
+                value: t.value,
+                label: t.label,
+                desc: t.hint,
+                icon: t.icon,
+                tone: t.tone,
+              }))}
+              optionRender={(opt) => (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "3px 0" }}>
+                  <span className="material-symbols-rounded" aria-hidden style={{ fontSize: 18, color: opt.data.tone, marginTop: 1 }}>
+                    {opt.data.icon}
+                  </span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, color: token.colorText }}>{opt.data.label}</div>
+                    <div style={{ fontSize: 12, color: token.colorTextTertiary }}>{opt.data.desc}</div>
+                  </div>
+                </div>
+              )}
             />
           </Form.Item>
         </Form>

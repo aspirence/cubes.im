@@ -6,13 +6,22 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveTeam } from "@/features/teams/use-teams";
 import { useAuth } from "@/features/auth/use-auth";
 import type { Database } from "@/types/database";
 
+/** email_invitations.member_type is newer than the generated types. */
+function loose(s: ReturnType<typeof createClient>) {
+  return s as unknown as SupabaseClient;
+}
+
 export type EmailInvitation =
-  Database["public"]["Tables"]["email_invitations"]["Row"];
+  Database["public"]["Tables"]["email_invitations"]["Row"] & {
+    /** Tier the invitee joins as: admin | member | limited | guest. */
+    member_type?: string | null;
+  };
 
 /** A pending invitation addressed to the current user, with the team name. */
 export type MyPendingInvitation = EmailInvitation & {
@@ -49,8 +58,8 @@ export function useInvitations() {
 
 /**
  * Creates an email invitation for the active team (admin-only via RLS). The
- * `roleId` is optional; when omitted the invitee gets the team's default Member
- * role on acceptance.
+ * invitee joins as `memberType` (admin | member | limited | guest — never
+ * owner) when they accept; defaults to member.
  */
 export function useInviteMember() {
   const supabase = useMemo(() => createClient(), []);
@@ -62,22 +71,22 @@ export function useInviteMember() {
     mutationFn: async (input: {
       email: string;
       name: string;
-      roleId?: string | null;
+      memberType?: string;
     }): Promise<EmailInvitation> => {
       if (!teamId) throw new Error("No active team");
-      const { data, error } = await supabase
+      const { data, error } = await loose(supabase)
         .from("email_invitations")
         .insert({
           email: input.email,
           name: input.name,
           team_id: teamId,
-          role_id: input.roleId ?? null,
+          member_type: input.memberType ?? "member",
         })
         .select("*")
         .single();
 
       if (error) throw error;
-      return data;
+      return data as EmailInvitation;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: invitationsKey(teamId) });

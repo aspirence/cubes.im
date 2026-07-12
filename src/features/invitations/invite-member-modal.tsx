@@ -1,21 +1,19 @@
 "use client";
 
 import { useEffect } from "react";
-import { App, Form, Input, Modal, Select } from "antd";
+import { App, Form, Input, Modal, Select, theme } from "antd";
 import {
   useInvitations,
   useInviteMember,
   type EmailInvitation,
 } from "./use-invitations";
-import {
-  useRoles,
-  useTeamMembers,
-} from "@/features/team-members/use-team-members";
+import { useTeamMembers } from "@/features/team-members/use-team-members";
+import { MEMBER_TYPES } from "@/features/permissions/use-permissions";
 
 interface InviteFormValues {
   name: string;
   email: string;
-  role_id?: string;
+  member_type?: string;
 }
 
 /** Matches a plain single-address email, used to guess whether the search query
@@ -43,16 +41,12 @@ export function InviteMemberModal({
   initialQuery,
   onInvited,
 }: InviteMemberModalProps) {
+  const { token } = theme.useToken();
   const { message } = App.useApp();
   const [form] = Form.useForm<InviteFormValues>();
   const inviteMember = useInviteMember();
-  const { data: roles } = useRoles();
   const { data: teamMembers } = useTeamMembers();
   const { data: invitations } = useInvitations();
-  // Owner is not an assignable role (set at account creation; moved via transfer).
-  const roleOptions = (roles ?? [])
-    .filter((r) => !r.owner)
-    .map((r) => ({ value: r.id, label: r.name }));
 
   useEffect(() => {
     if (open) {
@@ -61,7 +55,7 @@ export function InviteMemberModal({
       form.setFieldsValue({
         name: isEmail ? "" : q,
         email: isEmail ? q : "",
-        role_id: undefined,
+        member_type: "member",
       });
     }
   }, [open, initialQuery, form]);
@@ -106,7 +100,7 @@ export function InviteMemberModal({
       const invitation = await inviteMember.mutateAsync({
         email,
         name: values.name.trim(),
-        roleId: values.role_id ?? null,
+        memberType: values.member_type ?? "member",
       });
       message.success(
         `Invitation sent to ${email}. They'll be assignable once they accept.`,
@@ -148,11 +142,26 @@ export function InviteMemberModal({
         >
           <Input placeholder="person@example.com" type="email" />
         </Form.Item>
-        <Form.Item label="Role" name="role_id">
+        <Form.Item label="Role" name="member_type" initialValue="member">
           <Select
-            options={roleOptions}
-            placeholder="Default role (Member)"
-            allowClear
+            options={MEMBER_TYPES.filter((t) => t.value !== "owner").map((t) => ({
+              value: t.value,
+              label: t.label,
+              desc: t.hint,
+              icon: t.icon,
+              tone: t.tone,
+            }))}
+            optionRender={(opt) => (
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "3px 0" }}>
+                <span className="material-symbols-rounded" aria-hidden style={{ fontSize: 18, color: opt.data.tone, marginTop: 1 }}>
+                  {opt.data.icon}
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: token.colorText }}>{opt.data.label}</div>
+                  <div style={{ fontSize: 12, color: token.colorTextTertiary }}>{opt.data.desc}</div>
+                </div>
+              </div>
+            )}
           />
         </Form.Item>
       </Form>
