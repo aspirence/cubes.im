@@ -5,7 +5,6 @@ import {
   App as AntdApp,
   Button,
   Dropdown,
-  Empty,
   Switch,
   Typography,
   theme,
@@ -250,7 +249,7 @@ function SortableCard({
                 display: "inline-flex",
                 alignItems: "flex-end",
                 justifyContent: "flex-end",
-                color: preview ? "#4c4cd6" : token.colorTextQuaternary,
+                color: preview ? "#4a4ad0" : token.colorTextQuaternary,
               }}
             >
               {rh.key === "br" ? (
@@ -390,20 +389,32 @@ export default function HomePage() {
 
       {/* Cards grid */}
       {cards.length === 0 ? (
-        <Empty description="No cards yet — turn on Edit mode and add one.">
-          {editMode ? (
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => {
-                setEditingCard(null);
-                setConfigOpen(true);
-              }}
-            >
-              Add a card
-            </Button>
-          ) : null}
-        </Empty>
+        <div style={{ textAlign: "center", padding: "48px 24px" }}>
+          <span
+            className="material-symbols-rounded"
+            aria-hidden
+            style={{ fontSize: 30, color: token.colorTextQuaternary }}
+          >
+            dashboard
+          </span>
+          <div style={{ marginTop: 8, fontSize: 14, fontWeight: 600, color: token.colorText }}>
+            No cards yet
+          </div>
+          <p style={{ margin: "4px 0 16px", fontSize: 12.5, color: token.colorTextTertiary }}>
+            Add charts, metrics and task lists to build your dashboard.
+          </p>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => {
+              setEditMode(true);
+              setEditingCard(null);
+              setConfigOpen(true);
+            }}
+          >
+            Add a card
+          </Button>
+        </div>
       ) : (
         <DndContext
           sensors={sensors}

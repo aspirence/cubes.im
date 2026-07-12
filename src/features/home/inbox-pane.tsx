@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, Empty, List, Segmented, Space, Tag, Typography } from "antd";
+import { Button, Card, List, Segmented, Skeleton, Space, Tag, Typography, theme } from "antd";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import {
@@ -15,7 +15,7 @@ import {
 
 dayjs.extend(relativeTime);
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
 /** Derive a navigation target for a notification, preferring an explicit url. */
 function notificationHref(n: Notification): string | null {
@@ -49,6 +49,7 @@ export interface InboxPaneProps {
  * clicking an item marks it read and jumps to its task/project.
  */
 export function InboxPane({ title, description, types }: InboxPaneProps) {
+  const { token } = theme.useToken();
   const router = useRouter();
   useNotificationsRealtime();
   const { data, isLoading } = useNotifications();
@@ -80,7 +81,7 @@ export function InboxPane({ title, description, types }: InboxPaneProps) {
   };
 
   return (
-    <Card>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div
         style={{
           display: "flex",
@@ -88,19 +89,30 @@ export function InboxPane({ title, description, types }: InboxPaneProps) {
           justifyContent: "space-between",
           gap: 12,
           flexWrap: "wrap",
-          marginBottom: 12,
         }}
       >
         <div>
-          <Title level={4} style={{ margin: 0 }}>
-            {title}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: 21,
+                fontWeight: 600,
+                letterSpacing: "-.4px",
+                color: token.colorText,
+              }}
+            >
+              {title}
+            </h1>
             {unreadHere > 0 ? (
-              <Tag color="red" style={{ marginInlineStart: 8, borderRadius: 10 }}>
+              <Tag color="red" style={{ marginInlineEnd: 0, borderRadius: 10 }}>
                 {unreadHere > 99 ? "99+" : unreadHere}
               </Tag>
             ) : null}
-          </Title>
-          <Text type="secondary">{description}</Text>
+          </div>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: token.colorTextSecondary }}>
+            {description}
+          </p>
         </div>
         <Space>
           <Segmented
@@ -122,64 +134,89 @@ export function InboxPane({ title, description, types }: InboxPaneProps) {
         </Space>
       </div>
 
-      <List<Notification>
-        loading={isLoading}
-        dataSource={items}
-        locale={{
-          emptyText: (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={
-                filter === "unread" ? "Nothing unread — all caught up." : "Nothing here yet."
-              }
-            />
-          ),
-        }}
-        renderItem={(n) => {
-          const tag = TYPE_TAG[n.type] ?? { label: n.type };
-          return (
-            <List.Item
-              onClick={() => handleClick(n)}
-              style={{
-                cursor: "pointer",
-                paddingInline: 12,
-                borderRadius: 8,
-                background: n.read ? undefined : "rgba(64,108,255,0.06)",
-              }}
-            >
-              <List.Item.Meta
-                title={
-                  <Space size={8} wrap>
-                    {!n.read ? (
-                      <span
-                        aria-label="Unread"
-                        style={{
-                          display: "inline-block",
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          background: "#4c6fff",
-                        }}
-                      />
-                    ) : null}
-                    <Text strong={!n.read}>{n.message}</Text>
-                  </Space>
-                }
-                description={
-                  <Space size={8}>
-                    <Tag color={tag.color} style={{ marginInlineEnd: 0 }}>
-                      {tag.label}
-                    </Tag>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {dayjs(n.created_at).fromNow()}
-                    </Text>
-                  </Space>
-                }
-              />
-            </List.Item>
-          );
-        }}
-      />
-    </Card>
+      <Card>
+        {isLoading ? (
+          <Skeleton active paragraph={{ rows: 6 }} />
+        ) : (
+          <List<Notification>
+            dataSource={items}
+            locale={{
+              emptyText: (
+                <div style={{ textAlign: "center", padding: "48px 24px" }}>
+                  <span
+                    className="material-symbols-rounded"
+                    style={{ fontSize: 30, color: token.colorTextQuaternary }}
+                  >
+                    {filter === "unread" ? "mark_email_read" : "notifications"}
+                  </span>
+                  <div
+                    style={{
+                      fontSize: 13.5,
+                      fontWeight: 600,
+                      color: token.colorText,
+                    }}
+                  >
+                    {filter === "unread" ? "All caught up" : "Nothing here yet"}
+                  </div>
+                  <p
+                    style={{
+                      margin: "4px 0 0",
+                      fontSize: 12.5,
+                      color: token.colorTextTertiary,
+                    }}
+                  >
+                    Comments, mentions and assignments will land here.
+                  </p>
+                </div>
+              ),
+            }}
+            renderItem={(n) => {
+              const tag = TYPE_TAG[n.type] ?? { label: n.type };
+              return (
+                <List.Item
+                  onClick={() => handleClick(n)}
+                  style={{
+                    cursor: "pointer",
+                    paddingInline: 12,
+                    borderRadius: 8,
+                    background: n.read ? undefined : "rgba(64,108,255,0.06)",
+                  }}
+                >
+                  <List.Item.Meta
+                    title={
+                      <Space size={8} wrap>
+                        {!n.read ? (
+                          <span
+                            aria-label="Unread"
+                            style={{
+                              display: "inline-block",
+                              width: 8,
+                              height: 8,
+                              borderRadius: "50%",
+                              background: "#4c6fff",
+                            }}
+                          />
+                        ) : null}
+                        <Text strong={!n.read}>{n.message}</Text>
+                      </Space>
+                    }
+                    description={
+                      <Space size={8}>
+                        <Tag color={tag.color} style={{ marginInlineEnd: 0 }}>
+                          {tag.label}
+                        </Tag>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {dayjs(n.created_at).fromNow()}
+                        </Text>
+                      </Space>
+                    }
+                  />
+                </List.Item>
+              );
+            }}
+          />
+        )}
+      </Card>
+    </div>
   );
 }

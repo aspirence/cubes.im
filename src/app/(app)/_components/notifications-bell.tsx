@@ -234,7 +234,7 @@ function NotificationRow({
         padding: "10px 12px",
         borderRadius: 8,
         cursor: href ? "pointer" : "default",
-        background: hover ? t.rowHover : unread ? "rgba(76,76,214,0.045)" : "transparent",
+        background: hover ? t.rowHover : unread ? "rgba(74,74,208,0.045)" : "transparent",
       }}
     >
       <Avatar
@@ -299,7 +299,7 @@ function NotificationRow({
         <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "none" }}>
           <TimeText createdAt={n.created_at} />
           {unread ? (
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#4c6fff" }} />
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#4a4ad0" }} />
           ) : null}
         </div>
       )}

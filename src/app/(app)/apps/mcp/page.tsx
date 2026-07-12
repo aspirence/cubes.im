@@ -1,13 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { App as AntdApp, Button, Result, Space, Spin } from "antd";
+import { App as AntdApp, Button, Result, Space, Spin, Typography } from "antd";
 import {
   useInstalledApp,
   useInstallApp,
   useIsTeamAdmin,
 } from "@/features/apps-platform/use-installed-apps";
+import { useActiveTeam } from "@/features/teams/use-teams";
 import { McpManager } from "@/features/mcp/mcp-manager";
+
+const { Title, Text } = Typography;
 
 const ACCENT = "#c96442";
 
@@ -29,6 +32,7 @@ export default function McpAppPage() {
   const { installed, enabled, isLoading } = useInstalledApp("mcp");
   const installApp = useInstallApp();
   const { data: isTeamAdmin } = useIsTeamAdmin();
+  const { data: activeTeam } = useActiveTeam();
 
   if (isLoading) {
     return (
@@ -82,6 +86,39 @@ export default function McpAppPage() {
 
   return (
     <div style={{ maxWidth: 860, margin: "0 auto" }}>
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 14,
+          marginBottom: 16,
+        }}
+      >
+        <div
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 12,
+            background: `${ACCENT}1a`,
+            color: ACCENT,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flex: "none",
+          }}
+        >
+          <MIcon name="smart_toy" size={26} />
+        </div>
+        <div>
+          <Title level={4} style={{ margin: 0 }}>
+            MCP
+          </Title>
+          <Text type="secondary">
+            Workspace: <b>{activeTeam?.name ?? "…"}</b>
+          </Text>
+        </div>
+      </div>
       <McpManager />
     </div>
   );

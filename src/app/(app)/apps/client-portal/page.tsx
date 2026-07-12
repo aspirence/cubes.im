@@ -827,6 +827,7 @@ export default function ClientPortalPage() {
         style={{
           width: 260,
           flex: "none",
+          background: C.panel,
           borderRight: `1px solid ${C.hairline}`,
           padding: "16px 10px",
           display: "flex",

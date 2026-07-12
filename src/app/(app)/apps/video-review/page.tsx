@@ -395,6 +395,7 @@ export default function VideoReviewHubPage() {
             width: 240,
             flex: "none",
             minHeight: 0,
+            background: VR.panel,
             borderRight: `1px solid ${VR.hairline}`,
             padding: "16px 10px",
             display: "flex",
@@ -548,7 +549,7 @@ export default function VideoReviewHubPage() {
           ) : (
             <div style={{ display: "flex", alignItems: "center", marginBottom: 16 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <h2 style={{ margin: 0, color: VR.text, fontSize: 22, fontWeight: 700 }}>
+                <h2 style={{ margin: 0, color: VR.text, fontSize: 20, fontWeight: 700 }}>
                   {sel === "__none"
                     ? "Not in a project"
                     : projectRows.find((p) => p.id === sel)?.name ?? "Project"}
@@ -567,7 +568,7 @@ export default function VideoReviewHubPage() {
                   Import local folder
                 </Button>
               ) : null}
-              <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
                 New review
               </Button>
             </div>

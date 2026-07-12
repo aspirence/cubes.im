@@ -567,7 +567,9 @@ export default function VideoReviewScreen() {
   if (!video) {
     return (
       <Empty description="Video not found or you don't have access.">
-        <Link href="/apps/video-review">Back to Video Review</Link>
+        <Link href="/apps/video-review">
+          <Button type="primary">Back to Video Review</Button>
+        </Link>
       </Empty>
     );
   }

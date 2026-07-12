@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Empty, Spin } from "antd";
+import { Spin } from "antd";
 import { useRouter } from "next/navigation";
 import { ProjectActions, FavoriteStar } from "./project-actions";
 import { resolveClientName } from "./project-display";
@@ -239,14 +239,6 @@ export function ProjectsGrid({
     return (
       <div style={{ textAlign: "center", padding: 48 }}>
         <Spin />
-      </div>
-    );
-  }
-
-  if (projects.length === 0) {
-    return (
-      <div style={{ padding: 48 }}>
-        <Empty description="No projects" />
       </div>
     );
   }

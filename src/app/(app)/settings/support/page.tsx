@@ -9,8 +9,8 @@ import {
   Form,
   Input,
   List,
+  Skeleton,
   Space,
-  Spin,
   Tag,
   Typography,
 } from "antd";
@@ -148,11 +148,7 @@ export default function SupportSettingsPage() {
         </Title>
 
         {isLoading ? (
-          <div
-            style={{ display: "flex", justifyContent: "center", padding: 24 }}
-          >
-            <Spin />
-          </div>
+          <Skeleton active paragraph={{ rows: 3 }} />
         ) : requests.length > 0 ? (
           <List
             itemLayout="vertical"

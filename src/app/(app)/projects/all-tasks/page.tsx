@@ -563,14 +563,14 @@ export default function AllTasksPage() {
 
   /* ----- header ----- */
   const header = (
-    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <h1
         style={{
           margin: 0,
           fontSize: 21,
           fontWeight: 600,
           color: T.textPrimary,
-          letterSpacing: -0.2,
+          letterSpacing: "-.4px",
         }}
       >
         All Tasks

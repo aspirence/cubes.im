@@ -14,6 +14,7 @@ import {
   Tabs,
   Tag,
   Typography,
+  theme,
 } from "antd";
 import type { MenuProps } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
@@ -121,11 +122,12 @@ function AddViewPicker({
   onAdd: (key: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const { token } = theme.useToken();
   const content = (
     <div style={{ width: 300 }}>
       <Typography.Text
         type="secondary"
-        style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 }}
+        style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.7 }}
       >
         Add a view
       </Typography.Text>
@@ -154,7 +156,7 @@ function AddViewPicker({
                 alignItems: "center",
                 gap: 8,
                 padding: "8px 10px",
-                border: "1px solid rgba(128,128,140,0.2)",
+                border: `1px solid ${token.colorBorderSecondary}`,
                 borderRadius: 8,
                 background: "transparent",
                 cursor: disabled ? "not-allowed" : "pointer",
@@ -194,7 +196,7 @@ function AddViewPicker({
           alignItems: "center",
           gap: 4,
           padding: "4px 10px",
-          border: "1px solid rgba(128,128,140,0.25)",
+          border: `1px solid ${token.colorBorderSecondary}`,
           borderRadius: 7,
           background: "transparent",
           color: "inherit",

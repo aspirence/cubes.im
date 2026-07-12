@@ -115,7 +115,7 @@ export default function AdminBillingPage() {
             style={{
               marginTop: 16,
               padding: 16,
-              borderRadius: 14,
+              borderRadius: 12,
               background: token.colorFillQuaternary,
               border: `1px solid ${token.colorBorderSecondary}`,
             }}

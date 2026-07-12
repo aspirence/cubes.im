@@ -110,7 +110,15 @@ function SortableSidebarItem({
         fontWeight: 500,
         marginBottom: 1,
         color: active ? "#4a4ad0" : dark ? "#9aa4b6" : "#494b54",
-        background: active ? (dark ? "rgba(74,74,208,.2)" : "#eceefb") : "transparent",
+        background: active
+          ? dark
+            ? "rgba(74,74,208,.2)"
+            : "#eceefb"
+          : hovered && !editable
+            ? dark
+              ? "#1b1f29"
+              : "#eef0f3"
+            : "transparent",
         boxShadow: isDragging ? "0 8px 18px rgba(16,24,40,.12)" : "none",
         position: "relative",
         transition:
@@ -210,8 +218,8 @@ function SortableSidebarItem({
             width: collapsed ? 18 : 20,
             height: collapsed ? 18 : 20,
             borderRadius: 999,
-            background: "#fff7d6",
-            color: "#b98500",
+            background: dark ? "rgba(185,133,0,.22)" : "#fff7d6",
+            color: dark ? "#d8a52a" : "#b98500",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -446,11 +454,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div style={{ width: 300, maxHeight: 360, overflowY: "auto" }}>
         <div
           style={{
-            fontSize: 12,
-          fontWeight: 600,
+            font: "600 10.5px var(--font-geist-sans)",
           color: "#8a8d98",
           textTransform: "uppercase",
-          letterSpacing: ".6px",
+          letterSpacing: ".7px",
           marginBottom: 10,
         }}
       >
@@ -465,10 +472,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div key={kind} style={{ display: "grid", gap: 8 }}>
                 <div
                   style={{
-                    fontSize: 11,
-                    fontWeight: 600,
+                    font: "600 10.5px var(--font-geist-sans)",
                     color: "#9a9da8",
-                    letterSpacing: ".6px",
+                    letterSpacing: ".7px",
                     textTransform: "uppercase",
                   }}
                 >

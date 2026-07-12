@@ -121,7 +121,7 @@ function renderMascot(
       size={size}
       icon={!src ? <RobotOutlined /> : undefined}
       style={{
-        background: src ? token.colorBgContainer : "linear-gradient(135deg, #5658e8 0%, #7c6cff 100%)",
+        background: src ? token.colorBgContainer : "linear-gradient(135deg, #4a4ad0 0%, #7c6cff 100%)",
         flex: "0 0 auto",
       }}
     >
@@ -360,31 +360,39 @@ export default function AgentsPage() {
     <>
       <style>{`@media (max-width:900px){.wl-agents-cols{grid-template-columns:1fr !important}.wl-agents-tasks{grid-template-columns:1fr !important}}`}</style>
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        <Card>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-start",
-              gap: 16,
-              flexWrap: "wrap",
-            }}
-          >
-            <div>
-              <Typography.Title level={4} style={{ margin: 0 }}>
-                Agents
-              </Typography.Title>
-              <Typography.Paragraph type="secondary" style={{ margin: "8px 0 0" }}>
-                Create mascot-driven AI agents, teach them specific work with saved prompts,
-                and attach live Cubes context using <code>@projects</code>,
-                <code> @tasks</code>, <code> @files</code>, and more.
-              </Typography.Paragraph>
-            </div>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-              New agent
-            </Button>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: 21,
+                fontWeight: 600,
+                letterSpacing: "-.4px",
+                color: token.colorText,
+              }}
+            >
+              Agents
+            </h1>
+            <Typography.Paragraph
+              style={{ margin: "4px 0 0", fontSize: 13, color: token.colorTextSecondary }}
+            >
+              Create mascot-driven AI agents, teach them specific work with saved prompts,
+              and attach live Cubes context using <code>@projects</code>,
+              <code> @tasks</code>, <code> @files</code>, and more.
+            </Typography.Paragraph>
           </div>
-        </Card>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+            New agent
+          </Button>
+        </div>
 
         <div
           className="wl-agents-cols"
@@ -427,15 +435,15 @@ export default function AgentsPage() {
                       onClick={() => setSelectedAgentId(agent.id)}
                       style={{
                         textAlign: "left",
-                        borderRadius: 16,
+                        borderRadius: 12,
                         padding: 14,
                         border:
                           selectedAgentId === agent.id
-                            ? "1px solid rgba(86,88,232,0.4)"
+                            ? `1px solid ${token.colorPrimaryBorder}`
                             : `1px solid ${token.colorBorderSecondary}`,
                         background:
                           selectedAgentId === agent.id
-                            ? "rgba(86,88,232,0.08)"
+                            ? token.colorPrimaryBg
                             : token.colorBgContainer,
                         cursor: "pointer",
                       }}
@@ -664,13 +672,13 @@ export default function AgentsPage() {
                             textAlign: "left",
                             border:
                               selectedTaskId === task.id
-                                ? "1px solid rgba(86,88,232,0.4)"
+                                ? `1px solid ${token.colorPrimaryBorder}`
                                 : `1px solid ${token.colorBorderSecondary}`,
-                            borderRadius: 14,
+                            borderRadius: 12,
                             padding: 12,
                             background:
                               selectedTaskId === task.id
-                                ? "rgba(86,88,232,0.06)"
+                                ? token.colorPrimaryBg
                                 : token.colorBgContainer,
                             cursor: "pointer",
                           }}
@@ -845,7 +853,7 @@ export default function AgentsPage() {
                         key={context.key}
                         style={{
                           border: `1px solid ${token.colorBorderSecondary}`,
-                          borderRadius: 14,
+                          borderRadius: 12,
                           padding: 12,
                           background: token.colorBgContainer,
                         }}
@@ -918,7 +926,7 @@ export default function AgentsPage() {
 
                     <div
                       style={{
-                        borderRadius: 16,
+                        borderRadius: 12,
                         border: `1px solid ${token.colorBorderSecondary}`,
                         background: token.colorFillTertiary,
                         padding: 14,

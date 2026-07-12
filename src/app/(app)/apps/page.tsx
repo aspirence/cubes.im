@@ -6,7 +6,6 @@ import {
   App,
   Button,
   Drawer,
-  Empty,
   Input,
   Popconfirm,
   Space,
@@ -206,7 +205,22 @@ function AppCenterInner() {
 
   const renderGrid = (items: CardItem[]) =>
     items.length === 0 ? (
-      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No apps here" style={{ margin: "32px 0" }} />
+      <div
+        style={{
+          margin: "32px 0",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 6,
+          textAlign: "center",
+        }}
+      >
+        <MIcon name="search_off" size={28} color={token.colorTextQuaternary} />
+        <div style={{ fontWeight: 600, color: token.colorText }}>No matching apps</div>
+        <div style={{ fontSize: 12.5, color: token.colorTextTertiary }}>
+          Try a different keyword or browse All Apps.
+        </div>
+      </div>
     ) : (
       <div
         style={{
@@ -411,9 +425,17 @@ function AppCenterInner() {
 
   return (
     <div>
-      {/* Search only — the section headings (Featured / category) label content;
+      {/* Page header + search — the section headings (Featured / category) label content;
           the App Center rail lives in the shell's secondary sidebar. */}
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 18 }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 21, fontWeight: 600, letterSpacing: "-.4px", color: token.colorText }}>
+            App Center
+          </h1>
+          <div style={{ fontSize: 13, color: token.colorTextSecondary, margin: "4px 0 0" }}>
+            Install Cubes apps and connect integrations.
+          </div>
+        </div>
         <Input.Search
           allowClear
           placeholder="Search apps…"

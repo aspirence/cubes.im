@@ -185,7 +185,7 @@ export function ProjectOverviewTab({ project }: { project: ProjectWithRelations 
   const cardStyle: React.CSSProperties = {
     background: token.colorBgContainer,
     border: `1px solid ${token.colorBorderSecondary}`,
-    borderRadius: 14,
+    borderRadius: 12,
     padding: 18,
   };
 
@@ -334,7 +334,7 @@ export function ProjectOverviewTab({ project }: { project: ProjectWithRelations 
 
       {/* Editable settings — tucked into a collapse so the overview reads as a dashboard */}
       <Collapse
-        style={{ background: token.colorBgContainer, borderRadius: 14 }}
+        style={{ background: token.colorBgContainer, borderRadius: 12 }}
         items={[
           {
             key: "settings",

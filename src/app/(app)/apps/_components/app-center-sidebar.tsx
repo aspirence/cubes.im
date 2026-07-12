@@ -113,7 +113,7 @@ function AppCenterSidebarInner() {
           style={{
             fontSize: 10.5,
             fontWeight: 600,
-            letterSpacing: 0.5,
+            letterSpacing: 0.7,
             color: token.colorTextTertiary,
             padding: "6px 10px 4px",
           }}

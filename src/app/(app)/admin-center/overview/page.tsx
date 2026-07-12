@@ -54,7 +54,7 @@ export default function AdminOverviewPage() {
       </Typography.Text>
 
       {isError ? (
-        <div style={{ marginTop: 16 }}>
+        <div>
           <AdminError error={error} title="Failed to load overview" />
         </div>
       ) : (

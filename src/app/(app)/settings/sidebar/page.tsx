@@ -304,26 +304,26 @@ export default function SidebarSettingsPage() {
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
       <Card>
-        <Typography.Title level={4} style={{ marginTop: 0, marginBottom: 6 }}>
-          Sidebar
-        </Typography.Title>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-          Pin more destinations into the primary rail, including installed apps,
-          and drag them into the order you want.
-        </Typography.Paragraph>
-
         <div
           style={{
             display: "flex",
-            flexWrap: "wrap",
-            gap: 10,
             alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
           }}
         >
+          <div>
+            <Typography.Title level={4} style={{ marginTop: 0, marginBottom: 6 }}>
+              Sidebar
+            </Typography.Title>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              Pin more destinations into the primary rail, including installed
+              apps, and drag them into the order you want. Default set:{" "}
+              {DEFAULT_SIDEBAR_PINNED_ITEM_IDS.length} core items.
+            </Typography.Paragraph>
+          </div>
           <Button onClick={resetSidebarPinnedItems}>Reset defaults</Button>
-          <Typography.Text type="secondary">
-            Default set: {DEFAULT_SIDEBAR_PINNED_ITEM_IDS.length} core items.
-          </Typography.Text>
         </div>
       </Card>
 

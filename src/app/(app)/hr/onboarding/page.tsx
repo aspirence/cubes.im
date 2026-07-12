@@ -248,15 +248,12 @@ function ChecklistSection({
             >
               <List.Item.Meta
                 title={
-                  <span
-                    style={{
-                      textDecoration:
-                        t.status === "done" ? "line-through" : undefined,
-                      color: t.status === "done" ? "#999" : undefined,
-                    }}
+                  <Text
+                    delete={t.status === "done"}
+                    type={t.status === "done" ? "secondary" : undefined}
                   >
                     {t.title}
-                  </span>
+                  </Text>
                 }
                 description={
                   t.due_date
@@ -367,7 +364,8 @@ export default function HrOnboardingPage() {
   };
 
   return (
-    <Card>
+    <>
+      <Card>
       <div
         style={{
           display: "flex",
@@ -401,7 +399,6 @@ export default function HrOnboardingPage() {
           {isHrAdmin ? (
             <Button
               type="primary"
-              ghost
               icon={<PlusOutlined />}
               onClick={openCreateEmployee}
             >
@@ -463,6 +460,7 @@ export default function HrOnboardingPage() {
           </Row>
         </div>
       )}
+      </Card>
 
       {isHrAdmin ? (
         <div style={{ marginTop: 16 }}>
@@ -507,6 +505,6 @@ export default function HrOnboardingPage() {
           />
         </Form>
       </Drawer>
-    </Card>
+    </>
   );
 }

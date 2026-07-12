@@ -226,7 +226,7 @@ export default function Landing() {
       <section className="trust">
         <span>Trusted by fast-moving teams</span>
         <div className="trust-logos">
-          {["Northwind", "Spectrum", "Fable", "Cloudline", "Umbrella"].map((n) => <span key={n}>{n}</span>)}
+          {["Waple", "Growout", "fps.video", "Aspirence"].map((n) => <span key={n}>{n}</span>)}
         </div>
       </section>
 
@@ -453,13 +453,16 @@ const CSS = `
 }
 @media(max-width:600px){
   .bento{grid-template-columns:1fr;}
-  .hero{min-height:82vh;}
-  .hero-in{padding:48px 22px 0;}
-  .h1{font-size:clamp(30px,8vw,46px);line-height:1.06;}
-  .hero-sub{margin-top:20px;font-size:15px;}
-  .hero-cta{margin-top:26px;}
+  .hero{min-height:78vh;}
+  .hero-in{padding:44px 22px 0;}
+  .h1{font-size:clamp(31px,8.4vw,46px);line-height:1.04;}
+  /* Smaller, tighter cube so the wrapped headline reads clean on phones. */
+  .hero-cube{width:.9em;height:.9em;margin-left:.06em;margin-top:-.1em;}
+  .hero-sub{margin-top:18px;font-size:15px;}
+  .hero-cta{margin-top:24px;}
   .hero-cta .btn.xl{width:100%;justify-content:center;}
-  .cubes{height:40%;}
+  /* Fuller cube field, closer to the CTA — kills the mid-hero dead space. */
+  .cubes{height:50%;}
   .m-board{min-width:420px;}
   .mfoot-legal{flex-wrap:wrap;justify-content:center;gap:10px 16px;}
   .mfoot-bar{justify-content:center;text-align:center;}

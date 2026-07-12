@@ -830,12 +830,41 @@ export default function SchedulePage() {
             <div
               style={{
                 padding: "36px 0",
-                textAlign: "center",
-                color: T.textTertiary,
-                fontSize: 13,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 8,
               }}
             >
-              Nothing scheduled for this day.
+              <span
+                className="material-symbols-rounded"
+                style={{ fontSize: 28, color: T.textFaint }}
+              >
+                event_available
+              </span>
+              <div
+                style={{
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  color: T.textPrimary,
+                }}
+              >
+                Nothing scheduled for this day
+              </div>
+              <div style={{ fontSize: 12.5, color: T.textTertiary }}>
+                Tasks due, allocations and leave will show up here.
+              </div>
+              <Button
+                size="small"
+                icon={<PlusOutlined />}
+                style={{ marginTop: 4, borderRadius: 8 }}
+                onClick={() => {
+                  setCreateDate(anchor);
+                  setCreateOpen(true);
+                }}
+              >
+                Add task
+              </Button>
             </div>
           ) : (
             chips.map((chip) => (
@@ -1038,7 +1067,6 @@ export default function SchedulePage() {
         display: "flex",
         flexDirection: "column",
         gap: 16,
-        padding: 4,
       }}
     >
       {header}

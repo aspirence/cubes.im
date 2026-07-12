@@ -258,7 +258,19 @@ export function WorkloadTab({
 
       {/* Grid */}
       {isLoading ? null : rows.length === 0 ? (
-        <Empty description="No members on this project yet." />
+        <div
+          style={{
+            border: `1px solid ${token.colorBorderSecondary}`,
+            borderRadius: 12,
+            background: token.colorBgContainer,
+            padding: 32,
+          }}
+        >
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description="No members on this project yet."
+          />
+        </div>
       ) : (
         <div
           style={{

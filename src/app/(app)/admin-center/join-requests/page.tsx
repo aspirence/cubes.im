@@ -8,6 +8,7 @@ import {
   Empty,
   Input,
   Modal,
+  Result,
   Select,
   Skeleton,
   Table,
@@ -155,9 +156,11 @@ export default function JoinRequestsAdminPage() {
   if (orgLoading || adminLoading) return <Skeleton active paragraph={{ rows: 6 }} />;
   if (!isAdmin) {
     return (
-      <Card>
-        <Empty description="Only organization admins can manage join requests." />
-      </Card>
+      <Result
+        status="403"
+        title="Admins only"
+        subTitle="Only organization admins can manage join requests."
+      />
     );
   }
 

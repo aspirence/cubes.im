@@ -949,7 +949,7 @@ function ApprovalsSection() {
   ];
 
   return (
-    <Card style={{ marginTop: 24 }}>
+    <Card style={{ marginTop: 16 }}>
       <Title level={5} style={{ marginTop: 0 }}>
         Pending approvals
       </Title>

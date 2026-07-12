@@ -5,13 +5,11 @@ import Link from "next/link";
 import {
   App,
   DatePicker,
-  Empty,
   Input,
   Segmented,
   Select,
   Skeleton,
   Tooltip,
-  Typography,
   theme,
 } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
@@ -28,8 +26,6 @@ import { useUpdateTask } from "@/features/tasks/use-tasks";
 import { useTaskPriorities } from "@/features/tasks/use-task-statuses";
 import { useTaskDrawer } from "@/store/task-drawer-store";
 import { TaskDrawer } from "@/app/(app)/projects/[id]/_components/task-drawer";
-
-const { Text, Title } = Typography;
 
 function MIcon({ name, size = 18, color }: { name: string; size?: number; color?: string }) {
   return (
@@ -403,11 +399,24 @@ export default function MyTasksPage() {
       {/* Header */}
       <div className="mt-head">
         <div>
-          <Title level={3} style={{ margin: 0, display: "flex", alignItems: "center", gap: 10 }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: 21,
+              fontWeight: 600,
+              letterSpacing: "-.4px",
+              color: token.colorText,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
             My Tasks
             {total > 0 ? <span className="mt-count">{total}</span> : null}
-          </Title>
-          <Text type="secondary">Every open task assigned to you — manage it right here.</Text>
+          </h1>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: token.colorTextSecondary }}>
+            Every open task assigned to you — manage it right here.
+          </p>
         </div>
         <div className="mt-tools">
           <Input
@@ -478,9 +487,25 @@ export default function MyTasksPage() {
       {isLoading ? (
         <Skeleton active paragraph={{ rows: 8 }} />
       ) : total === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Nothing on your plate. 🎉" />
+        <div style={{ textAlign: "center", padding: "56px 24px" }}>
+          <MIcon name="task_alt" size={30} color={token.colorTextQuaternary} />
+          <div style={{ marginTop: 10, fontSize: 14, fontWeight: 600, color: token.colorText }}>
+            Nothing on your plate
+          </div>
+          <div style={{ marginTop: 4, fontSize: 13, color: token.colorTextTertiary }}>
+            Tasks assigned to you across all projects will show up here.
+          </div>
+        </div>
       ) : visible.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No tasks match your filters." />
+        <div style={{ textAlign: "center", padding: "56px 24px" }}>
+          <MIcon name="task_alt" size={30} color={token.colorTextQuaternary} />
+          <div style={{ marginTop: 10, fontSize: 14, fontWeight: 600, color: token.colorText }}>
+            No tasks match your filters
+          </div>
+          <div style={{ marginTop: 4, fontSize: 13, color: token.colorTextTertiary }}>
+            Clear the search or bucket filter to see everything.
+          </div>
+        </div>
       ) : (
         groups.map((g) => (
           <div key={g.label} style={{ marginBottom: 20 }}>
@@ -526,7 +551,7 @@ function STYLE(token: ReturnType<typeof theme.useToken>["token"]): string {
   .mt-group-ic{width:22px;height:22px;flex:none;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;}
   .mt-group-l{font-size:12.5px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;}
   .mt-group-n{font-size:11px;font-weight:600;color:${token.colorTextTertiary};background:${token.colorFillTertiary};border-radius:999px;padding:0 7px;line-height:17px;}
-  .mt-card{background:${token.colorBgContainer};border:1px solid ${token.colorBorderSecondary};border-radius:14px;padding:5px;box-shadow:0 1px 2px rgba(16,24,40,0.03);}
+  .mt-card{background:${token.colorBgContainer};border:1px solid ${token.colorBorderSecondary};border-radius:12px;padding:5px;box-shadow:0 1px 2px rgba(16,24,40,0.03);}
 
   .mt-row{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;transition:background 120ms;flex-wrap:wrap;}
   .mt-row:hover{background:${token.colorFillQuaternary};}

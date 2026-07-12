@@ -15,7 +15,7 @@ import {
   Switch,
   Table,
   Tag,
-  Typography,
+  theme,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { PlusOutlined, DeleteOutlined, ThunderboltOutlined } from "@ant-design/icons";
@@ -34,6 +34,7 @@ const triggerLabel = (t: string) =>
 
 export default function WorkflowsListPage() {
   const router = useRouter();
+  const { token } = theme.useToken();
   const { message } = App.useApp();
   const { data: workflows, isLoading } = useWorkflows();
   const createWorkflow = useCreateWorkflow();
@@ -160,28 +161,30 @@ export default function WorkflowsListPage() {
   ];
 
   return (
-    <Card>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div
         style={{
           display: "flex",
-          alignItems: "center",
+          alignItems: "flex-end",
           justifyContent: "space-between",
-          marginBottom: 16,
+          gap: 12,
+          flexWrap: "wrap",
         }}
       >
         <div>
-          <Typography.Title level={4} style={{ margin: 0 }}>
+          <h1 style={{ margin: 0, fontSize: 21, fontWeight: 600, letterSpacing: "-.4px", color: token.colorText }}>
             Workflows
-          </Typography.Title>
-          <Typography.Text type="secondary">
+          </h1>
+          <div style={{ margin: "4px 0 0", fontSize: 13, color: token.colorTextSecondary }}>
             Automate multi-step sequences. Deterministic runs use zero AI tokens.
-          </Typography.Text>
+          </div>
         </div>
         <Button type="primary" icon={<PlusOutlined />} disabled={!canManage} onClick={() => setCreateOpen(true)}>
           New workflow
         </Button>
       </div>
 
+      <Card>
       {(workflows?.length ?? 0) === 0 && !isLoading ? (
         <Empty
           description="No workflows yet"
@@ -228,6 +231,7 @@ export default function WorkflowsListPage() {
           </Form.Item>
         </Form>
       </Modal>
-    </Card>
+      </Card>
+    </div>
   );
 }

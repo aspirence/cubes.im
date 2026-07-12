@@ -432,7 +432,7 @@ export default function DataManagerPage() {
         {/* Danger zone */}
         <Card style={{ borderColor: token.colorErrorBorder }}>
           <Title level={5} style={{ marginTop: 0 }}>
-            <ExclamationCircleFilled style={{ color: "#cf1322", marginRight: 8 }} />
+            <ExclamationCircleFilled style={{ color: token.colorError, marginRight: 8 }} />
             Danger zone
           </Title>
           <Paragraph type="secondary" style={{ maxWidth: 640 }}>

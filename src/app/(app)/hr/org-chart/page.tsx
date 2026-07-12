@@ -5,6 +5,7 @@ import {
   Alert,
   App,
   Avatar,
+  Button,
   Card,
   Empty,
   Input,
@@ -16,7 +17,7 @@ import {
   theme,
 } from "antd";
 import type { DataNode, TreeProps } from "antd/es/tree";
-import { InfoCircleOutlined, TeamOutlined, UserOutlined } from "@ant-design/icons";
+import { InfoCircleOutlined, UserOutlined } from "@ant-design/icons";
 import Link from "next/link";
 import {
   useHrAccess,
@@ -283,10 +284,12 @@ export default function HrOrgChartPage() {
           marginBottom: 16,
         }}
       >
-        <Title level={4} style={{ margin: 0 }}>
-          <TeamOutlined style={{ marginInlineEnd: 8 }} />
-          Org chart
-        </Title>
+        <div>
+          <Title level={4} style={{ margin: 0 }}>
+            Org chart
+          </Title>
+          <Text type="secondary">Reporting lines across your organization.</Text>
+        </div>
         <Input.Search
           allowClear
           placeholder="Search by name, role or department"
@@ -320,7 +323,11 @@ export default function HrOrgChartPage() {
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description="No employees to chart yet"
-        />
+        >
+          <Link href="/hr/employees">
+            <Button type="primary">Go to employees</Button>
+          </Link>
+        </Empty>
       ) : matchedKeys && matchedKeys.length === 0 ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}

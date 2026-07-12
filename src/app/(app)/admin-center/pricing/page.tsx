@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { App, Button, Card, Empty, Input, InputNumber, Select, Skeleton, Typography, theme } from "antd";
+import { App, Button, Card, Input, InputNumber, Result, Select, Skeleton, Typography, theme } from "antd";
 import {
   useIsPlatformAdmin,
   usePlatformPricing,
@@ -38,12 +38,11 @@ export default function PricingAdminPage() {
   if (adminLoading) return <Skeleton active paragraph={{ rows: 6 }} />;
   if (!isAdmin) {
     return (
-      <Card>
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="This page is for platform super-admins only."
-        />
-      </Card>
+      <Result
+        status="403"
+        title="Super-admins only"
+        subTitle="You need to be a platform super-admin to view this page."
+      />
     );
   }
   if (isLoading || !form) return <Skeleton active paragraph={{ rows: 6 }} />;
@@ -66,11 +65,16 @@ export default function PricingAdminPage() {
 
   return (
     <div style={{ maxWidth: 900, display: "grid", gap: 16 }}>
-      <div>
-        <Title level={4} style={{ margin: 0 }}>Pricing</Title>
-        <Text type="secondary">
-          Super-admin controls for the global plan. Changes apply to every team&apos;s billing and the public pricing page instantly.
-        </Text>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <Title level={4} style={{ margin: 0 }}>Pricing</Title>
+          <Text type="secondary">
+            Super-admin controls for the global plan. Changes apply to every team&apos;s billing and the public pricing page instantly.
+          </Text>
+        </div>
+        <Button type="primary" loading={update.isPending} onClick={save}>
+          Save pricing
+        </Button>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 16 }} className="pr-grid">
@@ -192,12 +196,6 @@ export default function PricingAdminPage() {
           </div>
         )}
       </Card>
-
-      <div>
-        <Button type="primary" size="large" loading={update.isPending} onClick={save}>
-          Save pricing
-        </Button>
-      </div>
 
       <style>{`@media(max-width:820px){.pr-grid{grid-template-columns:1fr !important;}}`}</style>
     </div>

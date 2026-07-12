@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Alert,
   App,
   Button,
   Card,
@@ -693,15 +692,12 @@ export default function HrSettingsPage() {
   return (
     <Card>
       <Typography.Title level={4} style={{ marginTop: 0 }}>
-        HR Settings
+        HR settings
       </Typography.Title>
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-        message="Changes here apply across your organization's HR directory."
-      />
-      <Tabs defaultActiveKey="departments" items={items} />
+      <Typography.Text type="secondary">
+        Changes here apply across your organization&apos;s HR directory.
+      </Typography.Text>
+      <Tabs defaultActiveKey="departments" items={items} style={{ marginTop: 8 }} />
     </Card>
   );
 }

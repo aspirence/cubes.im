@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Divider, Drawer, Input, Segmented, Select, Space, Switch, Typography, theme } from "antd";
+import { Button, Divider, Drawer, Input, Segmented, Select, Space, Switch, Typography, theme } from "antd";
 import { useProjects } from "@/features/projects/use-projects";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
 import { MemberSelect } from "@/features/team-members/member-select";
@@ -98,22 +98,9 @@ export function CardConfigDrawer({
       open={open}
       onClose={onClose}
       extra={
-        <button
-          type="button"
-          onClick={() => onSubmit(draft)}
-          style={{
-            background: "#4c4cd6",
-            color: "#fff",
-            border: "none",
-            borderRadius: 7,
-            padding: "5px 14px",
-            fontSize: 13,
-            fontWeight: 500,
-            cursor: "pointer",
-          }}
-        >
+        <Button type="primary" onClick={() => onSubmit(draft)}>
           {card ? "Save" : "Add"}
-        </button>
+        </Button>
       }
     >
       <Space direction="vertical" size={14} style={{ width: "100%" }}>

@@ -14,6 +14,7 @@ import {
   Statistic,
   Tag,
   Typography,
+  theme,
 } from "antd";
 import {
   TeamOutlined,
@@ -42,7 +43,7 @@ import {
 } from "../_lib/analytics";
 import { employmentTypeLabel, statusColor, statusLabel } from "../_lib/labels";
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Please try again.";
@@ -63,6 +64,7 @@ function formatDay(day: string | null | undefined, fallback?: string | null) {
 }
 
 export default function HRDashboardPage() {
+  const { token } = theme.useToken();
   const { data, isLoading, isError, error } = useOrgAnalytics();
 
   const analytics = useMemo(() => asOrgAnalytics(data), [data]);
@@ -129,12 +131,26 @@ export default function HRDashboardPage() {
 
   return (
     <div>
-      <Title level={4} style={{ marginTop: 0 }}>
+      <h1
+        style={{
+          fontSize: 21,
+          fontWeight: 600,
+          letterSpacing: "-.4px",
+          color: token.colorText,
+          margin: 0,
+        }}
+      >
         HR dashboard
-      </Title>
-      <Text type="secondary">
+      </h1>
+      <div
+        style={{
+          fontSize: 13,
+          color: token.colorTextSecondary,
+          margin: "4px 0 0",
+        }}
+      >
         A snapshot of your people across the organization.
-      </Text>
+      </div>
 
       {isError ? (
         <Alert

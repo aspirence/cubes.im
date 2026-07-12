@@ -472,7 +472,22 @@ function MyLeaveTab() {
         loading={requestsLoading}
         columns={columns}
         dataSource={requests}
-        locale={{ emptyText: <Empty description="No leave requests yet" /> }}
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="No leave requests yet"
+            >
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => setApplyOpen(true)}
+              >
+                Apply for leave
+              </Button>
+            </Empty>
+          ),
+        }}
         pagination={{ pageSize: 10, hideOnSinglePage: true }}
         scroll={{ x: "max-content" }}
       />

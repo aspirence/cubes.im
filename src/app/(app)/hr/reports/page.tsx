@@ -21,6 +21,7 @@ import {
   ApartmentOutlined,
   TeamOutlined,
   EnvironmentOutlined,
+  CheckCircleOutlined,
   ClockCircleOutlined,
   CalendarOutlined,
   DollarOutlined,
@@ -473,7 +474,7 @@ export default function HrReportsPage() {
   );
 }
 
-/** A green check prefix for the "present today" statistic. */
+/** A check prefix for the "present today" statistic. */
 function CheckPrefix() {
-  return <TeamOutlined style={{ color: "#52c41a" }} />;
+  return <CheckCircleOutlined />;
 }

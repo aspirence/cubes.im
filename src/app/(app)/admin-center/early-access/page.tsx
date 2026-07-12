@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, Empty, Skeleton, Table, Tag, Typography } from "antd";
+import { Card, Result, Skeleton, Table, Tag, Typography } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { useIsPlatformAdmin } from "@/features/billing/use-pricing";
@@ -45,9 +45,11 @@ export default function EarlyAccessAdminPage() {
   if (adminLoading) return <Skeleton active paragraph={{ rows: 6 }} />;
   if (!isAdmin) {
     return (
-      <Card>
-        <Empty description="Super-admins only." />
-      </Card>
+      <Result
+        status="403"
+        title="Super-admins only"
+        subTitle="You need to be a platform super-admin to view this page."
+      />
     );
   }
 

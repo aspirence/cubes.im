@@ -262,7 +262,42 @@ export default function ProjectsPage() {
         }
       `}</style>
 
-      {view === "grid" ? (
+      {!isLoading && count === 0 ? (
+        <div
+          style={{
+            background: skin.card,
+            border: `1px solid ${skin.hairline}`,
+            borderRadius: 12,
+            padding: 48,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            textAlign: "center",
+            gap: 6,
+          }}
+        >
+          <span
+            className="material-symbols-rounded"
+            style={{ fontSize: 32, color: skin.textFaint }}
+          >
+            folder_open
+          </span>
+          <div style={{ fontSize: 14, fontWeight: 600, color: skin.text }}>
+            No projects yet
+          </div>
+          <div style={{ fontSize: 12.5, color: skin.textTertiary }}>
+            Create your first project to start planning work.
+          </div>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={openCreate}
+            style={{ marginTop: 10 }}
+          >
+            Create Project
+          </Button>
+        </div>
+      ) : view === "grid" ? (
         <ProjectsGrid
           projects={visibleProjects}
           loading={isLoading}

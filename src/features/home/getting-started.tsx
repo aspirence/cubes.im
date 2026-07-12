@@ -131,7 +131,7 @@ export function GettingStarted({
           borderBottom: `1px solid ${token.colorSplit}`,
         }}
       >
-        <MIcon name="rocket_launch" size={17} color="#4c4cd6" />
+        <MIcon name="rocket_launch" size={17} color="#4a4ad0" />
         <Text strong style={{ fontSize: 13.5, flex: 1, minWidth: 0 }}>
           Get started with your workspace
         </Text>

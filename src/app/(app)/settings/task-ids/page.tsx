@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { App, Button, Input, InputNumber, Segmented, Select, Switch, Typography, theme } from "antd";
+import { App, Button, Card, Input, InputNumber, Segmented, Select, Switch, Typography, theme } from "antd";
 import {
   useTaskIdConfig,
   useUpdateTaskIdConfig,
@@ -53,7 +53,7 @@ export default function TaskIdSettingsPage() {
   ];
 
   return (
-    <div style={{ maxWidth: 720 }}>
+    <Card style={{ maxWidth: 720 }}>
       <Title level={4} style={{ marginTop: 0 }}>Task IDs</Title>
       <Text type="secondary">Choose how every task&apos;s ID is displayed across the workspace.</Text>
 
@@ -155,6 +155,6 @@ export default function TaskIdSettingsPage() {
           Save changes
         </Button>
       </div>
-    </div>
+    </Card>
   );
 }

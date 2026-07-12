@@ -479,7 +479,14 @@ function MyAttendanceTab() {
         <List
           loading={regsLoading}
           dataSource={regsData}
-          locale={{ emptyText: <Empty description="No regularization requests" /> }}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="No regularization requests"
+              />
+            ),
+          }}
           renderItem={(item) => {
             const meta = statusMeta(item.status);
             return (
@@ -690,7 +697,14 @@ function ApprovalsTab() {
         columns={columns}
         dataSource={rows}
         scroll={{ x: 'max-content' }}
-        locale={{ emptyText: <Empty description="Nothing to approve" /> }}
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="Nothing to approve"
+            />
+          ),
+        }}
         pagination={{ pageSize: 20, hideOnSinglePage: true }}
       />
     </Card>
@@ -777,7 +791,15 @@ export default function HrAttendancePage() {
       <Title level={4} style={{ marginTop: 0 }}>
         Attendance
       </Title>
-      <Tabs defaultActiveKey="mine" items={items} destroyOnHidden />
+      <Text type="secondary">
+        Clock in and out, monthly calendars, shifts and holidays.
+      </Text>
+      <Tabs
+        defaultActiveKey="mine"
+        items={items}
+        destroyOnHidden
+        style={{ marginTop: 8 }}
+      />
     </Card>
   );
 }

@@ -167,7 +167,11 @@ export default function ChatThreadPage() {
         )}
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 14.5, fontWeight: 650, color: token.colorText, lineHeight: 1.2 }}>
-            {infoLoading ? "…" : title}
+            {infoLoading ? (
+              <Skeleton.Input active size="small" style={{ width: 140, height: 16 }} />
+            ) : (
+              title
+            )}
           </div>
           {channel?.topic ? (
             <div
@@ -247,11 +251,12 @@ export default function ChatThreadPage() {
             }}
           >
             <MIcon name="waving_hand" size={28} color={token.colorTextQuaternary} />
-            <div style={{ fontSize: 13.5 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 650, color: token.colorText }}>
               {channel?.kind === "dm"
                 ? `This is the start of your conversation with ${title}.`
-                : `Welcome to #${title} — say hello.`}
+                : `Welcome to #${title}`}
             </div>
+            <div style={{ fontSize: 12.5, color: token.colorTextTertiary }}>Say hello below.</div>
           </div>
         ) : (
           rows.map((m, i) => {

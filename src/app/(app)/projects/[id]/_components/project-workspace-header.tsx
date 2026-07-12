@@ -165,7 +165,7 @@ export function ProjectWorkspaceHeader({
             autoFocus
             value={nameDraft}
             maxLength={100}
-            style={{ maxWidth: 420, fontSize: 20, fontWeight: 700 }}
+            style={{ maxWidth: 420, fontSize: 21, fontWeight: 600 }}
             onChange={(e) => setNameDraft(e.target.value)}
             onPressEnter={commitName}
             onBlur={commitName}
@@ -186,8 +186,8 @@ export function ProjectWorkspaceHeader({
               background: "transparent",
               padding: 0,
               cursor: "pointer",
-              fontSize: 22,
-              fontWeight: 700,
+              fontSize: 21,
+              fontWeight: 600,
               letterSpacing: "-0.4px",
               color: token.colorText,
             }}

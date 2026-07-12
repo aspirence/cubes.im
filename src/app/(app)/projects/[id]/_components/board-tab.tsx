@@ -117,18 +117,19 @@ function resolveAssignee(a: TaskAssigneeEmbed): {
 }
 
 function AssigneeAvatars({ assignees }: { assignees: TaskAssigneeEmbed[] }) {
+  const { token } = theme.useToken();
   if (assignees.length === 0) {
     return (
       <Avatar
         size={24}
         icon={<UserOutlined />}
-        style={{ background: "transparent", color: "#c3c6d0", border: "1px dashed currentColor" }}
+        style={{ background: "transparent", color: token.colorTextQuaternary, border: "1px dashed currentColor" }}
       />
     );
   }
   return (
     <Avatar.Group
-      max={{ count: 3, style: { backgroundColor: "#bfbfbf", fontSize: 11 } }}
+      max={{ count: 3, style: { backgroundColor: token.colorTextTertiary, fontSize: 11 } }}
       size={24}
     >
       {assignees.map((a) => {

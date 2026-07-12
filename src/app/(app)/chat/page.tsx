@@ -169,7 +169,7 @@ export default function ChatIndexPage() {
         .wl-chat-home{margin:-22px -24px -48px;}
         @media (max-width: 899px){ .wl-chat-home{margin:-16px -14px -40px;} }
         .wl-chat-action{transition:border-color .12s ease, box-shadow .12s ease;}
-        .wl-chat-action:hover{border-color:#c6c8f0;box-shadow:0 4px 14px -8px rgba(74,74,208,.3);}
+        .wl-chat-action:hover{border-color:${token.colorPrimaryBorderHover};box-shadow:0 4px 14px -8px rgba(74,74,208,.3);}
         .wl-chat-row:hover{background:${token.colorFillQuaternary};}
       `}</style>
     </div>

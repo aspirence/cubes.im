@@ -15,6 +15,7 @@ import {
   Table,
   Tag,
   Typography,
+  theme,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
@@ -54,6 +55,7 @@ function memberAvatar(m: TeamMember): string | undefined {
 }
 
 export default function MembersSettingsPage() {
+  const { token } = theme.useToken();
   const { message } = App.useApp();
 
   const { data: membersData, isLoading: membersLoading } = useTeamMembers();
@@ -208,12 +210,27 @@ export default function MembersSettingsPage() {
           }}
         >
           <div>
-            <Typography.Title level={4} style={{ margin: 0 }}>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: 21,
+                fontWeight: 600,
+                letterSpacing: "-.4px",
+                color: token.colorText,
+                lineHeight: 1.2,
+              }}
+            >
               Members
-            </Typography.Title>
-            <Typography.Text type="secondary">
+            </h1>
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: 13,
+                color: token.colorTextSecondary,
+              }}
+            >
               People in your active team.
-            </Typography.Text>
+            </p>
           </div>
           <Button
             type="primary"

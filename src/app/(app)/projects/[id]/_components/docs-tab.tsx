@@ -386,7 +386,7 @@ export function DocsTab({ projectId }: { projectId: string }) {
       style={{
         display: "flex",
         border: `1px solid ${token.colorBorderSecondary}`,
-        borderRadius: 14,
+        borderRadius: 12,
         overflow: "hidden",
         background: token.colorBgContainer,
         height: "calc(100vh - 220px)",

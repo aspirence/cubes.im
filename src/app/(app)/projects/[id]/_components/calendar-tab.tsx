@@ -1,13 +1,14 @@
 "use client";
 
 import { useMemo } from "react";
-import { Badge, Calendar, Card } from "antd";
+import { Badge, Calendar, Card, theme } from "antd";
 import type { Dayjs } from "dayjs";
 import dayjs from "dayjs";
 import { useTasks, type TaskWithRelations } from "@/features/tasks/use-tasks";
 
 /** Calendar view: tasks placed on a month grid by their due date. */
 export function CalendarTab({ projectId }: { projectId: string }) {
+  const { token } = theme.useToken();
   const { data: tasks, isLoading } = useTasks(projectId);
 
   const byDay = useMemo(() => {
@@ -48,7 +49,7 @@ export function CalendarTab({ projectId }: { projectId: string }) {
           </li>
         ))}
         {items.length > 3 ? (
-          <li style={{ fontSize: 11, color: "#9a9da8" }}>
+          <li style={{ fontSize: 11, color: token.colorTextTertiary }}>
             +{items.length - 3} more
           </li>
         ) : null}
