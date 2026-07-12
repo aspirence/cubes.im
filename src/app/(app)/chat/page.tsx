@@ -359,7 +359,7 @@ export default function ChatIndexPage() {
           icon="group_add"
           title="Invite your teammates"
           desc="Chat is better together — add your team."
-          href="/settings/members"
+          href="/people"
         />
       </div>
       {!isAdmin ? (

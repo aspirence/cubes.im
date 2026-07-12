@@ -94,6 +94,27 @@ export function useInviteMember() {
   });
 }
 
+/** Cancels (deletes) a pending invitation by id — admin-gated via RLS. */
+export function useCancelInvitation() {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+  const { data: activeTeam } = useActiveTeam();
+  const teamId = activeTeam?.id;
+
+  return useMutation({
+    mutationFn: async (invitationId: string): Promise<void> => {
+      const { error } = await supabase
+        .from("email_invitations")
+        .delete()
+        .eq("id", invitationId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: invitationsKey(teamId) });
+    },
+  });
+}
+
 /**
  * Lists pending invitations addressed to the CURRENT user's email, across every
  * team (RLS's `email = my email` predicate allows this cross-team read). Used by

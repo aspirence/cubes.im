@@ -86,7 +86,7 @@ export function GettingStarted({
       icon: "group_add",
       title: "Invite your teammates",
       desc: "Bring the team in from Settings → Members.",
-      href: "/settings/members",
+      href: "/people",
       done: (members ?? []).length > 1,
     },
     {
