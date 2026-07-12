@@ -44,18 +44,22 @@ import {
   useCreateProjectFromTemplate,
 } from "@/features/templates/use-templates";
 import { ProjectTemplateBuilderModal } from "@/features/templates/project-template-builder-modal";
-import { useTeamMembers } from "@/features/team-members/use-team-members";
+import {
+  useTeamMembers,
+  useIsTeamAdmin,
+} from "@/features/team-members/use-team-members";
 import { MemberSelect } from "@/features/team-members/member-select";
 import { useAddProjectMember } from "@/features/projects/use-project-members";
 import { useApplyTemplateViews } from "@/features/projects/use-project-views";
 import {
   useProjectFolders,
-  useCreateFolder,
+  useCreateSpace,
   useUpdateFolder,
   useDeleteFolder,
   type ProjectFolder,
 } from "@/features/projects/use-project-folders";
 import { ShareProjectModal } from "./share-project-modal";
+import { ShareSpaceModal } from "./share-space-modal";
 import { useNotifications } from "@/features/notifications/use-notifications";
 import { useMyTasks } from "@/features/home/use-home";
 import { ChatNavSections } from "@/app/(app)/chat/_components/chat-sidebar";
@@ -448,6 +452,11 @@ function SpaceNode({
             }}
             title={node.folder.name}
             label={node.folder.name}
+            suffix={
+              node.folder.visibility === "private" ? (
+                <MIcon name="lock" size={13} color={T.textFaint} />
+              ) : undefined
+            }
             leading={
               <span
                 style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
@@ -588,19 +597,35 @@ function NewSpaceModal({
   parent?: ProjectFolder | null;
   onClose: () => void;
 }) {
+  const T = useSidebarTokens();
   const { message } = AntdApp.useApp();
-  const createFolder = useCreateFolder();
+  const createSpace = useCreateSpace();
+  const { data: teamMembers } = useTeamMembers();
   const [name, setName] = useState("");
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [shareWith, setShareWith] = useState<string[]>([]);
+  const [wasOpen, setWasOpen] = useState(false);
+
+  // Reset the form each time the modal opens.
+  if (open && !wasOpen) {
+    setWasOpen(true);
+    setName("");
+    setIsPrivate(false);
+    setShareWith([]);
+  } else if (!open && wasOpen) {
+    setWasOpen(false);
+  }
 
   const submit = async () => {
     const trimmed = name.trim();
-    if (!trimmed || createFolder.isPending) return;
+    if (!trimmed || createSpace.isPending) return;
     try {
-      await createFolder.mutateAsync({
+      await createSpace.mutateAsync({
         name: trimmed,
+        visibility: isPrivate ? "private" : "team",
         ...(parent ? { parentFolderId: parent.id } : {}),
+        ...(isPrivate && shareWith.length ? { memberIds: shareWith } : {}),
       });
-      setName("");
       onClose();
     } catch (err) {
       message.error(
@@ -615,22 +640,66 @@ function NewSpaceModal({
       open={open}
       onOk={submit}
       okText="Create"
-      confirmLoading={createFolder.isPending}
+      confirmLoading={createSpace.isPending}
       okButtonProps={{ disabled: !name.trim() }}
-      onCancel={() => {
-        setName("");
-        onClose();
-      }}
+      onCancel={onClose}
       destroyOnHidden
+      width={480}
     >
-      <Input
-        autoFocus
-        placeholder="Space name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        onPressEnter={submit}
-        maxLength={100}
-      />
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <Input
+          autoFocus
+          placeholder="Space name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onPressEnter={submit}
+          maxLength={100}
+        />
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 500 }}>Make private</div>
+            <div style={{ fontSize: 12, color: T.textTertiary }}>
+              Only its members, the creator, and admins can access it. Shared
+              spaces are visible to the whole workspace.
+            </div>
+          </div>
+          <Switch checked={isPrivate} onChange={setIsPrivate} />
+        </div>
+
+        {isPrivate ? (
+          <div>
+            <div
+              style={{ fontSize: 12.5, color: T.textSecondary, marginBottom: 6 }}
+            >
+              Share with{" "}
+              <span style={{ color: T.textTertiary }}>
+                (you always have access)
+              </span>
+            </div>
+            <MemberSelect
+              value={shareWith}
+              onChange={setShareWith}
+              placeholder="Add team members…"
+              options={(teamMembers ?? [])
+                .filter((m) => m.user)
+                .map((m) => ({
+                  value: m.id,
+                  label: m.user!.name,
+                  avatarUrl: m.user!.avatar_url,
+                  email: m.user!.email,
+                }))}
+            />
+          </div>
+        ) : null}
+      </div>
     </Modal>
   );
 }
@@ -1461,6 +1530,7 @@ export function ProjectsSidebar() {
   const pathname = usePathname();
   const { message, modal } = AntdApp.useApp();
 
+  const isTeamAdmin = useIsTeamAdmin();
   const projectsQuery = useProjects();
   const foldersQuery = useProjectFolders();
   const toggleFavorite = useToggleFavorite();
@@ -1482,6 +1552,7 @@ export function ProjectsSidebar() {
   const [saveTemplateId, setSaveTemplateId] = useState<string | null>(null);
   const [renameSpaceId, setRenameSpaceId] = useState<string | null>(null);
   const [editSpaceId, setEditSpaceId] = useState<string | null>(null);
+  const [shareSpaceId, setShareSpaceId] = useState<string | null>(null);
   const [newProjectSpaceId, setNewProjectSpaceId] = useState<string | null>(
     null,
   );
@@ -1607,6 +1678,10 @@ export function ProjectsSidebar() {
     () => folders.find((f) => f.id === editSpaceId) ?? null,
     [folders, editSpaceId],
   );
+  const shareSpace = useMemo(
+    () => folders.find((f) => f.id === shareSpaceId) ?? null,
+    [folders, shareSpaceId],
+  );
   const newProjectSpace = useMemo(
     () => folders.find((f) => f.id === newProjectSpaceId) ?? null,
     [folders, newProjectSpaceId],
@@ -1712,36 +1787,48 @@ export function ProjectsSidebar() {
       label: "New project…",
       onClick: () => setNewProjectSpaceId(folder.id),
     },
-    ...(depth + 1 < MAX_DEPTH
-      ? [
+    // Space structure & privacy is admin-managed (create_space / RLS gate it);
+    // members only get the project affordance above.
+    ...(isTeamAdmin
+      ? ([
+          ...(depth + 1 < MAX_DEPTH
+            ? [
+                {
+                  key: "new-subspace",
+                  icon: <FolderAddOutlined />,
+                  label: "New sub-space…",
+                  onClick: () => setSpaceModal({ parentId: folder.id }),
+                },
+              ]
+            : []),
           {
-            key: "new-subspace",
-            icon: <FolderAddOutlined />,
-            label: "New sub-space…",
-            onClick: () => setSpaceModal({ parentId: folder.id }),
+            key: "share-space",
+            icon: <ShareAltOutlined />,
+            label: "Share & privacy…",
+            onClick: () => setShareSpaceId(folder.id),
           },
-        ]
+          {
+            key: "rename-space",
+            icon: <EditOutlined />,
+            label: "Rename…",
+            onClick: () => setRenameSpaceId(folder.id),
+          },
+          {
+            key: "customize-space",
+            icon: <BgColorsOutlined />,
+            label: "Customize…",
+            onClick: () => setEditSpaceId(folder.id),
+          },
+          { type: "divider" as const },
+          {
+            key: "delete-space",
+            icon: <DeleteOutlined />,
+            label: "Delete",
+            danger: true,
+            onClick: () => handleDeleteSpace(folder),
+          },
+        ] satisfies MenuProps["items"])
       : []),
-    {
-      key: "rename-space",
-      icon: <EditOutlined />,
-      label: "Rename…",
-      onClick: () => setRenameSpaceId(folder.id),
-    },
-    {
-      key: "customize-space",
-      icon: <BgColorsOutlined />,
-      label: "Customize…",
-      onClick: () => setEditSpaceId(folder.id),
-    },
-    { type: "divider" },
-    {
-      key: "delete-space",
-      icon: <DeleteOutlined />,
-      label: "Delete",
-      danger: true,
-      onClick: () => handleDeleteSpace(folder),
-    },
   ];
 
   // Flattened folder list (with depth) for the "Move to space" submenu.
@@ -1860,12 +1947,17 @@ export function ProjectsSidebar() {
       icon: <MIcon name="add_box" size={16} />,
       onClick: () => router.push("/projects"),
     },
-    {
-      key: "new-space",
-      label: "New space",
-      icon: <MIcon name="create_new_folder" size={16} />,
-      onClick: () => setSpaceModal({ parentId: null }),
-    },
+    // Spaces are the workspace's top-level structure — admin-managed.
+    ...(isTeamAdmin
+      ? [
+          {
+            key: "new-space",
+            label: "New space",
+            icon: <MIcon name="create_new_folder" size={16} />,
+            onClick: () => setSpaceModal({ parentId: null }),
+          },
+        ]
+      : []),
   ];
 
   const isLoading = projectsQuery.isLoading || foldersQuery.isLoading;
@@ -2062,33 +2154,35 @@ export function ProjectsSidebar() {
             {visibleRoots.length > 0 || !searching ? (
               <GroupLabel
                 action={
-                  <button
-                    type="button"
-                    aria-label="New space"
-                    onClick={() => setSpaceModal({ parentId: null })}
-                    style={{
-                      width: 20,
-                      height: 20,
-                      border: "none",
-                      background: "transparent",
-                      borderRadius: 5,
-                      color: T.textFaint,
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = T.rowHover;
-                      e.currentTarget.style.color = T.textSecondary;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "transparent";
-                      e.currentTarget.style.color = T.textFaint;
-                    }}
-                  >
-                    <MIcon name="add" size={16} />
-                  </button>
+                  isTeamAdmin ? (
+                    <button
+                      type="button"
+                      aria-label="New space"
+                      onClick={() => setSpaceModal({ parentId: null })}
+                      style={{
+                        width: 20,
+                        height: 20,
+                        border: "none",
+                        background: "transparent",
+                        borderRadius: 5,
+                        color: T.textFaint,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = T.rowHover;
+                        e.currentTarget.style.color = T.textSecondary;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "transparent";
+                        e.currentTarget.style.color = T.textFaint;
+                      }}
+                    >
+                      <MIcon name="add" size={16} />
+                    </button>
+                  ) : undefined
                 }
               >
                 Spaces
@@ -2147,6 +2241,13 @@ export function ProjectsSidebar() {
       <EditSpaceModal
         folder={editSpace}
         onClose={() => setEditSpaceId(null)}
+      />
+      <ShareSpaceModal
+        key={shareSpaceId ?? "none"}
+        folder={shareSpace}
+        open={shareSpaceId !== null}
+        canManage={isTeamAdmin}
+        onClose={() => setShareSpaceId(null)}
       />
       <NewProjectInSpaceModal
         folder={newProjectSpace}
