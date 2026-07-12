@@ -127,6 +127,8 @@ export function CreateTaskModal({
   const applyTemplate = (id: string | undefined) => {
     setTemplateId(id);
     const tpl = templateList.find((t) => t.id === id);
+    // Deliverable comes from the template only (no standalone picker).
+    setDeliverableType(tpl?.deliverable_type ?? undefined);
     if (!tpl) return;
     if (tpl.description) setDescription(tpl.description);
     if (tpl.priority) {
@@ -325,43 +327,22 @@ export function CreateTaskModal({
             options={priorityOptions}
           />
         </Property>
-        <Property
-          icon={
-            <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
-              inventory_2
+        {deliverableType ? (
+          <Property
+            icon={
+              <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
+                inventory_2
+              </span>
+            }
+          >
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "#4a4ad0" }}>
+              <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
+                {deliverableType === "video" ? "movie" : "notes"}
+              </span>
+              {deliverableType === "video" ? "Video review" : "Text"} deliverable
             </span>
-          }
-        >
-          <Select
-            size="small"
-            variant="borderless"
-            allowClear
-            placeholder="Deliverable"
-            value={deliverableType}
-            onChange={setDeliverableType}
-            style={{ minWidth: 118 }}
-            options={[
-              {
-                value: "video",
-                label: (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <span className="material-symbols-rounded" style={{ fontSize: 15 }}>movie</span>
-                    Video review
-                  </span>
-                ),
-              },
-              {
-                value: "text",
-                label: (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <span className="material-symbols-rounded" style={{ fontSize: 15 }}>notes</span>
-                    Text
-                  </span>
-                ),
-              },
-            ]}
-          />
-        </Property>
+          </Property>
+        ) : null}
         <Property icon={<ProfileOutlined />}>
           <Select
             size="small"

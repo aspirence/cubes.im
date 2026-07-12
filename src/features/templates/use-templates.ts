@@ -6,13 +6,22 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveTeam } from "@/features/teams/use-teams";
 import { tasksRootKey } from "@/features/tasks/use-tasks";
 import type { Database, Json } from "@/types/database";
 
+/** task_templates.deliverable_type is newer than the generated types. */
+function loose(s: ReturnType<typeof createClient>) {
+  return s as unknown as SupabaseClient;
+}
+
 export type TaskTemplate =
-  Database["public"]["Tables"]["task_templates"]["Row"];
+  Database["public"]["Tables"]["task_templates"]["Row"] & {
+    /** Deliverable this template produces: null | 'video' | 'text'. */
+    deliverable_type?: string | null;
+  };
 export type ProjectTemplate =
   Database["public"]["Tables"]["project_templates"]["Row"];
 
@@ -95,6 +104,8 @@ export interface CreateTaskTemplateInput {
   /** Blueprint fields that prefill a task created from this template. */
   description?: string;
   priority?: string;
+  /** Deliverable the template sets on the task: 'video' | 'text' | null. */
+  deliverableType?: string | null;
   /** Subtask steps created under the task. */
   steps?: TaskTemplateStep[];
   /** Legacy bulk-apply list (apply_task_template). */
@@ -114,13 +125,14 @@ export function useCreateTaskTemplate() {
     ): Promise<TaskTemplate> => {
       if (!teamId) throw new Error("No active team");
 
-      const { data, error } = await supabase
+      const { data, error } = await loose(supabase)
         .from("task_templates")
         .insert({
           team_id: teamId,
           name: input.name,
           description: input.description ?? null,
           priority: input.priority ?? null,
+          deliverable_type: input.deliverableType ?? null,
           steps: (input.steps ?? []) as unknown as Json,
           tasks: (input.tasks ?? []) as unknown as Json,
         })
@@ -128,7 +140,7 @@ export function useCreateTaskTemplate() {
         .single();
 
       if (error) throw error;
-      return data;
+      return data as TaskTemplate;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: taskTemplatesKey(teamId) });
@@ -141,6 +153,7 @@ export interface UpdateTaskTemplateInput {
   name?: string;
   description?: string | null;
   priority?: string | null;
+  deliverableType?: string | null;
   steps?: TaskTemplateStep[];
   tasks?: TaskTemplateItem[];
 }
@@ -156,13 +169,14 @@ export function useUpdateTaskTemplate() {
     mutationFn: async (
       input: UpdateTaskTemplateInput,
     ): Promise<TaskTemplate> => {
-      const { id, name, description, priority, steps, tasks } = input;
-      const { data, error } = await supabase
+      const { id, name, description, priority, deliverableType, steps, tasks } = input;
+      const { data, error } = await loose(supabase)
         .from("task_templates")
         .update({
           ...(name !== undefined ? { name } : {}),
           ...(description !== undefined ? { description } : {}),
           ...(priority !== undefined ? { priority } : {}),
+          ...(deliverableType !== undefined ? { deliverable_type: deliverableType } : {}),
           ...(steps !== undefined ? { steps: steps as unknown as Json } : {}),
           ...(tasks !== undefined
             ? { tasks: tasks as unknown as Json }
@@ -173,7 +187,7 @@ export function useUpdateTaskTemplate() {
         .single();
 
       if (error) throw error;
-      return data;
+      return data as TaskTemplate;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: taskTemplatesKey(teamId) });

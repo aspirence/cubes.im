@@ -54,7 +54,9 @@ import type { Database } from "@/types/database";
 /* JSONB shapes (authored to match the DB contract; the columns are `Json`).  */
 /* -------------------------------------------------------------------------- */
 
-type TaskTemplateRow = Database["public"]["Tables"]["task_templates"]["Row"];
+type TaskTemplateRow = Database["public"]["Tables"]["task_templates"]["Row"] & {
+  deliverable_type?: string | null;
+};
 type ProjectTemplateRow =
   Database["public"]["Tables"]["project_templates"]["Row"];
 
@@ -121,6 +123,7 @@ interface TaskTemplateFormValues {
   name: string;
   description?: string;
   priority?: string;
+  deliverableType?: string;
   steps: TemplateStep[];
   tasks: TemplateTask[];
 }
@@ -142,6 +145,7 @@ function TaskTemplatesSection() {
         name: editing?.name ?? "",
         description: editing?.description ?? "",
         priority: editing?.priority ?? undefined,
+        deliverableType: editing?.deliverable_type ?? undefined,
         steps: editing ? readTemplateSteps(editing.steps) : [{ name: "" }],
         tasks: editing ? readTemplateTasks(editing.tasks) : [],
       });
@@ -189,6 +193,7 @@ function TaskTemplatesSection() {
       name: values.name.trim(),
       description: (values.description ?? "").trim() || undefined,
       priority: values.priority || undefined,
+      deliverableType: values.deliverableType ?? null,
       steps,
       tasks,
     };
@@ -330,6 +335,21 @@ function TaskTemplatesSection() {
               placeholder="None"
               options={PRIORITY_OPTIONS}
               style={{ maxWidth: 200 }}
+            />
+          </Form.Item>
+          <Form.Item
+            label="Deliverable"
+            name="deliverableType"
+            tooltip="Tasks created from this template get this deliverable — e.g. a Video review deliverable."
+          >
+            <Select
+              allowClear
+              placeholder="None"
+              style={{ maxWidth: 200 }}
+              options={[
+                { value: "video", label: "🎬 Video review" },
+                { value: "text", label: "📝 Text" },
+              ]}
             />
           </Form.Item>
 
