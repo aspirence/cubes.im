@@ -63,6 +63,9 @@ export const CORE_PRIMARY_SIDEBAR_ITEMS: PrimarySidebarItem[] = [
     icon: "groups",
     label: "Teams",
     kind: "core",
+    // Always present in the primary rail (like Home/Apps/Settings) — this way it
+    // shows for users who already customized their sidebar, not just new ones.
+    locked: true,
   },
   {
     id: "/apps",
