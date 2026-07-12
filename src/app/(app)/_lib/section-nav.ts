@@ -15,6 +15,8 @@ export type SectionNavEntry =
       icon: string;
       /** Only rendered for platform super-admins (is_platform_admin RPC). */
       superAdminOnly?: boolean;
+      /** Only rendered for workspace admins/owners (is_team_admin). */
+      requiresAdmin?: boolean;
     };
 
 export interface SectionNav {
@@ -70,16 +72,16 @@ export const SECTION_NAVS: SectionNav[] = [
       { key: "/settings/password", label: "Password", icon: "lock" },
       { key: "/settings/account", label: "Account", icon: "shield" },
       { type: "divider" },
-      { key: "/settings/clients", label: "Clients", icon: "contacts" },
-      { key: "/settings/job-titles", label: "Job Titles", icon: "badge" },
-      { key: "/settings/labels", label: "Labels", icon: "label" },
-      { key: "/settings/categories", label: "Categories", icon: "category" },
-      { key: "/settings/task-ids", label: "Task IDs", icon: "tag" },
-      { key: "/settings/templates", label: "Templates", icon: "description" },
+      { key: "/settings/clients", label: "Clients", icon: "contacts", requiresAdmin: true },
+      { key: "/settings/job-titles", label: "Job Titles", icon: "badge", requiresAdmin: true },
+      { key: "/settings/labels", label: "Labels", icon: "label", requiresAdmin: true },
+      { key: "/settings/categories", label: "Categories", icon: "category", requiresAdmin: true },
+      { key: "/settings/task-ids", label: "Task IDs", icon: "tag", requiresAdmin: true },
+      { key: "/settings/templates", label: "Templates", icon: "description", requiresAdmin: true },
       { type: "divider" },
-      { key: "/settings/permissions", label: "Permissions", icon: "shield_person" },
-      { key: "/settings/teams", label: "Workspaces", icon: "groups" },
-      { key: "/settings/apps", label: "Apps", icon: "extension" },
+      { key: "/settings/permissions", label: "Permissions", icon: "shield_person", requiresAdmin: true },
+      { key: "/settings/teams", label: "Workspaces", icon: "groups", requiresAdmin: true },
+      { key: "/settings/apps", label: "Apps", icon: "extension", requiresAdmin: true },
       { type: "divider" },
       { key: "/settings/support", label: "Support", icon: "support_agent" },
     ],

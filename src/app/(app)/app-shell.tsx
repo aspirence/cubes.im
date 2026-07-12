@@ -33,6 +33,7 @@ import {
 } from "@/features/teams/use-teams";
 import { useInstalledApps } from "@/features/apps-platform/use-installed-apps";
 import { useIsPlatformAdmin } from "@/features/billing/use-pricing";
+import { useIsTeamAdmin } from "@/features/team-members/use-team-members";
 import { NotificationsBell } from "./_components/notifications-bell";
 import { UploadIndicator } from "@/features/uploads/upload-indicator";
 import { getSectionNav, activeSectionKey } from "./_lib/section-nav";
@@ -345,8 +346,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Platform-wide (super-admin) entries are hidden from everyone else; the
   // pages themselves stay RPC-gated as defense in depth.
   const { data: isPlatformAdmin } = useIsPlatformAdmin();
+  const isTeamAdmin = useIsTeamAdmin();
   const secItems = (sectionNav?.items ?? []).filter(
-    (it) => "type" in it || !it.superAdminOnly || isPlatformAdmin,
+    (it) =>
+      "type" in it ||
+      ((!it.superAdminOnly || isPlatformAdmin) && (!it.requiresAdmin || isTeamAdmin)),
   );
 
   // Collapse is purely route-driven: rail on section/canvas pages, always
@@ -370,11 +374,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         (a) => pathname.startsWith(a.route) && isProjectScopedApp(a.key),
       )
     : undefined;
+  // Admin-only rail items (App Center, Admin, Workflows) are hidden from members;
+  // the pages themselves stay RLS/route-gated as defense in depth.
+  const sidebarCatalog = getPrimarySidebarCatalog(installedApps).filter(
+    (item) => !item.requiresAdmin || isTeamAdmin,
+  );
   const primaryNavItems = orderPrimarySidebarItems(
-    getPrimarySidebarCatalog(installedApps),
+    sidebarCatalog,
     sidebarPinnedItemIds,
   );
-  const availablePrimaryNavItems = getPrimarySidebarCatalog(installedApps).filter(
+  const availablePrimaryNavItems = sidebarCatalog.filter(
     (item) => !primaryNavItems.some((pinned) => pinned.id === item.id),
   );
   const sensors = useSensors(

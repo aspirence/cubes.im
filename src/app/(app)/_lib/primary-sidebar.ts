@@ -14,6 +14,8 @@ export interface PrimarySidebarItem {
   locked?: boolean;
   /** Always rendered first and cannot be reordered (Home). Implies locked. */
   fixedFirst?: boolean;
+  /** Only shown to workspace admins/owners (e.g. App Center, Admin, Workflows). */
+  requiresAdmin?: boolean;
 }
 
 export interface InstalledSidebarApp {
@@ -55,6 +57,7 @@ export const CORE_PRIMARY_SIDEBAR_ITEMS: PrimarySidebarItem[] = [
     icon: "account_tree",
     label: "Workflows",
     kind: "core",
+    requiresAdmin: true,
   },
   {
     id: "/people",
@@ -75,6 +78,7 @@ export const CORE_PRIMARY_SIDEBAR_ITEMS: PrimarySidebarItem[] = [
     label: "Apps",
     kind: "core",
     locked: true,
+    requiresAdmin: true,
   },
   {
     id: "/admin-center/overview",
@@ -83,6 +87,7 @@ export const CORE_PRIMARY_SIDEBAR_ITEMS: PrimarySidebarItem[] = [
     icon: "shield",
     label: "Admin",
     kind: "core",
+    requiresAdmin: true,
   },
   {
     id: "/settings/profile",
