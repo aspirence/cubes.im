@@ -116,7 +116,7 @@ export function ChooseModeStep({
     {
       key: "join",
       icon: "groups",
-      title: "Join my company",
+      title: "Join workspace",
       desc: "Your company already uses Cubes — request access with your work email.",
     },
   ];
