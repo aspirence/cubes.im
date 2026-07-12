@@ -35,7 +35,7 @@ function loose(s: ReturnType<typeof createClient>) {
 }
 
 type TeamOpt = { id: string; name: string };
-type RoleOpt = { id: string; name: string; default_role: boolean };
+type RoleOpt = { id: string; name: string; default_role: boolean; owner: boolean };
 
 const CLAIM_ERRORS: Record<string, string> = {
   blocked_domain: "That's a public email provider — it can't be claimed.",
@@ -94,7 +94,7 @@ export default function JoinRequestsAdminPage() {
     queryFn: async (): Promise<RoleOpt[]> => {
       const { data, error } = await supabase
         .from("roles")
-        .select("id,name,default_role")
+        .select("id,name,default_role,owner")
         .eq("team_id", teamId as string);
       if (error) throw error;
       return (data ?? []) as RoleOpt[];
@@ -271,10 +271,12 @@ export default function JoinRequestsAdminPage() {
               placeholder="Default: Member"
               value={roleId}
               onChange={setRoleId}
-              options={(roles ?? []).map((r) => ({
-                value: r.id,
-                label: r.default_role ? `${r.name} (default)` : r.name,
-              }))}
+              options={(roles ?? [])
+                .filter((r) => !r.owner)
+                .map((r) => ({
+                  value: r.id,
+                  label: r.default_role ? `${r.name} (default)` : r.name,
+                }))}
             />
           </div>
           <div>

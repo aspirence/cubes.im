@@ -128,8 +128,10 @@ export default function MembersSettingsPage() {
   const roles: Role[] = rolesData ?? [];
   const invitations: EmailInvitation[] = invitationsData ?? [];
 
+  // Owner is assigned once at account creation and moved only via transfer —
+  // never an invite/assignment choice.
   const roleOptions = useMemo(
-    () => roles.map((r) => ({ value: r.id, label: r.name })),
+    () => roles.filter((r) => !r.owner).map((r) => ({ value: r.id, label: r.name })),
     [roles],
   );
 

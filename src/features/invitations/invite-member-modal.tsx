@@ -49,7 +49,10 @@ export function InviteMemberModal({
   const { data: roles } = useRoles();
   const { data: teamMembers } = useTeamMembers();
   const { data: invitations } = useInvitations();
-  const roleOptions = (roles ?? []).map((r) => ({ value: r.id, label: r.name }));
+  // Owner is not an assignable role (set at account creation; moved via transfer).
+  const roleOptions = (roles ?? [])
+    .filter((r) => !r.owner)
+    .map((r) => ({ value: r.id, label: r.name }));
 
   useEffect(() => {
     if (open) {
