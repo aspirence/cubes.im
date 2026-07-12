@@ -78,6 +78,7 @@ export const SECTION_NAVS: SectionNav[] = [
       { key: "/settings/templates", label: "Templates", icon: "description" },
       { type: "divider" },
       { key: "/settings/members", label: "Members", icon: "group" },
+      { key: "/settings/permissions", label: "Permissions", icon: "shield_person" },
       { key: "/settings/teams", label: "Workspaces", icon: "groups" },
       { key: "/settings/apps", label: "Apps", icon: "extension" },
       { type: "divider" },

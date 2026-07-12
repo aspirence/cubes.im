@@ -20,6 +20,8 @@ export type TeamMember = {
   team_id: string;
   user_id: string | null;
   role_id: string;
+  /** Tier: owner | admin | member | limited | guest (permission model). */
+  member_type: string;
   active: boolean | null;
   created_at: string;
   user: {
@@ -51,7 +53,7 @@ export function useTeamMembers() {
       const { data, error } = await supabase
         .from("team_members")
         .select(
-          `id, team_id, user_id, role_id, active, created_at,
+          `id, team_id, user_id, role_id, member_type, active, created_at,
            user:users!team_members_user_id_fk ( id, name, email, avatar_url ),
            role:roles!team_members_role_id_fk ( id, name, admin_role, owner, default_role )`,
         )

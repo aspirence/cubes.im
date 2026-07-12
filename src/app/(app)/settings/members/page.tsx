@@ -26,10 +26,16 @@ import {
 } from "@ant-design/icons";
 import {
   useTeamMembers,
-  useUpdateMemberRole,
   useRemoveMember,
   useRoles,
+  useIsTeamAdmin,
 } from "@/features/team-members/use-team-members";
+import {
+  useSetMemberType,
+  MEMBER_TYPES,
+  memberTypeMeta,
+  type MemberType,
+} from "@/features/permissions/use-permissions";
 import {
   useInvitations,
   useInviteMember,
@@ -62,9 +68,36 @@ export default function MembersSettingsPage() {
   const { data: rolesData } = useRoles();
   const { data: invitationsData, isLoading: invitationsLoading } =
     useInvitations();
-  const updateMemberRole = useUpdateMemberRole();
   const removeMember = useRemoveMember();
   const inviteMember = useInviteMember();
+  const setMemberType = useSetMemberType();
+  const isAdmin = useIsTeamAdmin();
+
+  const tierOptions = useMemo(
+    () =>
+      MEMBER_TYPES.map((t) => ({
+        value: t.value,
+        label: (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span className="material-symbols-rounded" aria-hidden style={{ fontSize: 16, color: t.tone }}>
+              {t.icon}
+            </span>
+            {t.label}
+          </span>
+        ),
+      })),
+    [],
+  );
+
+  const handleTierChange = (teamMemberId: string, memberType: MemberType) => {
+    setMemberType.mutate(
+      { teamMemberId, memberType },
+      {
+        onSuccess: () => message.success("Role updated."),
+        onError: (e) => message.error(e instanceof Error ? e.message : "Couldn't update the role."),
+      },
+    );
+  };
 
   const members: TeamMember[] = membersData ?? [];
   const roles: Role[] = rolesData ?? [];
@@ -77,17 +110,6 @@ export default function MembersSettingsPage() {
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [form] = Form.useForm<InviteFormValues>();
-
-  const handleRoleChange = async (memberId: string, roleId: string) => {
-    try {
-      await updateMemberRole.mutateAsync({ memberId, roleId });
-      message.success("Role updated.");
-    } catch (err) {
-      message.error(
-        err instanceof Error ? err.message : "Failed to update role.",
-      );
-    }
-  };
 
   const handleRemove = async (memberId: string) => {
     try {
@@ -138,17 +160,30 @@ export default function MembersSettingsPage() {
     {
       title: "Role",
       key: "role",
-      width: 200,
-      render: (_, record) => (
-        <Select
-          style={{ width: 160 }}
-          value={record.role_id}
-          options={roleOptions}
-          placeholder={record.role?.name ?? "Role"}
-          loading={updateMemberRole.isPending}
-          onChange={(roleId) => handleRoleChange(record.id, roleId)}
-        />
-      ),
+      width: 210,
+      render: (_, record) => {
+        const meta = memberTypeMeta(record.member_type);
+        if (!isAdmin) {
+          return (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+              <span className="material-symbols-rounded" aria-hidden style={{ fontSize: 16, color: meta.tone }}>
+                {meta.icon}
+              </span>
+              <Typography.Text>{meta.label}</Typography.Text>
+            </span>
+          );
+        }
+        return (
+          <Select
+            style={{ width: 180 }}
+            value={record.member_type}
+            options={tierOptions}
+            loading={setMemberType.isPending}
+            optionLabelProp="label"
+            onChange={(t) => handleTierChange(record.id, t as MemberType)}
+          />
+        );
+      },
     },
     {
       title: "Actions",
