@@ -325,8 +325,10 @@ const OB_CSS = `
 .ob-step.on .ob-step-d{color:#a4a8b6;}
 .ob-rail-foot{margin-top:auto;padding-top:32px;font-size:13px;font-weight:600;color:#7f8493;}
 
-.ob-main{display:flex;align-items:center;justify-content:center;padding:44px 24px;min-height:100vh;overflow-y:auto;}
-.ob-main-in{width:100%;max-width:520px;}
+/* Top-aligned with real top padding (no vertical centering that clips tall
+   forms), and full-width content like the rest of the platform. */
+.ob-main{padding:64px 56px 56px;height:100vh;overflow-y:auto;}
+.ob-main-in{width:100%;max-width:none;margin:0;}
 .ob-topline{margin-bottom:28px;}
 .ob-count{font-size:12px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#9a9da8;}
 .ob-bar{height:5px;border-radius:999px;background:#eef0f4;margin-top:10px;overflow:hidden;}
@@ -337,6 +339,6 @@ const OB_CSS = `
 @media(max-width:860px){
   .ob{grid-template-columns:1fr;}
   .ob-rail{display:none;}
-  .ob-main{align-items:flex-start;padding:32px 20px;}
+  .ob-main{padding:32px 20px 40px;}
 }
 `;
