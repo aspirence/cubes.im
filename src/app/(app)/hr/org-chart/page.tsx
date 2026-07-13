@@ -1,24 +1,24 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Alert,
   App,
-  Avatar,
   Button,
   Card,
+  Dropdown,
   Empty,
   Input,
+  InputNumber,
+  Modal,
   Skeleton,
-  Space,
   Tag,
-  Tree,
   Typography,
   theme,
 } from "antd";
-import type { DataNode, TreeProps } from "antd/es/tree";
-import { InfoCircleOutlined, UserOutlined } from "@ant-design/icons";
-import Link from "next/link";
+import type { MenuProps } from "antd";
+import { InfoCircleOutlined } from "@ant-design/icons";
 import {
   useHrAccess,
   useHrEmployees,
@@ -29,189 +29,99 @@ import { initials, statusColor, statusLabel } from "../_lib/labels";
 
 const { Title, Text } = Typography;
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Please try again.";
+/** Cubes are new (not in generated types) — read/patch loosely. */
+function cubesOf(e: HrEmployeeWithRelations): number {
+  return (e as unknown as { cubes?: number }).cubes ?? 0;
 }
 
-/** Synthetic key for the "Unassigned manager" group node (no real employee). */
-const UNASSIGNED_KEY = "__unassigned__";
+/** Performance tier from a cubes score — drives the card's status border. */
+function cubesTier(cubes: number): { color: string; label: string } {
+  if (cubes >= 80) return { color: "#2bb36e", label: "Excelling" };
+  if (cubes >= 50) return { color: "#4a63f6", label: "On track" };
+  if (cubes >= 25) return { color: "#f0883e", label: "Needs a push" };
+  return { color: "#e5484d", label: "At risk" };
+}
 
-/** Renders one person's node title: avatar/initials + name + role + status. */
-function PersonTitle({ e }: { e: HrEmployeeWithRelations }) {
-  const role = e.designation?.title;
-  const dept = e.department?.name;
-  const sub = [role, dept].filter(Boolean).join(" · ");
+function MIcon({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return (
-    <Space size={8} align="center" style={{ padding: "2px 0" }}>
-      <Avatar size="small" icon={<UserOutlined />}>
-        {initials(e.full_name)}
-      </Avatar>
-      <span>
-        <Link href={`/hr/employees/${e.id}`}>{e.full_name}</Link>
-        {sub ? (
-          <Text type="secondary" style={{ marginInlineStart: 8, fontSize: 12 }}>
-            {sub}
-          </Text>
-        ) : null}
-      </span>
-      {e.status ? (
-        <Tag
-          color={statusColor(e.status)}
-          style={{ marginInlineStart: 4, fontSize: 11 }}
-        >
-          {statusLabel(e.status)}
-        </Tag>
-      ) : null}
-    </Space>
+    <span className="material-symbols-rounded" aria-hidden style={{ fontSize: size, lineHeight: 1, color }}>
+      {name}
+    </span>
   );
 }
 
-/**
- * Builds the manager hierarchy as antd `Tree` nodes.
- *
- * Roots are employees with no `manager_id` (or one pointing outside the org).
- * Children are employees whose `manager_id` equals a parent's id. Any employee
- * not reachable from a root — because of a cycle or a dangling manager pointer —
- * is collected under a synthetic "Unassigned manager" group so nobody is lost.
- */
-function buildTree(employees: HrEmployeeWithRelations[]): {
-  nodes: DataNode[];
-  expandedKeys: string[];
-} {
-  const byId = new Map<string, HrEmployeeWithRelations>();
-  for (const e of employees) byId.set(e.id, e);
-
-  const childrenOf = new Map<string, HrEmployeeWithRelations[]>();
-  const roots: HrEmployeeWithRelations[] = [];
-  for (const e of employees) {
-    const mgr = e.manager_id;
-    if (mgr && byId.has(mgr) && mgr !== e.id) {
-      const list = childrenOf.get(mgr) ?? [];
-      list.push(e);
-      childrenOf.set(mgr, list);
-    } else {
-      // No manager, manager outside the org, or self-reference → a root.
-      roots.push(e);
-    }
-  }
-
-  const expandedKeys: string[] = [];
-  const visited = new Set<string>();
-
-  const toNode = (e: HrEmployeeWithRelations): DataNode => {
-    visited.add(e.id);
-    const kids = (childrenOf.get(e.id) ?? []).filter((c) => !visited.has(c.id));
-    const children = kids.map(toNode);
-    if (children.length > 0) expandedKeys.push(e.id);
-    return {
-      key: e.id,
-      title: <PersonTitle e={e} />,
-      children: children.length > 0 ? children : undefined,
-    };
-  };
-
-  const nodes = roots.map(toNode);
-
-  // Anyone never visited is part of a cycle or otherwise unreachable.
-  const orphans = employees.filter((e) => !visited.has(e.id));
-  if (orphans.length > 0) {
-    expandedKeys.push(UNASSIGNED_KEY);
-    nodes.push({
-      key: UNASSIGNED_KEY,
-      selectable: false,
-      title: (
-        <Text type="secondary">
-          Unassigned manager{" "}
-          <Tag style={{ fontSize: 11 }}>{orphans.length}</Tag>
-        </Text>
-      ),
-      children: orphans.map((e) => ({
-        key: e.id,
-        title: <PersonTitle e={e} />,
-      })),
-    });
-  }
-
-  return { nodes, expandedKeys };
-}
+/* -------------------------------------------------------------------------- */
 
 export default function HrOrgChartPage() {
   const { token } = theme.useToken();
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
+  const router = useRouter();
   const { isHrAdmin } = useHrAccess();
   const { data, isLoading, isError, error } = useHrEmployees();
   const updateEmployee = useUpdateEmployee();
 
   const [search, setSearch] = useState("");
-  const [autoExpand, setAutoExpand] = useState(true);
-  const [manualExpanded, setManualExpanded] = useState<React.Key[]>([]);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [cubesTarget, setCubesTarget] = useState<HrEmployeeWithRelations | null>(null);
+  const [cubesValue, setCubesValue] = useState<number>(0);
 
-  const employees = useMemo<HrEmployeeWithRelations[]>(
-    () => data ?? [],
-    [data],
-  );
-
+  const employees = useMemo<HrEmployeeWithRelations[]>(() => data ?? [], [data]);
   const byId = useMemo(() => {
     const m = new Map<string, HrEmployeeWithRelations>();
     for (const e of employees) m.set(e.id, e);
     return m;
   }, [employees]);
 
-  const { nodes, expandedKeys } = useMemo(
-    () => buildTree(employees),
-    [employees],
-  );
-
-  // Keys of people matching the search term (by name / role / department).
-  const matchedKeys = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return null;
-    const keys: string[] = [];
+  // manager -> direct reports; roots = no (in-org) manager.
+  const { childrenOf, roots } = useMemo(() => {
+    const kids = new Map<string, HrEmployeeWithRelations[]>();
+    const rootList: HrEmployeeWithRelations[] = [];
     for (const e of employees) {
-      const hay = [e.full_name, e.designation?.title, e.department?.name]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      if (hay.includes(term)) keys.push(e.id);
+      const mgr = e.manager_id;
+      if (mgr && byId.has(mgr) && mgr !== e.id) {
+        const arr = kids.get(mgr) ?? [];
+        arr.push(e);
+        kids.set(mgr, arr);
+      } else {
+        rootList.push(e);
+      }
     }
-    return keys;
-  }, [search, employees]);
+    return { childrenOf: kids, roots: rootList };
+  }, [employees, byId]);
 
-  // While searching, expand everything so matches are always visible.
-  const effectiveExpanded = useMemo<React.Key[]>(() => {
-    if (matchedKeys) return employees.map((e) => e.id).concat(UNASSIGNED_KEY);
-    return autoExpand ? expandedKeys : manualExpanded;
-  }, [matchedKeys, employees, autoExpand, expandedKeys, manualExpanded]);
+  // Total descendant count (shown on the collapse badge, like the reference).
+  const descendantCount = useMemo(() => {
+    const cache = new Map<string, number>();
+    const count = (id: string, seen: Set<string>): number => {
+      if (cache.has(id)) return cache.get(id)!;
+      if (seen.has(id)) return 0;
+      seen.add(id);
+      let n = 0;
+      for (const c of childrenOf.get(id) ?? []) n += 1 + count(c.id, seen);
+      cache.set(id, n);
+      return n;
+    };
+    const out = new Map<string, number>();
+    for (const e of employees) out.set(e.id, count(e.id, new Set()));
+    return out;
+  }, [childrenOf, employees]);
 
-  const matchedSet = useMemo(
-    () => (matchedKeys ? new Set(matchedKeys) : null),
-    [matchedKeys],
-  );
+  // Descendants of an id (to keep the "change manager" list cycle-safe).
+  const descendantsOf = (id: string): Set<string> => {
+    const out = new Set<string>();
+    const walk = (cur: string) => {
+      for (const c of childrenOf.get(cur) ?? []) {
+        if (!out.has(c.id)) {
+          out.add(c.id);
+          walk(c.id);
+        }
+      }
+    };
+    walk(id);
+    return out;
+  };
 
-  // Apply a highlight to matched nodes without rebuilding the tree.
-  const filterTreeData = (input: DataNode[]): DataNode[] =>
-    input.map((node) => {
-      const isMatch = matchedSet?.has(String(node.key)) ?? false;
-      return {
-        ...node,
-        title:
-          isMatch && typeof node.title !== "function" ? (
-            <span style={{ background: token.colorWarningBg, borderRadius: 4 }}>
-              {node.title as React.ReactNode}
-            </span>
-          ) : (
-            node.title
-          ),
-        children: node.children ? filterTreeData(node.children) : undefined,
-      };
-    });
-
-  const treeData = matchedSet ? filterTreeData(nodes) : nodes;
-
-  /**
-   * Would assigning `managerId` as the manager of `movingId` create a cycle?
-   * True when `movingId` is an ancestor of `managerId` (walking up the chain).
-   */
   const wouldCycle = (managerId: string, movingId: string): boolean => {
     let cur: string | null | undefined = managerId;
     const seen = new Set<string>();
@@ -224,56 +134,269 @@ export default function HrOrgChartPage() {
     return false;
   };
 
-  /**
-   * Drag-to-reorganise (HR admins). Dropping a person ONTO another makes that
-   * person their manager; dropping into a gap makes them a sibling (same manager).
-   * Dropping on/near the "Unassigned" group clears the manager (top-level).
-   */
-  const onDrop: TreeProps["onDrop"] = async (info) => {
-    const dragKey = String(info.dragNode.key);
-    const dropKey = String(info.node.key);
-    if (dragKey === UNASSIGNED_KEY) return;
-
-    const dragEmp = byId.get(dragKey);
-    if (!dragEmp) return;
-
-    let newManagerId: string | null;
-    if (!info.dropToGap) {
-      newManagerId = dropKey === UNASSIGNED_KEY ? null : dropKey;
-    } else {
-      newManagerId =
-        dropKey === UNASSIGNED_KEY ? null : byId.get(dropKey)?.manager_id ?? null;
+  const matched = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return null;
+    const set = new Set<string>();
+    for (const e of employees) {
+      const hay = [e.full_name, e.designation?.title, e.department?.name]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      if (hay.includes(term)) set.add(e.id);
     }
+    return set;
+  }, [search, employees]);
 
-    if (newManagerId === dragKey) return;
-    if ((dragEmp.manager_id ?? null) === newManagerId) return; // no change
-
-    if (newManagerId && wouldCycle(newManagerId, dragKey)) {
+  const reparent = async (id: string, newManagerId: string | null) => {
+    const emp = byId.get(id);
+    if (!emp) return;
+    if (newManagerId === id) return;
+    if ((emp.manager_id ?? null) === newManagerId) return;
+    if (newManagerId && wouldCycle(newManagerId, id)) {
       message.error("Can't move a manager under one of their own reports.");
       return;
     }
-
     try {
-      await updateEmployee.mutateAsync({
-        id: dragKey,
-        patch: { manager_id: newManagerId },
-      });
+      await updateEmployee.mutateAsync({ id, patch: { manager_id: newManagerId } });
       message.success(
         newManagerId
-          ? `${dragEmp.full_name} now reports to ${
-              byId.get(newManagerId)?.full_name ?? "a manager"
-            }.`
-          : `${dragEmp.full_name} is now top-level.`,
+          ? `${emp.full_name} now reports to ${byId.get(newManagerId)?.full_name ?? "a manager"}.`
+          : `${emp.full_name} is now top-level.`,
       );
     } catch (err) {
-      message.error(
-        err instanceof Error ? err.message : "Couldn't update the reporting line.",
-      );
+      message.error(err instanceof Error ? err.message : "Couldn't update the reporting line.");
     }
   };
 
+  const saveCubes = async () => {
+    if (!cubesTarget) return;
+    try {
+      await updateEmployee.mutateAsync({
+        id: cubesTarget.id,
+        patch: { cubes: Math.max(0, Math.round(cubesValue)) } as never,
+      });
+      message.success(`Updated cubes for ${cubesTarget.full_name}.`);
+      setCubesTarget(null);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Couldn't update cubes.");
+    }
+  };
+
+  const showPerformance = (e: HrEmployeeWithRelations) => {
+    const cubes = cubesOf(e);
+    const tier = cubesTier(cubes);
+    const reports = descendantCount.get(e.id) ?? 0;
+    modal.info({
+      title: `${e.full_name} — performance`,
+      content: (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontWeight: 700,
+                color: tier.color,
+              }}
+            >
+              <MIcon name="deployed_code" size={18} color={tier.color} />
+              {cubes} cubes
+            </span>
+            <Tag color={statusColor(e.status)} style={{ margin: 0 }}>
+              {tier.label}
+            </Tag>
+          </div>
+          <Text type="secondary">{e.designation?.title ?? "—"} · {e.department?.name ?? "—"}</Text>
+          <Text type="secondary">{reports} people in their org</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            Cubes accrue from the work each person does — a fuller performance
+            breakdown lands with the gamification app.
+          </Text>
+        </div>
+      ),
+    });
+  };
+
+  const menuFor = (e: HrEmployeeWithRelations): MenuProps["items"] => {
+    const blocked = descendantsOf(e.id);
+    return [
+      { key: "view", icon: <MIcon name="person" />, label: "View profile", onClick: () => router.push(`/hr/employees/${e.id}`) },
+      { key: "perf", icon: <MIcon name="insights" />, label: "Check performance", onClick: () => showPerformance(e) },
+      ...(isHrAdmin
+        ? ([
+            { key: "edit", icon: <MIcon name="edit" />, label: "Change details…", onClick: () => router.push(`/hr/employees/${e.id}`) },
+            { key: "cubes", icon: <MIcon name="deployed_code" />, label: "Set cubes…", onClick: () => { setCubesTarget(e); setCubesValue(cubesOf(e)); } },
+            { type: "divider" as const },
+            {
+              key: "mgr",
+              icon: <MIcon name="account_tree" />,
+              label: "Change manager",
+              children: employees
+                .filter((m) => m.id !== e.id && !blocked.has(m.id))
+                .slice(0, 50)
+                .map((m) => ({
+                  key: `mgr:${m.id}`,
+                  label: m.full_name,
+                  disabled: (e.manager_id ?? null) === m.id,
+                  onClick: () => void reparent(e.id, m.id),
+                })),
+            },
+            {
+              key: "remove",
+              icon: <MIcon name="vertical_align_top" />,
+              label: "Remove manager (top-level)",
+              disabled: !e.manager_id,
+              onClick: () => void reparent(e.id, null),
+            },
+          ] satisfies MenuProps["items"])
+        : []),
+    ];
+  };
+
+  /* --------------------------------------------------------- node card --- */
+  const NodeCard = ({ e }: { e: HrEmployeeWithRelations }) => {
+    const tier = cubesTier(cubesOf(e));
+    const reports = descendantCount.get(e.id) ?? 0;
+    const isCollapsed = collapsed.has(e.id);
+    const isMatch = matched?.has(e.id) ?? false;
+    const dimmed = matched && !isMatch;
+    return (
+      <Dropdown menu={{ items: menuFor(e) }} trigger={["contextMenu"]}>
+        <div
+          draggable={isHrAdmin && !search}
+          onDragStart={(ev) => {
+            setDragId(e.id);
+            ev.dataTransfer.effectAllowed = "move";
+          }}
+          onDragOver={(ev) => {
+            if (dragId && dragId !== e.id) ev.preventDefault();
+          }}
+          onDrop={(ev) => {
+            ev.preventDefault();
+            if (dragId && dragId !== e.id) void reparent(dragId, e.id);
+            setDragId(null);
+          }}
+          onDoubleClick={() => router.push(`/hr/employees/${e.id}`)}
+          style={{
+            width: 210,
+            background: token.colorBgContainer,
+            border: `2px solid ${tier.color}`,
+            borderRadius: 14,
+            padding: "14px 14px 10px",
+            boxShadow: token.boxShadowTertiary,
+            cursor: isHrAdmin && !search ? "grab" : "default",
+            opacity: dimmed ? 0.4 : 1,
+            transition: "opacity .15s ease",
+            position: "relative",
+          }}
+        >
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, textAlign: "center" }}>
+            <div
+              style={{
+                width: 46,
+                height: 46,
+                borderRadius: 999,
+                background: `${tier.color}22`,
+                color: tier.color,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 15,
+                fontWeight: 700,
+              }}
+            >
+              {initials(e.full_name)}
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: token.colorText, lineHeight: 1.2 }}>
+              {e.full_name}
+            </div>
+            <div style={{ fontSize: 11.5, color: token.colorTextTertiary, lineHeight: 1.3 }}>
+              {[e.designation?.title, e.department?.name].filter(Boolean).join(" · ") || "—"}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap", justifyContent: "center" }}>
+              <span
+                title={`${tier.label} · ${cubesOf(e)} cubes`}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  color: tier.color,
+                  background: `${tier.color}18`,
+                  borderRadius: 999,
+                  padding: "2px 8px",
+                }}
+              >
+                <MIcon name="deployed_code" size={13} color={tier.color} />
+                {cubesOf(e)}
+              </span>
+              {e.status ? (
+                <Tag color={statusColor(e.status)} style={{ margin: 0, fontSize: 10.5, lineHeight: "16px" }}>
+                  {statusLabel(e.status)}
+                </Tag>
+              ) : null}
+            </div>
+          </div>
+
+          {/* Reports count + collapse toggle (like the reference's "59^"). */}
+          {reports > 0 ? (
+            <button
+              type="button"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                setCollapsed((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(e.id)) next.delete(e.id);
+                  else next.add(e.id);
+                  return next;
+                });
+              }}
+              style={{
+                position: "absolute",
+                bottom: -12,
+                left: "50%",
+                transform: "translateX(-50%)",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 3,
+                height: 22,
+                padding: "0 9px",
+                borderRadius: 999,
+                border: "none",
+                background: token.colorText,
+                color: token.colorBgContainer,
+                fontSize: 11.5,
+                fontWeight: 700,
+                cursor: "pointer",
+                zIndex: 1,
+              }}
+            >
+              {reports}
+              <MIcon name={isCollapsed ? "expand_more" : "expand_less"} size={14} />
+            </button>
+          ) : null}
+        </div>
+      </Dropdown>
+    );
+  };
+
+  /* --------------------------------------------------------- recursion --- */
+  const renderNode = (e: HrEmployeeWithRelations): React.ReactNode => {
+    const kids = childrenOf.get(e.id) ?? [];
+    const showKids = kids.length > 0 && !collapsed.has(e.id);
+    return (
+      <li key={e.id}>
+        <NodeCard e={e} />
+        {showKids ? <ul>{kids.map(renderNode)}</ul> : null}
+      </li>
+    );
+  };
+
   return (
-    <Card>
+    <Card styles={{ body: { padding: 0 } }}>
       <div
         style={{
           display: "flex",
@@ -281,79 +404,126 @@ export default function HrOrgChartPage() {
           justifyContent: "space-between",
           flexWrap: "wrap",
           gap: 12,
-          marginBottom: 16,
+          padding: "18px 20px 12px",
         }}
       >
         <div>
           <Title level={4} style={{ margin: 0 }}>
             Org chart
           </Title>
-          <Text type="secondary">Reporting lines across your organization.</Text>
+          <Text type="secondary">Reporting lines & performance across your organization.</Text>
         </div>
         <Input.Search
           allowClear
           placeholder="Search by name, role or department"
           style={{ maxWidth: 320 }}
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(ev) => setSearch(ev.target.value)}
         />
       </div>
 
-      {isHrAdmin && !search ? (
+      {isHrAdmin ? (
         <Alert
           type="info"
           showIcon
           icon={<InfoCircleOutlined />}
-          style={{ marginBottom: 16 }}
-          message="Build your teams by dragging"
-          description="Drag a person onto a manager to make them report to that manager, or drop them beside someone to make them peers. Drag to the top to remove their manager."
+          style={{ margin: "0 20px 8px" }}
+          message="Drag to reorganize · right-click for tools"
+          description="Drag a card onto a manager to make them report to that manager. Right-click any card to change manager, set cubes, or check performance. Card border colour reflects their cubes score."
         />
       ) : null}
 
       {isError ? (
-        <Alert
-          type="error"
-          showIcon
-          message="Failed to load employees"
-          description={errorMessage(error)}
-        />
+        <div style={{ padding: 20 }}>
+          <Alert type="error" showIcon message="Failed to load employees" description={error instanceof Error ? error.message : "Please try again."} />
+        </div>
       ) : isLoading ? (
-        <Skeleton active paragraph={{ rows: 8 }} />
+        <div style={{ padding: 20 }}>
+          <Skeleton active paragraph={{ rows: 8 }} />
+        </div>
       ) : employees.length === 0 ? (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="No employees to chart yet"
-        >
-          <Link href="/hr/employees">
-            <Button type="primary">Go to employees</Button>
-          </Link>
-        </Empty>
-      ) : matchedKeys && matchedKeys.length === 0 ? (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="No one matches your search"
-        />
+        <div style={{ padding: 20 }}>
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No employees to chart yet">
+            <Button type="primary" onClick={() => router.push("/hr/employees")}>Go to employees</Button>
+          </Empty>
+        </div>
       ) : (
-        <div style={{ overflowX: "auto" }}>
-          <Tree
-            treeData={treeData}
-            expandedKeys={effectiveExpanded}
-            onExpand={(keys) => {
-              setAutoExpand(false);
-              setManualExpanded(keys);
-            }}
-            selectable={false}
-            showLine={{ showLeafIcon: false }}
-            blockNode
-            draggable={
-              isHrAdmin && !search
-                ? { icon: false, nodeDraggable: (node) => node.key !== UNASSIGNED_KEY }
-                : false
+        <div
+          onDragOver={(ev) => {
+            if (dragId) ev.preventDefault();
+          }}
+          onDrop={(ev) => {
+            // Drop on empty canvas → make top-level.
+            if (dragId) {
+              ev.preventDefault();
+              void reparent(dragId, null);
+              setDragId(null);
             }
-            onDrop={onDrop}
-          />
+          }}
+          style={{ overflowX: "auto", padding: "22px 20px 40px" }}
+        >
+          <style>{ORG_CSS}</style>
+          <div className="org-tree">
+            <ul>{roots.map(renderNode)}</ul>
+          </div>
         </div>
       )}
+
+      {/* Set cubes modal */}
+      <Modal
+        open={cubesTarget !== null}
+        title={cubesTarget ? `Set cubes — ${cubesTarget.full_name}` : "Set cubes"}
+        onCancel={() => setCubesTarget(null)}
+        onOk={() => void saveCubes()}
+        okText="Save"
+        confirmLoading={updateEmployee.isPending}
+        destroyOnHidden
+      >
+        <Text type="secondary" style={{ display: "block", marginBottom: 10 }}>
+          Cubes are this person&apos;s performance points. The card border colour
+          updates automatically. Automatic accrual from tasks comes with the
+          gamification app.
+        </Text>
+        <InputNumber
+          min={0}
+          max={100000}
+          value={cubesValue}
+          onChange={(v) => setCubesValue(typeof v === "number" ? v : 0)}
+          style={{ width: "100%" }}
+          addonBefore={<MIcon name="deployed_code" size={15} />}
+        />
+      </Modal>
     </Card>
   );
 }
+
+/* Pure-CSS org-chart connectors (classic nested-ul technique). */
+const ORG_CSS = `
+.org-tree { display: inline-block; min-width: 100%; }
+.org-tree ul { display: flex; justify-content: center; padding: 26px 0 0; margin: 0; position: relative; list-style: none; }
+.org-tree li { list-style: none; position: relative; padding: 26px 12px 0; text-align: center; }
+.org-tree li::before, .org-tree li::after {
+  content: ""; position: absolute; top: 0; right: 50%;
+  border-top: 1.5px solid #c9ccd6; width: 50%; height: 26px;
+}
+.org-tree li::after { right: auto; left: 50%; border-left: 1.5px solid #c9ccd6; }
+.org-tree li:only-child::before, .org-tree li:only-child::after { display: none; }
+.org-tree li:only-child { padding-top: 26px; }
+.org-tree li:first-child::before, .org-tree li:last-child::after { border: 0 none; }
+.org-tree li:last-child::before { border-right: 1.5px solid #c9ccd6; border-radius: 0 6px 0 0; }
+.org-tree li:first-child::after { border-radius: 6px 0 0 0; }
+.org-tree ul ul::before {
+  content: ""; position: absolute; top: 0; left: 50%;
+  border-left: 1.5px solid #c9ccd6; width: 0; height: 26px;
+}
+.org-tree > ul { padding-top: 0; }
+.org-tree > ul::before, .org-tree > ul > li:only-child { }
+.org-tree > ul > li::before, .org-tree > ul > li::after { display: none; }
+.org-tree > ul > li { padding-top: 0; }
+:root[data-theme="dark"] .org-tree li::before,
+:root[data-theme="dark"] .org-tree li::after,
+:root[data-theme="dark"] .org-tree ul ul::before { border-color: #363b47; }
+@media (prefers-color-scheme: dark) {
+  .org-tree li::before, .org-tree li::after, .org-tree ul ul::before { border-color: #363b47; }
+}
+`;
