@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { GITHUB_URL } from "@/components/marketing/pricing-plans";
+import { JsonLd } from "@/components/marketing/json-ld";
+import { organizationLd, websiteLd, softwareApplicationLd } from "@/lib/seo";
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -172,6 +174,7 @@ export default function Landing() {
 
   return (
     <div className="lp" id="top">
+      <JsonLd data={[organizationLd, websiteLd, softwareApplicationLd]} />
       <style>{CSS}</style>
       <div className="lp-bg" aria-hidden><span className="grid" /></div>
 
