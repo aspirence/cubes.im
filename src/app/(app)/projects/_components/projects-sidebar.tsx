@@ -47,6 +47,7 @@ import { ProjectTemplateBuilderModal } from "@/features/templates/project-templa
 import {
   useTeamMembers,
   useIsTeamAdmin,
+  useCanAuthorContent,
 } from "@/features/team-members/use-team-members";
 import { MemberSelect } from "@/features/team-members/member-select";
 import { useAddProjectMember } from "@/features/projects/use-project-members";
@@ -1531,6 +1532,9 @@ export function ProjectsSidebar() {
   const { message, modal } = AntdApp.useApp();
 
   const isTeamAdmin = useIsTeamAdmin();
+  // Limited members / guests can't create projects or tasks (server-enforced);
+  // hide the create affordances so they never hit a failing action.
+  const canAuthor = useCanAuthorContent();
   const projectsQuery = useProjects();
   const foldersQuery = useProjectFolders();
   const toggleFavorite = useToggleFavorite();
@@ -1781,12 +1785,17 @@ export function ProjectsSidebar() {
     folder: ProjectFolder,
     depth: number,
   ): MenuProps["items"] => [
-    {
-      key: "new-project",
-      icon: <PlusOutlined />,
-      label: "New project…",
-      onClick: () => setNewProjectSpaceId(folder.id),
-    },
+    // Limited members / guests can't create projects.
+    ...(canAuthor
+      ? [
+          {
+            key: "new-project",
+            icon: <PlusOutlined />,
+            label: "New project…",
+            onClick: () => setNewProjectSpaceId(folder.id),
+          },
+        ]
+      : []),
     // Space structure & privacy is admin-managed (create_space / RLS gate it);
     // members only get the project affordance above.
     ...(isTeamAdmin
@@ -1941,12 +1950,17 @@ export function ProjectsSidebar() {
   );
 
   const addMenu: MenuProps["items"] = [
-    {
-      key: "new-project",
-      label: "New project",
-      icon: <MIcon name="add_box" size={16} />,
-      onClick: () => router.push("/projects"),
-    },
+    // Project creation is for members+; limited members / guests can't.
+    ...(canAuthor
+      ? [
+          {
+            key: "new-project",
+            label: "New project",
+            icon: <MIcon name="add_box" size={16} />,
+            onClick: () => router.push("/projects"),
+          },
+        ]
+      : []),
     // Spaces are the workspace's top-level structure — admin-managed.
     ...(isTeamAdmin
       ? [
@@ -1995,36 +2009,38 @@ export function ProjectsSidebar() {
             Home
           </span>
         </span>
-        <Dropdown
-          menu={{ items: addMenu }}
-          trigger={["click"]}
-          placement="bottomRight"
-        >
-          <button
-            type="button"
-            aria-label="Add project or space"
-            style={{
-              width: 28,
-              height: 28,
-              border: "none",
-              background: "transparent",
-              borderRadius: 7,
-              color: T.textSecondary,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = T.rowHover;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "transparent";
-            }}
+        {addMenu && addMenu.length > 0 ? (
+          <Dropdown
+            menu={{ items: addMenu }}
+            trigger={["click"]}
+            placement="bottomRight"
           >
-            <MIcon name="add" size={20} />
-          </button>
-        </Dropdown>
+            <button
+              type="button"
+              aria-label="Add project or space"
+              style={{
+                width: 28,
+                height: 28,
+                border: "none",
+                background: "transparent",
+                borderRadius: 7,
+                color: T.textSecondary,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = T.rowHover;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+              }}
+            >
+              <MIcon name="add" size={20} />
+            </button>
+          </Dropdown>
+        ) : null}
       </div>
 
       {/* Scrollable tree */}

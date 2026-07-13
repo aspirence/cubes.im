@@ -27,7 +27,10 @@ import {
 } from "@/features/teams/use-teams";
 import { useInstalledApps } from "@/features/apps-platform/use-installed-apps";
 import { useIsPlatformAdmin } from "@/features/billing/use-pricing";
-import { useIsTeamAdmin } from "@/features/team-members/use-team-members";
+import {
+  useIsTeamAdmin,
+  useCanAuthorContent,
+} from "@/features/team-members/use-team-members";
 import { NotificationsBell } from "./_components/notifications-bell";
 import { UploadIndicator } from "@/features/uploads/upload-indicator";
 import { getSectionNav, activeSectionKey } from "./_lib/section-nav";
@@ -340,6 +343,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // pages themselves stay RPC-gated as defense in depth.
   const { data: isPlatformAdmin } = useIsPlatformAdmin();
   const isTeamAdmin = useIsTeamAdmin();
+  // Limited members / guests can't author content — hide create affordances
+  // (the server enforces this too via create_task / create_project guards).
+  const canAuthor = useCanAuthorContent();
   const secItemsRaw = (sectionNav?.items ?? []).filter(
     (it) =>
       "type" in it ||
@@ -1155,29 +1161,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "none" }}>
-            <Tooltip title="Create task">
-              <button
-                onClick={() => setCreateTaskOpen(true)}
-                aria-label="Create task"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 5,
-                  height: 34,
-                  padding: isMobile ? "0 9px" : "0 12px",
-                  border: "none",
-                  background: "#4a4ad0",
-                  color: "#fff",
-                  borderRadius: 8,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                <MIcon name="add" size={18} />
-                {!isMobile ? "New" : null}
-              </button>
-            </Tooltip>
+            {canAuthor ? (
+              <Tooltip title="Create task">
+                <button
+                  onClick={() => setCreateTaskOpen(true)}
+                  aria-label="Create task"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 5,
+                    height: 34,
+                    padding: isMobile ? "0 9px" : "0 12px",
+                    border: "none",
+                    background: "#4a4ad0",
+                    color: "#fff",
+                    borderRadius: 8,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  <MIcon name="add" size={18} />
+                  {!isMobile ? "New" : null}
+                </button>
+              </Tooltip>
+            ) : null}
             <TeamSwitcher compact={isMobile} />
             {!isMobile ? (
               <Tooltip title={dark ? "Light mode" : "Dark mode"}>

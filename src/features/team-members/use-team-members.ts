@@ -108,6 +108,29 @@ export function useIsTeamAdmin(): boolean {
   }, [user, members]);
 }
 
+/** The current user's tier in the active workspace (owner/admin/member/limited/guest). */
+export function useMyMemberType(): string | undefined {
+  const { user } = useAuth();
+  const { data: members } = useTeamMembers();
+  return useMemo(() => {
+    if (!user || !members) return undefined;
+    return members.find((m) => m.user?.id === user.id)?.member_type;
+  }, [user, members]);
+}
+
+/**
+ * Whether the current user may author content (create projects/tasks). Limited
+ * members and guests cannot — they only act on tasks assigned to them. Mirrors
+ * the server-side create_task / create_project guards, so create affordances
+ * can be hidden instead of failing on submit.
+ */
+export function useCanAuthorContent(): boolean {
+  const mt = useMyMemberType();
+  // Default to true while the tier is still loading so we never flash-hide
+  // create actions from a normal member.
+  return mt !== "limited" && mt !== "guest";
+}
+
 /** Changes a member's role (admin-only via RLS). */
 export function useUpdateMemberRole() {
   const supabase = useMemo(() => createClient(), []);
