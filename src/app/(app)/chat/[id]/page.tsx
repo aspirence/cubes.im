@@ -8,6 +8,7 @@ import {
   Button,
   Input,
   Popover,
+  Select,
   Skeleton,
   Tooltip,
   theme,
@@ -20,8 +21,14 @@ import {
   useChatRealtime,
   useMarkChannelRead,
   useSendMessage,
+  useAddChannelMembers,
+  useRemoveChannelMember,
   type ChatMessage,
 } from "@/features/chat/use-chat";
+import {
+  useTeamMembers,
+  useIsTeamAdmin,
+} from "@/features/team-members/use-team-members";
 
 function MIcon({ name, size = 18, color }: { name: string; size?: number; color?: string }) {
   return (
@@ -96,6 +103,44 @@ export default function ChatThreadPage() {
     () => members.find((m) => m.user_id !== user?.id)?.user ?? null,
     [members, user?.id],
   );
+
+  // Channel membership management (admin or the channel creator).
+  const isTeamAdmin = useIsTeamAdmin();
+  const { data: teamMembers } = useTeamMembers();
+  const addMembers = useAddChannelMembers(channelId);
+  const removeMember = useRemoveChannelMember(channelId);
+  const canManageMembers =
+    channel?.kind === "channel" &&
+    (isTeamAdmin || channel?.created_by === user?.id);
+  const [addPick, setAddPick] = useState<string[]>([]);
+  const memberUserIds = useMemo(
+    () => new Set(members.map((m) => m.user_id)),
+    [members],
+  );
+  const addableOptions = useMemo(
+    () =>
+      (teamMembers ?? [])
+        .filter((m) => m.user && !memberUserIds.has(m.user.id))
+        .map((m) => ({ value: m.user!.id, label: m.user!.name })),
+    [teamMembers, memberUserIds],
+  );
+  const handleAddMembers = async () => {
+    if (!addPick.length) return;
+    try {
+      const n = await addMembers.mutateAsync(addPick);
+      setAddPick([]);
+      message.success(n === 1 ? "Added 1 person." : `Added ${n} people.`);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Couldn't add people.");
+    }
+  };
+  const handleRemoveMember = async (userId: string) => {
+    try {
+      await removeMember.mutateAsync(userId);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Couldn't remove.");
+    }
+  };
   const title =
     channel?.kind === "dm" ? (partner?.name ?? "Direct message") : (channel?.name ?? "Channel");
 
@@ -192,7 +237,7 @@ export default function ChatThreadPage() {
             trigger="click"
             placement="bottomRight"
             content={
-              <div style={{ minWidth: 200, maxHeight: 280, overflowY: "auto" }}>
+              <div style={{ width: 280, maxHeight: 380, overflowY: "auto" }}>
                 <div
                   style={{
                     fontSize: 11.5,
@@ -205,22 +250,78 @@ export default function ChatThreadPage() {
                 >
                   Members · {members.length}
                 </div>
-                {members.map((m) => (
-                  <div
-                    key={m.id}
-                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}
-                  >
-                    <Avatar size={22} src={m.user?.avatar_url ?? undefined} style={{ fontSize: 10 }}>
-                      {initials(m.user?.name ?? "?")}
-                    </Avatar>
-                    <span style={{ fontSize: 13, color: token.colorText }}>
-                      {m.user?.name ?? "Member"}
-                    </span>
+                {members.map((m) => {
+                  const isCreator = m.user_id === channel?.created_by;
+                  const canRemove =
+                    canManageMembers && !isCreator ? true : m.user_id === user?.id && !isCreator;
+                  return (
+                    <div
+                      key={m.id}
+                      style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}
+                    >
+                      <Avatar size={22} src={m.user?.avatar_url ?? undefined} style={{ fontSize: 10 }}>
+                        {initials(m.user?.name ?? "?")}
+                      </Avatar>
+                      <span style={{ fontSize: 13, color: token.colorText, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {m.user?.name ?? "Member"}
+                        {isCreator ? (
+                          <span style={{ fontSize: 11, color: token.colorTextTertiary }}> · owner</span>
+                        ) : null}
+                      </span>
+                      {canRemove ? (
+                        <Tooltip title={m.user_id === user?.id ? "Leave" : "Remove"}>
+                          <Button
+                            type="text"
+                            size="small"
+                            aria-label="Remove member"
+                            loading={removeMember.isPending}
+                            onClick={() => void handleRemoveMember(m.user_id)}
+                            icon={<MIcon name="close" size={14} color={token.colorTextTertiary} />}
+                          />
+                        </Tooltip>
+                      ) : null}
+                    </div>
+                  );
+                })}
+
+                {canManageMembers ? (
+                  <div style={{ marginTop: 10, borderTop: `1px solid ${token.colorBorderSecondary}`, paddingTop: 10 }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".5px", textTransform: "uppercase", color: token.colorTextTertiary, marginBottom: 6 }}>
+                      Add people
+                    </div>
+                    <Select
+                      mode="multiple"
+                      size="small"
+                      style={{ width: "100%" }}
+                      placeholder="Search teammates…"
+                      optionFilterProp="label"
+                      value={addPick}
+                      onChange={setAddPick}
+                      options={addableOptions}
+                      maxTagCount="responsive"
+                      notFoundContent="Everyone's already in"
+                    />
+                    <Button
+                      type="primary"
+                      size="small"
+                      block
+                      style={{ marginTop: 8 }}
+                      disabled={!addPick.length}
+                      loading={addMembers.isPending}
+                      onClick={() => void handleAddMembers()}
+                    >
+                      Add {addPick.length ? `(${addPick.length})` : ""}
+                    </Button>
                   </div>
-                ))}
-                <div style={{ fontSize: 11.5, color: token.colorTextQuaternary, marginTop: 8 }}>
-                  Anyone on the team can join by opening the channel.
-                </div>
+                ) : channel?.is_private ? (
+                  <div style={{ fontSize: 11.5, color: token.colorTextQuaternary, marginTop: 8 }}>
+                    Private channel — only members can see it.
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11.5, color: token.colorTextQuaternary, marginTop: 8 }}>
+                    Anyone on the team can join by opening the channel.
+                  </div>
+                )}
               </div>
             }
           >

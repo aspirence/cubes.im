@@ -95,17 +95,65 @@ export function useCreateChannel() {
     mutationFn: async (input: {
       name: string;
       topic?: string;
+      isPrivate?: boolean;
+      /** users.id of the people to seed the channel with (besides the creator). */
+      memberIds?: string[];
     }): Promise<string> => {
       const { data, error } = await loose(supabase).rpc("create_chat_channel", {
         p_team_id: teamId,
         p_name: input.name,
         p_topic: input.topic ?? null,
+        p_private: input.isPrivate ?? false,
+        p_member_ids: input.memberIds ?? [],
       });
       if (error) throw error;
       return data as string;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: channelsKey(teamId) });
+    },
+  });
+}
+
+/** Add people (users.id[]) to an existing channel — admin or creator only. */
+export function useAddChannelMembers(channelId: string | undefined) {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+  const { data: activeTeam } = useActiveTeam();
+  return useMutation({
+    mutationFn: async (userIds: string[]): Promise<number> => {
+      if (!channelId) throw new Error("No channel");
+      const { data, error } = await loose(supabase).rpc("add_channel_members", {
+        p_channel_id: channelId,
+        p_user_ids: userIds,
+      });
+      if (error) throw error;
+      return data as number;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["chat-channel", channelId] });
+      queryClient.invalidateQueries({ queryKey: channelsKey(activeTeam?.id) });
+    },
+  });
+}
+
+/** Remove one person from a channel (or leave, if it's yourself). */
+export function useRemoveChannelMember(channelId: string | undefined) {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+  const { data: activeTeam } = useActiveTeam();
+  return useMutation({
+    mutationFn: async (userId: string): Promise<void> => {
+      if (!channelId) throw new Error("No channel");
+      const { error } = await loose(supabase).rpc("remove_channel_member", {
+        p_channel_id: channelId,
+        p_user_id: userId,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["chat-channel", channelId] });
+      queryClient.invalidateQueries({ queryKey: channelsKey(activeTeam?.id) });
     },
   });
 }

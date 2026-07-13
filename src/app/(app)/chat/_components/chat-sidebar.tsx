@@ -10,7 +10,9 @@ import {
   Form,
   Input,
   Modal,
+  Select,
   Skeleton,
+  Switch,
   Tooltip,
   theme,
 } from "antd";
@@ -127,19 +129,52 @@ export function NewChannelModal({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const { token } = theme.useToken();
   const { message } = AntdApp.useApp();
   const createChannel = useCreateChannel();
-  const [form] = Form.useForm<{ name: string; topic?: string }>();
+  const { user } = useAuth();
+  const { data: teamMembers } = useTeamMembers();
+  const [form] = Form.useForm<{
+    name: string;
+    topic?: string;
+    isPrivate?: boolean;
+    memberIds?: string[];
+  }>();
+  const isPrivate = Form.useWatch("isPrivate", form) ?? false;
+
+  // Team members (by users.id) other than the creator, for the "add people" picker.
+  const memberOptions = useMemo(
+    () =>
+      (teamMembers ?? [])
+        .filter((m) => m.user && m.user.id !== user?.id)
+        .map((m) => ({
+          value: m.user!.id,
+          label: m.user!.name,
+          email: m.user!.email,
+          avatarUrl: m.user!.avatar_url,
+        })),
+    [teamMembers, user?.id],
+  );
 
   const submit = async () => {
-    let values: { name: string; topic?: string };
+    let values: {
+      name: string;
+      topic?: string;
+      isPrivate?: boolean;
+      memberIds?: string[];
+    };
     try {
       values = await form.validateFields();
     } catch {
       return;
     }
     try {
-      const id = await createChannel.mutateAsync(values);
+      const id = await createChannel.mutateAsync({
+        name: values.name,
+        topic: values.topic,
+        isPrivate: values.isPrivate ?? false,
+        memberIds: values.memberIds ?? [],
+      });
       onClose();
       form.resetFields();
       router.push(`/chat/${id}`);
@@ -168,6 +203,49 @@ export function NewChannelModal({
         </Form.Item>
         <Form.Item name="topic" label="Topic (optional)">
           <Input placeholder="What is this channel about?" maxLength={240} />
+        </Form.Item>
+
+        {/* Private toggle */}
+        <Form.Item
+          name="isPrivate"
+          valuePropName="checked"
+          style={{ marginBottom: 8 }}
+        >
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+            <Switch
+              checked={isPrivate}
+              onChange={(v) => form.setFieldValue("isPrivate", v)}
+            />
+            <div>
+              <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+                {isPrivate ? "Private channel" : "Public channel"}
+              </div>
+              <div style={{ fontSize: 12.5, color: token.colorTextTertiary }}>
+                {isPrivate
+                  ? "Only the people you add can find and join it."
+                  : "Everyone in the workspace can find and join it."}
+              </div>
+            </div>
+          </div>
+        </Form.Item>
+
+        {/* Who joins */}
+        <Form.Item
+          name="memberIds"
+          label={isPrivate ? "Add people" : "Add people (optional)"}
+          extra={
+            isPrivate
+              ? "You're added automatically. Add anyone who should have access."
+              : "Optionally pre-add people so it shows in their sidebar."
+          }
+        >
+          <Select
+            mode="multiple"
+            placeholder="Search teammates…"
+            optionFilterProp="label"
+            options={memberOptions.map((o) => ({ value: o.value, label: o.label }))}
+            maxTagCount="responsive"
+          />
         </Form.Item>
       </Form>
     </Modal>
