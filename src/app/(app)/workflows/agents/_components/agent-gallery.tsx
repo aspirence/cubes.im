@@ -65,11 +65,14 @@ export function AgentGallery({
   isLoading,
   onSelect,
   onCreate,
+  showNewTile = true,
 }: {
   agents: Agent[];
   isLoading: boolean;
   onSelect: (id: string) => void;
   onCreate: () => void;
+  /** Show the leading "New agent" tile (off when the marketplace owns it). */
+  showNewTile?: boolean;
 }) {
   const { token } = theme.useToken();
   const { message } = AntdApp.useApp();
@@ -121,7 +124,8 @@ export function AgentGallery({
 
   return (
     <div style={grid}>
-      {/* New agent tile — always first */}
+      {/* New agent tile — first (hidden when the marketplace owns it). */}
+      {showNewTile ? (
       <button
         type="button"
         onClick={onCreate}
@@ -171,6 +175,7 @@ export function AgentGallery({
           Start from scratch or pick a template like the Operations Manager.
         </span>
       </button>
+      ) : null}
 
       {sorted.map((agent) => {
         const config = readAgentConfig(agent.data_scope);

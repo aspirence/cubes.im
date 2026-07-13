@@ -48,10 +48,10 @@ import {
   type Agent,
   type RunAgentResult,
 } from "@/features/workflows/use-agents";
-import { useCreateAgentFromTemplate, type OpsAgent } from "@/features/workflows/use-ops-manager";
-import { AGENT_TEMPLATES } from "@/features/workflows/agent-templates";
+import { type OpsAgent } from "@/features/workflows/use-ops-manager";
 import { OpsInsightsPanel } from "./_components/ops-insights-panel";
 import { AgentGallery } from "./_components/agent-gallery";
+import { AgentMarketplace } from "./_components/agent-marketplace";
 
 interface AgentBasicsForm {
   name: string;
@@ -142,7 +142,6 @@ export default function AgentsPage() {
   const deleteAgent = useDeleteAgent();
   const uploadMascot = useUploadAgentMascot();
   const runAgent = useRunAgent();
-  const createFromTemplate = useCreateAgentFromTemplate();
 
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [draft, setDraft] = useState<AgentDraft | null>(null);
@@ -249,19 +248,6 @@ export default function AgentsPage() {
       message.success("Agent created.");
     } catch (err) {
       message.error(err instanceof Error ? err.message : "Failed to create agent.");
-    }
-  };
-
-  const handleCreateFromTemplate = async (templateKey: string) => {
-    try {
-      const id = await createFromTemplate.mutateAsync(templateKey);
-      setSelectedAgentId(id);
-      resetCreateModal();
-      message.success("Operations Manager agent created.");
-    } catch (err) {
-      message.error(
-        err instanceof Error ? err.message : "Failed to create agent from template.",
-      );
     }
   };
 
@@ -413,12 +399,54 @@ export default function AgentsPage() {
 
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {!selectedAgent ? (
-            <AgentGallery
-              agents={agentList}
-              isLoading={isLoading}
-              onSelect={setSelectedAgentId}
-              onCreate={() => setCreateOpen(true)}
-            />
+            <div style={{ display: "flex", flexDirection: "column", gap: 26 }}>
+              {agentList.length > 0 ? (
+                <div>
+                  <div
+                    style={{
+                      fontSize: 15,
+                      fontWeight: 700,
+                      color: token.colorText,
+                      margin: "2px 0 12px",
+                    }}
+                  >
+                    Your agents
+                  </div>
+                  <AgentGallery
+                    agents={agentList}
+                    isLoading={isLoading}
+                    onSelect={setSelectedAgentId}
+                    onCreate={() => setCreateOpen(true)}
+                    showNewTile={false}
+                  />
+                </div>
+              ) : null}
+              <div>
+                <div
+                  style={{
+                    fontSize: 15,
+                    fontWeight: 700,
+                    color: token.colorText,
+                    margin: "2px 0 2px",
+                  }}
+                >
+                  Agent marketplace
+                </div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: token.colorTextSecondary,
+                    margin: "0 0 14px",
+                  }}
+                >
+                  One-click, pre-built agents for your team — or build your own.
+                </div>
+                <AgentMarketplace
+                  onNewCustom={() => setCreateOpen(true)}
+                  onInstalled={(id) => setSelectedAgentId(id)}
+                />
+              </div>
+            </div>
           ) : !draft ? null : (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div>
@@ -960,82 +988,9 @@ export default function AgentsPage() {
         destroyOnHidden
         width={640}
       >
-        {/* Start from a template — one click seeds a fully-configured agent. */}
-        <div style={{ marginBottom: 18 }}>
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: 0.6,
-              textTransform: "uppercase",
-              color: token.colorTextTertiary,
-              marginBottom: 8,
-            }}
-          >
-            Start from a template
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-            {AGENT_TEMPLATES.map((tpl) => (
-              <button
-                key={tpl.key}
-                type="button"
-                onClick={() => void handleCreateFromTemplate(tpl.key)}
-                disabled={createFromTemplate.isPending}
-                style={{
-                  flex: "1 1 240px",
-                  textAlign: "left",
-                  display: "flex",
-                  gap: 10,
-                  padding: 12,
-                  borderRadius: 12,
-                  border: `1px solid ${token.colorBorderSecondary}`,
-                  background: token.colorFillQuaternary,
-                  cursor: "pointer",
-                }}
-              >
-                <span
-                  style={{
-                    width: 38,
-                    height: 38,
-                    flex: "none",
-                    borderRadius: 10,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 20,
-                    background: `${tpl.accent}1f`,
-                  }}
-                >
-                  {tpl.emoji}
-                </span>
-                <span style={{ minWidth: 0 }}>
-                  <span style={{ display: "block", fontSize: 13.5, fontWeight: 700, color: token.colorText }}>
-                    {tpl.name}
-                  </span>
-                  <span style={{ display: "block", fontSize: 12, color: token.colorTextTertiary, marginTop: 1 }}>
-                    {tpl.tagline}
-                  </span>
-                  <span style={{ display: "block", fontSize: 11.5, color: "#4a4ad0", marginTop: 5, fontWeight: 600 }}>
-                    Use template →
-                  </span>
-                </span>
-              </button>
-            ))}
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              margin: "16px 0 4px",
-              color: token.colorTextTertiary,
-              fontSize: 12,
-            }}
-          >
-            <span style={{ flex: 1, height: 1, background: token.colorBorderSecondary }} />
-            or build from scratch
-            <span style={{ flex: 1, height: 1, background: token.colorBorderSecondary }} />
-          </div>
+        <div style={{ fontSize: 13, color: token.colorTextSecondary, marginBottom: 16 }}>
+          Build a custom agent from scratch. Prefer a head start? Pick one from
+          the <strong>Agent marketplace</strong> instead.
         </div>
         <Form form={createForm} layout="vertical" requiredMark={false}>
           <div
