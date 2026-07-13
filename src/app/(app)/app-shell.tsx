@@ -999,10 +999,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <nav style={{ flex: 1, overflowY: "auto", padding: 8 }}>
             {secItems.map((it, i) =>
               "type" in it ? (
-                <div
-                  key={`div-${i}`}
-                  style={{ height: 1, background: hair, margin: "8px 6px" }}
-                />
+                // Group break — spacing only, no visible divider line.
+                <div key={`div-${i}`} style={{ height: 10 }} />
               ) : (
                 <a
                   key={it.key}
