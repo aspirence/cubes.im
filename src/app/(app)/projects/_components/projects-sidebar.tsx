@@ -2243,7 +2243,7 @@ export function ProjectsSidebar() {
         onClose={() => setEditSpaceId(null)}
       />
       <ShareSpaceModal
-        key={shareSpaceId ?? "none"}
+        key={`space:${shareSpaceId ?? "none"}`}
         folder={shareSpace}
         open={shareSpaceId !== null}
         canManage={isTeamAdmin}
@@ -2255,7 +2255,7 @@ export function ProjectsSidebar() {
         onCreated={openProject}
       />
       <ShareProjectModal
-        key={shareTargetId ?? "none"}
+        key={`project:${shareTargetId ?? "none"}`}
         project={shareTarget}
         open={shareTargetId !== null}
         onClose={() => setShareTargetId(null)}

@@ -445,7 +445,7 @@ export default function ProjectWorkspacePage() {
         activeKey={activeTab}
         onChange={handleTabChange}
         items={tabItems}
-        destroyInactiveTabPane
+        destroyOnHidden
         tabBarExtraContent={{
           right: (
             <AddViewPicker existingKeys={existingKeys} onAdd={handleAdd} />
