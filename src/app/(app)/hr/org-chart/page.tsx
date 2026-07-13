@@ -280,7 +280,10 @@ export default function HrOrgChartPage() {
           }}
           onDoubleClick={() => router.push(`/hr/employees/${e.id}`)}
           style={{
-            width: 210,
+            display: "inline-block",
+            verticalAlign: "top",
+            textAlign: "left",
+            width: 208,
             background: token.colorBgContainer,
             border: `2px solid ${tier.color}`,
             borderRadius: 14,
@@ -497,33 +500,32 @@ export default function HrOrgChartPage() {
   );
 }
 
-/* Pure-CSS org-chart connectors (classic nested-ul technique). */
+/* Pure-CSS org-chart connectors (canonical nested-ul technique). Cards must be
+   inline-block so text-align:center on the <li> centres them over the subtree. */
 const ORG_CSS = `
-.org-tree { display: inline-block; min-width: 100%; }
-.org-tree ul { display: flex; justify-content: center; padding: 26px 0 0; margin: 0; position: relative; list-style: none; }
-.org-tree li { list-style: none; position: relative; padding: 26px 12px 0; text-align: center; }
+.org-tree { display: inline-block; min-width: 100%; text-align: center; --org-line: #c9ccd6; }
+.org-tree ul { display: flex; justify-content: center; list-style: none; margin: 0; padding: 30px 0 0; position: relative; }
+.org-tree li { list-style: none; position: relative; padding: 30px 16px 0; text-align: center; }
+/* connectors from each node up to its siblings' horizontal bar */
 .org-tree li::before, .org-tree li::after {
   content: ""; position: absolute; top: 0; right: 50%;
-  border-top: 1.5px solid #c9ccd6; width: 50%; height: 26px;
+  border-top: 1.5px solid var(--org-line); width: 50%; height: 30px;
 }
-.org-tree li::after { right: auto; left: 50%; border-left: 1.5px solid #c9ccd6; }
+.org-tree li::after { right: auto; left: 50%; border-left: 1.5px solid var(--org-line); }
 .org-tree li:only-child::before, .org-tree li:only-child::after { display: none; }
-.org-tree li:only-child { padding-top: 26px; }
+.org-tree li:only-child { padding-top: 0; }
 .org-tree li:first-child::before, .org-tree li:last-child::after { border: 0 none; }
-.org-tree li:last-child::before { border-right: 1.5px solid #c9ccd6; border-radius: 0 6px 0 0; }
+.org-tree li:last-child::before { border-right: 1.5px solid var(--org-line); border-radius: 0 6px 0 0; }
 .org-tree li:first-child::after { border-radius: 6px 0 0 0; }
+/* the vertical line dropping from a parent to its children's bar */
 .org-tree ul ul::before {
   content: ""; position: absolute; top: 0; left: 50%;
-  border-left: 1.5px solid #c9ccd6; width: 0; height: 26px;
+  border-left: 1.5px solid var(--org-line); width: 0; height: 30px;
 }
+/* root level has no parent → no incoming connector */
 .org-tree > ul { padding-top: 0; }
-.org-tree > ul::before, .org-tree > ul > li:only-child { }
-.org-tree > ul > li::before, .org-tree > ul > li::after { display: none; }
 .org-tree > ul > li { padding-top: 0; }
-:root[data-theme="dark"] .org-tree li::before,
-:root[data-theme="dark"] .org-tree li::after,
-:root[data-theme="dark"] .org-tree ul ul::before { border-color: #363b47; }
-@media (prefers-color-scheme: dark) {
-  .org-tree li::before, .org-tree li::after, .org-tree ul ul::before { border-color: #363b47; }
-}
+.org-tree > ul > li::before, .org-tree > ul > li::after { display: none; }
+:root[data-theme="dark"] .org-tree { --org-line: #39404e; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .org-tree { --org-line: #39404e; } }
 `;
