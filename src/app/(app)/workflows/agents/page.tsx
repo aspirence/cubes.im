@@ -179,14 +179,13 @@ export default function AgentsPage() {
     [draft, pendingMascotFile, selectedAgent],
   );
 
+  // Land on the gallery/marketplace by default — only clear the selection if the
+  // chosen agent no longer exists (e.g. it was just deleted). We intentionally
+  // do NOT auto-select the first agent, so the page opens on "All agents".
   useEffect(() => {
-    if (!agentList.length) {
+    if (selectedAgentId && !agentList.some((agent) => agent.id === selectedAgentId)) {
       setSelectedAgentId(null);
       setDraft(null);
-      return;
-    }
-    if (!selectedAgentId || !agentList.some((agent) => agent.id === selectedAgentId)) {
-      setSelectedAgentId(agentList[0].id);
     }
   }, [agentList, selectedAgentId]);
 
