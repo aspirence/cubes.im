@@ -12,7 +12,6 @@ import {
   Modal,
   Popconfirm,
   Select,
-  Skeleton,
   Space,
   Switch,
   Tag,
@@ -52,6 +51,7 @@ import {
 import { useCreateAgentFromTemplate, type OpsAgent } from "@/features/workflows/use-ops-manager";
 import { AGENT_TEMPLATES } from "@/features/workflows/agent-templates";
 import { OpsInsightsPanel } from "./_components/ops-insights-panel";
+import { AgentGallery } from "./_components/agent-gallery";
 
 interface AgentBasicsForm {
   name: string;
@@ -411,105 +411,30 @@ export default function AgentsPage() {
           </Button>
         </div>
 
-        <div
-          className="wl-agents-cols"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "320px minmax(0, 1fr)",
-            gap: 16,
-            alignItems: "start",
-          }}
-        >
-          <Card styles={{ body: { padding: 12 } }}>
-            <Typography.Text strong>Agent library</Typography.Text>
-            <Typography.Paragraph type="secondary" style={{ margin: "4px 0 12px" }}>
-              Pick an agent, then define its prompt rules and saved work tasks.
-            </Typography.Paragraph>
-
-            {isLoading ? (
-              <Skeleton active paragraph={{ rows: 6 }} />
-            ) : agentList.length === 0 ? (
-              <Empty
-                description="No agents yet"
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                style={{ margin: "28px 0 8px" }}
-              >
-                <Button type="primary" onClick={() => setCreateOpen(true)}>
-                  Create first agent
-                </Button>
-              </Empty>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {agentList.map((agent) => {
-                  const config = readAgentConfig(agent.data_scope);
-                  const activeContexts = new Set(
-                    config.trainingTasks.flatMap((task) => task.mentions),
-                  );
-                  return (
-                    <button
-                      key={agent.id}
-                      type="button"
-                      onClick={() => setSelectedAgentId(agent.id)}
-                      style={{
-                        textAlign: "left",
-                        borderRadius: 12,
-                        padding: 14,
-                        border:
-                          selectedAgentId === agent.id
-                            ? `1px solid ${token.colorPrimaryBorder}`
-                            : `1px solid ${token.colorBorderSecondary}`,
-                        background:
-                          selectedAgentId === agent.id
-                            ? token.colorPrimaryBg
-                            : token.colorBgContainer,
-                        cursor: "pointer",
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        {renderMascot(agent.name, config.mascotUrl, 52, token)}
-                        <div style={{ minWidth: 0, flex: 1 }}>
-                          <Typography.Text strong style={{ display: "block", fontSize: 15 }}>
-                            {agent.name}
-                          </Typography.Text>
-                          <Typography.Text type="secondary" style={{ fontSize: 12.5 }}>
-                            {agent.description?.trim() || "No description yet"}
-                          </Typography.Text>
-                        </div>
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 8,
-                          marginTop: 12,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <Tag bordered={false} color="blue" style={{ margin: 0 }}>
-                          {config.trainingTasks.length} saved task
-                          {config.trainingTasks.length === 1 ? "" : "s"}
-                        </Tag>
-                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                          {activeContexts.size} context source
-                          {activeContexts.size === 1 ? "" : "s"}
-                        </Typography.Text>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
-
-          {!draft || !selectedAgent ? (
-            <Card>
-              <Empty
-                description="Select an agent to configure it"
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-              />
-            </Card>
-          ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {!selectedAgent ? (
+            <AgentGallery
+              agents={agentList}
+              isLoading={isLoading}
+              onSelect={setSelectedAgentId}
+              onCreate={() => setCreateOpen(true)}
+            />
+          ) : !draft ? null : (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div>
+                <Button
+                  type="text"
+                  onClick={() => setSelectedAgentId(null)}
+                  style={{ paddingLeft: 0, color: token.colorTextSecondary }}
+                  icon={
+                    <span className="material-symbols-rounded" style={{ fontSize: 18 }}>
+                      arrow_back
+                    </span>
+                  }
+                >
+                  All agents
+                </Button>
+              </div>
               <Card>
                 <div
                   style={{

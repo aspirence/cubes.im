@@ -219,3 +219,29 @@ export function useDeleteAgent() {
     },
   });
 }
+
+/** Activate / pause an agent (agents.is_active, added by 20261066). */
+export function useToggleAgentActive() {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+  const { data: activeTeam } = useActiveTeam();
+  const teamId = activeTeam?.id;
+  return useMutation({
+    mutationFn: async (input: { id: string; active: boolean }): Promise<void> => {
+      const { error } = await (supabase as unknown as {
+        from: (t: string) => {
+          update: (v: Record<string, unknown>) => {
+            eq: (c: string, v: string) => Promise<{ error: unknown }>;
+          };
+        };
+      })
+        .from("agents")
+        .update({ is_active: input.active })
+        .eq("id", input.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: agentsKey(teamId) });
+    },
+  });
+}
