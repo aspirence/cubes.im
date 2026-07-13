@@ -394,8 +394,13 @@ export default function SchedulePage() {
     () => (members ?? []).find((m) => m.user?.id === user?.id)?.id,
     [members, user?.id],
   );
-  const effectiveFilter =
-    memberFilter ?? (isAdmin ? "all" : (myTeamMemberId ?? "all"));
+  // Only admins/owners may view other people's or the whole team's calendar.
+  // Everyone else (members, limited members, guests) is locked to their own
+  // schedule — never "Everyone" and never another member, even defensively when
+  // their team-member id can't be resolved.
+  const effectiveFilter = isAdmin
+    ? (memberFilter ?? "all")
+    : (myTeamMemberId ?? "none");
   const matchesFilter = (teamMemberId: string) =>
     effectiveFilter === "all" || teamMemberId === effectiveFilter;
 
@@ -639,22 +644,27 @@ export default function SchedulePage() {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", rowGap: 8 }}>
-        <Select
-          value={effectiveFilter}
-          onChange={(v) => setMemberFilter(v)}
-          options={memberFilterOptions}
-          showSearch
-          optionFilterProp="label"
-          style={{ minWidth: 180 }}
-          optionRender={(o) =>
-            renderMemberOption(o.value as string, String(o.label))
-          }
-          labelRender={(p) =>
-            renderMemberOption(p.value as string, String(p.label))
-          }
-          aria-label="Whose calendar"
-        />
-        <div style={{ width: 1, height: 22, background: T.hairline }} />
+        {/* Whose-calendar picker is admin-only; members see just their own. */}
+        {isAdmin ? (
+          <>
+            <Select
+              value={effectiveFilter}
+              onChange={(v) => setMemberFilter(v)}
+              options={memberFilterOptions}
+              showSearch
+              optionFilterProp="label"
+              style={{ minWidth: 180 }}
+              optionRender={(o) =>
+                renderMemberOption(o.value as string, String(o.label))
+              }
+              labelRender={(p) =>
+                renderMemberOption(p.value as string, String(p.label))
+              }
+              aria-label="Whose calendar"
+            />
+            <div style={{ width: 1, height: 22, background: T.hairline }} />
+          </>
+        ) : null}
         <Segmented
           value={view}
           onChange={(v) => setView(v as "day" | "week" | "month")}
@@ -706,15 +716,20 @@ export default function SchedulePage() {
             chevron_right
           </span>
         </NavButton>
-        <div style={{ width: 1, height: 22, background: T.hairline }} />
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => setModalOpen(true)}
-          style={{ height: 32, borderRadius: 8 }}
-        >
-          Add allocation
-        </Button>
+        {/* Allocating capacity to people is a management action — admin-only. */}
+        {isAdmin ? (
+          <>
+            <div style={{ width: 1, height: 22, background: T.hairline }} />
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => setModalOpen(true)}
+              style={{ height: 32, borderRadius: 8 }}
+            >
+              Add allocation
+            </Button>
+          </>
+        ) : null}
       </div>
     </div>
   );
