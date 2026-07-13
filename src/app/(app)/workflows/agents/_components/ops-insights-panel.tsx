@@ -258,8 +258,8 @@ export function OpsInsightsPanel({ agent }: { agent: OpsAgent }) {
             Team pulse · last 7 days
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {pulse.slice(0, 8).map((p) => (
-              <div key={p.name} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5 }}>
+            {pulse.slice(0, 8).map((p, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5 }}>
                 <span style={{ flex: 1, minWidth: 0, color: token.colorText, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {p.name}
                 </span>

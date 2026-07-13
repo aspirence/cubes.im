@@ -114,17 +114,28 @@ begin
     if not public.is_team_admin(_team_id) then
         raise exception 'ops_post_message: not permitted';
     end if;
+    -- Only public team channels are valid targets — never a private channel or
+    -- a DM. And the caller must already be able to reach it (can_access_channel
+    -- reads auth.uid(), so it holds even inside this SECURITY DEFINER function).
+    -- This stops an admin from auto-joining / posting into a private channel or
+    -- someone else's DM by passing its id.
     if not exists (
         select 1 from public.chat_channels c
         where c.id = p_channel_id and c.team_id = _team_id
+          and c.kind = 'channel' and c.is_private is false
     ) then
-        raise exception 'ops_post_message: channel not in this workspace';
+        raise exception 'ops_post_message: target must be a public channel in this workspace';
+    end if;
+    if not public.can_access_channel(p_channel_id) then
+        raise exception 'ops_post_message: channel not accessible';
     end if;
     if coalesce(btrim(p_body), '') = '' then
         raise exception 'ops_post_message: empty body';
     end if;
 
-    -- Ensure the sender can post (SECURITY DEFINER bypasses the self-join RLS).
+    -- Ensure the sender has a membership row (a read marker; harmless on a
+    -- public channel the caller already accesses). SECURITY DEFINER bypasses the
+    -- self-join RLS, which is why the can_access_channel gate above is required.
     insert into public.chat_channel_members (channel_id, user_id)
     values (p_channel_id, _sender)
     on conflict (channel_id, user_id) do nothing;
@@ -301,7 +312,6 @@ begin
            'The client is on revision ' || v.latest_revision || ' for "' || v.title ||
            '". What''s driving the repeated change requests, and can we align on scope?'
     from public.app_video_review_videos v
-    left join public.tasks t on t.id = v.task_id
     left join lateral (
         select tm.id as team_member_id, u.id as user_id, u.name
         from public.tasks_assignees ta
@@ -545,7 +555,7 @@ begin
         where agent_id = p_agent_id and kind = 'overdue'
           and status in ('open','nudged')
           and created_at >= coalesce(_agent.ops_last_scan_at, now() - interval '1 day')
-        order by severity desc, created_at
+        order by case severity when 'high' then 0 when 'med' then 1 else 2 end, created_at
         limit 3
     loop
         _body := _body || chr(10) || _line;

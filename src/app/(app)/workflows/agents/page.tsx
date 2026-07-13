@@ -659,7 +659,10 @@ export default function AgentsPage() {
               {/* Operations Manager agents get a live delivery-health command panel. */}
               {selectedAgent &&
               (selectedAgent as unknown as OpsAgent).kind === "ops_manager" ? (
-                <OpsInsightsPanel agent={selectedAgent as unknown as OpsAgent} />
+                <OpsInsightsPanel
+                  key={selectedAgent.id}
+                  agent={selectedAgent as unknown as OpsAgent}
+                />
               ) : null}
 
               <div
