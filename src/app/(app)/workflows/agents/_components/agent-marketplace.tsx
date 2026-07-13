@@ -15,8 +15,8 @@ function MIcon({ name, size = 18, color }: { name: string; size?: number; color?
 
 const grid: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-  gap: 18,
+  gridTemplateColumns: "repeat(auto-fill, minmax(228px, 1fr))",
+  gap: 16,
   alignItems: "stretch",
 };
 
@@ -58,7 +58,7 @@ export function AgentMarketplace({
     border: `1px solid ${token.colorBorderSecondary}`,
     background: token.colorBgContainer,
     overflow: "hidden",
-    minHeight: 300,
+    minHeight: 276,
     transition: "box-shadow .16s ease, transform .16s ease, border-color .16s ease",
   };
 
@@ -96,7 +96,7 @@ export function AgentMarketplace({
         <div
           style={{
             position: "relative",
-            height: 116,
+            height: 100,
             background: "linear-gradient(135deg,#14171f 0%,#2a2f45 100%)",
           }}
         >
@@ -135,7 +135,7 @@ export function AgentMarketplace({
             <MIcon name="add" size={28} />
           </span>
         </div>
-        <div style={{ padding: "30px 18px 18px", display: "flex", flexDirection: "column", flex: 1 }}>
+        <div style={{ padding: "28px 16px 16px", display: "flex", flexDirection: "column", flex: 1 }}>
           <div style={{ fontSize: 16, fontWeight: 800, color: token.colorText }}>New agent</div>
           <div
             style={{
@@ -165,7 +165,7 @@ export function AgentMarketplace({
             onMouseEnter={(e) => lift(e, true)}
             onMouseLeave={(e) => lift(e, false)}
           >
-            <div style={{ position: "relative", height: 116, background: tpl.gradient }}>
+            <div style={{ position: "relative", height: 100, background: tpl.gradient }}>
               {tpl.badge ? (
                 <span
                   style={{
@@ -207,7 +207,7 @@ export function AgentMarketplace({
                 {tpl.emoji}
               </span>
             </div>
-            <div style={{ padding: "30px 18px 18px", display: "flex", flexDirection: "column", flex: 1 }}>
+            <div style={{ padding: "28px 16px 16px", display: "flex", flexDirection: "column", flex: 1 }}>
               <div style={{ fontSize: 16, fontWeight: 800, color: token.colorText }}>{tpl.name}</div>
               <div style={{ fontSize: 12.5, color: tpl.accent, fontWeight: 600, marginTop: 1 }}>
                 {tpl.tagline}
