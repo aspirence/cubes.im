@@ -340,11 +340,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // pages themselves stay RPC-gated as defense in depth.
   const { data: isPlatformAdmin } = useIsPlatformAdmin();
   const isTeamAdmin = useIsTeamAdmin();
-  const secItems = (sectionNav?.items ?? []).filter(
+  const secItemsRaw = (sectionNav?.items ?? []).filter(
     (it) =>
       "type" in it ||
       ((!it.superAdminOnly || isPlatformAdmin) && (!it.requiresAdmin || isTeamAdmin)),
   );
+  // Gating out admin-only entries can orphan their dividers (leading, trailing,
+  // or several in a row). Collapse runs of dividers to one and drop any leading
+  // divider, then trim a trailing one, so the nav never shows empty separators.
+  const secItems = secItemsRaw.reduce((acc, it) => {
+    const last = acc[acc.length - 1];
+    if ("type" in it && (!last || "type" in last)) return acc;
+    acc.push(it);
+    return acc;
+  }, [] as typeof secItemsRaw);
+  while (secItems.length && "type" in secItems[secItems.length - 1]) {
+    secItems.pop();
+  }
 
   // Collapse is purely route-driven: rail on section/canvas pages, always
   // expanded (with no manual collapse) everywhere else.
