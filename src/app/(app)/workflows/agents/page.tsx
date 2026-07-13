@@ -52,6 +52,7 @@ import { type OpsAgent } from "@/features/workflows/use-ops-manager";
 import { OpsInsightsPanel } from "./_components/ops-insights-panel";
 import { AgentGallery } from "./_components/agent-gallery";
 import { AgentMarketplace } from "./_components/agent-marketplace";
+import { useIsTeamAdmin } from "@/features/team-members/use-team-members";
 
 interface AgentBasicsForm {
   name: string;
@@ -136,7 +137,10 @@ function renderMascot(
 export default function AgentsPage() {
   const { message } = App.useApp();
   const { token } = theme.useToken();
-  const { data: agents, isLoading } = useAgents();
+  const { data: agents, isLoading, isFetching } = useAgents();
+  // Agent creation is admin-only (agents_write = is_team_admin) — gate the
+  // create affordances so members don't get buttons that fail server-side.
+  const isTeamAdmin = useIsTeamAdmin();
   const createAgent = useCreateAgent();
   const updateAgent = useUpdateAgent();
   const deleteAgent = useDeleteAgent();
@@ -183,11 +187,18 @@ export default function AgentsPage() {
   // chosen agent no longer exists (e.g. it was just deleted). We intentionally
   // do NOT auto-select the first agent, so the page opens on "All agents".
   useEffect(() => {
-    if (selectedAgentId && !agentList.some((agent) => agent.id === selectedAgentId)) {
+    // Only clear when the query is settled (not mid-refetch) — otherwise a
+    // freshly-installed agent, whose id isn't in the still-stale list yet, would
+    // be cleared before the refetch lands and we'd bounce back to the gallery.
+    if (
+      !isFetching &&
+      selectedAgentId &&
+      !agentList.some((agent) => agent.id === selectedAgentId)
+    ) {
       setSelectedAgentId(null);
       setDraft(null);
     }
-  }, [agentList, selectedAgentId]);
+  }, [agentList, selectedAgentId, isFetching]);
 
   useEffect(() => {
     if (!selectedAgent) return;
@@ -391,9 +402,11 @@ export default function AgentsPage() {
               <code> @tasks</code>, <code> @files</code>, and more.
             </Typography.Paragraph>
           </div>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-            New agent
-          </Button>
+          {isTeamAdmin ? (
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+              New agent
+            </Button>
+          ) : null}
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -441,6 +454,7 @@ export default function AgentsPage() {
                   One-click, pre-built agents for your team — or build your own.
                 </div>
                 <AgentMarketplace
+                  canManage={isTeamAdmin}
                   onNewCustom={() => setCreateOpen(true)}
                   onInstalled={(id) => setSelectedAgentId(id)}
                 />

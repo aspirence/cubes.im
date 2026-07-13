@@ -28,9 +28,12 @@ const grid: React.CSSProperties = {
 export function AgentMarketplace({
   onNewCustom,
   onInstalled,
+  canManage,
 }: {
   onNewCustom: () => void;
   onInstalled: (agentId: string) => void;
+  /** Only workspace admins/owners can create agents (agents_write = is_team_admin). */
+  canManage: boolean;
 }) {
   const { token } = theme.useToken();
   const { message } = AntdApp.useApp();
@@ -38,6 +41,10 @@ export function AgentMarketplace({
   const [installing, setInstalling] = useState<string | null>(null);
 
   const handleInstall = async (tpl: AgentTemplate) => {
+    if (!canManage) {
+      message.info("Only workspace admins can add agents.");
+      return;
+    }
     if (installing) return;
     setInstalling(tpl.key);
     try {
@@ -62,7 +69,7 @@ export function AgentMarketplace({
     transition: "box-shadow .16s ease, transform .16s ease, border-color .16s ease",
   };
 
-  const btn = (opts?: { loading?: boolean; ghost?: boolean }): React.CSSProperties => ({
+  const btn = (opts?: { loading?: boolean; disabled?: boolean }): React.CSSProperties => ({
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -70,11 +77,11 @@ export function AgentMarketplace({
     height: 40,
     borderRadius: 10,
     border: "none",
-    background: opts?.ghost ? token.colorFillSecondary : "#3f5bd9",
-    color: opts?.ghost ? token.colorText : "#fff",
+    background: opts?.disabled ? token.colorFillSecondary : "#4a4ad0",
+    color: opts?.disabled ? token.colorTextTertiary : "#fff",
     fontSize: 13.5,
     fontWeight: 700,
-    cursor: opts?.loading ? "default" : "pointer",
+    cursor: opts?.disabled ? "not-allowed" : opts?.loading ? "default" : "pointer",
     opacity: opts?.loading ? 0.8 : 1,
     width: "100%",
   });
@@ -149,7 +156,12 @@ export function AgentMarketplace({
             Build a custom agent from scratch — choose the @contexts it can see and
             write exactly how it should work.
           </div>
-          <button type="button" onClick={onNewCustom} style={{ ...btn(), marginTop: 14 }}>
+          <button
+            type="button"
+            disabled={!canManage}
+            onClick={() => (canManage ? onNewCustom() : undefined)}
+            style={{ ...btn({ disabled: !canManage }), marginTop: 14 }}
+          >
             <MIcon name="auto_awesome" size={16} /> Create custom agent
           </button>
         </div>
@@ -255,13 +267,13 @@ export function AgentMarketplace({
                 </span>
                 by {tpl.author ?? "Cubes"}
                 <span style={{ margin: "0 2px" }}>·</span>
-                <span style={{ color: "#1a7f52", fontWeight: 700 }}>Free</span>
+                <span style={{ color: "#2bb36e", fontWeight: 700 }}>Free</span>
               </div>
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || !canManage}
                 onClick={() => void handleInstall(tpl)}
-                style={btn({ loading: busy })}
+                style={btn({ loading: busy, disabled: !canManage })}
               >
                 {busy ? (
                   <>
