@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import {
   App,
   Avatar,
@@ -147,7 +148,17 @@ export default function AgentsPage() {
   const uploadMascot = useUploadAgentMascot();
   const runAgent = useRunAgent();
 
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  // The selected agent lives in the URL — /workflows/agents/<id> — so the detail
+  // view is a real, shareable, back-button-friendly page (the [id] route
+  // re-exports this same component). null on the index (gallery/marketplace).
+  const router = useRouter();
+  const params = useParams();
+  const selectedAgentId =
+    typeof params?.id === "string" ? params.id : null;
+  const selectAgent = (id: string | null) => {
+    router.push(id ? `/workflows/agents/${id}` : "/workflows/agents");
+  };
+
   const [draft, setDraft] = useState<AgentDraft | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [playgroundTaskId, setPlaygroundTaskId] = useState<string | null>(null);
@@ -195,10 +206,11 @@ export default function AgentsPage() {
       selectedAgentId &&
       !agentList.some((agent) => agent.id === selectedAgentId)
     ) {
-      setSelectedAgentId(null);
       setDraft(null);
+      // The agent in the URL no longer exists (deleted) — go back to the index.
+      router.replace("/workflows/agents");
     }
-  }, [agentList, selectedAgentId, isFetching]);
+  }, [agentList, selectedAgentId, isFetching, router]);
 
   useEffect(() => {
     if (!selectedAgent) return;
@@ -253,7 +265,7 @@ export default function AgentsPage() {
           trainingTasks: [],
         }),
       });
-      setSelectedAgentId(created.id);
+      selectAgent(created.id);
       resetCreateModal();
       message.success("Agent created.");
     } catch (err) {
@@ -402,7 +414,7 @@ export default function AgentsPage() {
               <code> @tasks</code>, <code> @files</code>, and more.
             </Typography.Paragraph>
           </div>
-          {isTeamAdmin ? (
+          {isTeamAdmin && !selectedAgentId ? (
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
               New agent
             </Button>
@@ -427,7 +439,7 @@ export default function AgentsPage() {
                   <AgentGallery
                     agents={agentList}
                     isLoading={isLoading}
-                    onSelect={setSelectedAgentId}
+                    onSelect={selectAgent}
                     onCreate={() => setCreateOpen(true)}
                     showNewTile={false}
                   />
@@ -456,7 +468,7 @@ export default function AgentsPage() {
                 <AgentMarketplace
                   canManage={isTeamAdmin}
                   onNewCustom={() => setCreateOpen(true)}
-                  onInstalled={(id) => setSelectedAgentId(id)}
+                  onInstalled={(id) => selectAgent(id)}
                 />
               </div>
             </div>
@@ -465,7 +477,7 @@ export default function AgentsPage() {
               <div>
                 <Button
                   type="text"
-                  onClick={() => setSelectedAgentId(null)}
+                  onClick={() => selectAgent(null)}
                   style={{ paddingLeft: 0, color: token.colorTextSecondary }}
                   icon={
                     <span className="material-symbols-rounded" style={{ fontSize: 18 }}>
