@@ -1,237 +1,186 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import {
-  App,
-  Button,
-  Card,
-  Empty,
-  Form,
-  Input,
-  Modal,
-  Popconfirm,
-  Space,
-  Switch,
-  Table,
-  Tag,
-  theme,
-} from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { PlusOutlined, DeleteOutlined, ThunderboltOutlined } from "@ant-design/icons";
-import {
-  useWorkflows,
-  useCreateWorkflow,
-  useUpdateWorkflow,
-  useDeleteWorkflow,
-  useIsTeamAdmin,
-  type Workflow,
-} from "@/features/workflows/use-workflows";
-import { useRunNow } from "@/features/workflows/use-workflow-runs";
+import Link from "next/link";
+import { theme } from "antd";
 
-const triggerLabel = (t: string) =>
-  t === "schedule" ? "Schedule" : t === "event" ? "Event" : "Manual";
+/** Material Symbols Rounded glyph. */
+function MIcon({ name, size = 20, color }: { name: string; size?: number; color?: string }) {
+  return (
+    <span className="material-symbols-rounded" aria-hidden style={{ fontSize: size, lineHeight: 1, color }}>
+      {name}
+    </span>
+  );
+}
 
-export default function WorkflowsListPage() {
-  const router = useRouter();
+/**
+ * Workflows — temporarily a "coming soon" placeholder while the builder is being
+ * reworked. The full implementation lives in git history; Agents remain live at
+ * /workflows/agents.
+ */
+export default function WorkflowsComingSoon() {
   const { token } = theme.useToken();
-  const { message } = App.useApp();
-  const { data: workflows, isLoading } = useWorkflows();
-  const createWorkflow = useCreateWorkflow();
-  const updateWorkflow = useUpdateWorkflow();
-  const deleteWorkflow = useDeleteWorkflow();
-  const runNow = useRunNow();
-  const { data: isTeamAdmin } = useIsTeamAdmin();
-  const canManage = Boolean(isTeamAdmin);
 
-  const [createOpen, setCreateOpen] = useState(false);
-  const [runningId, setRunningId] = useState<string | null>(null);
-  const [form] = Form.useForm<{ name: string; description?: string }>();
-
-  const handleCreate = async () => {
-    const values = await form.validateFields();
-    try {
-      const wf = await createWorkflow.mutateAsync({
-        name: values.name.trim(),
-        description: values.description?.trim() || undefined,
-      });
-      setCreateOpen(false);
-      form.resetFields();
-      router.push(`/workflows/${wf.id}`);
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : "Failed to create workflow.");
-    }
-  };
-
-  const handleToggle = async (wf: Workflow, enabled: boolean) => {
-    try {
-      await updateWorkflow.mutateAsync({ id: wf.id, enabled });
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : "Failed to update.");
-    }
-  };
-
-  const handleRun = async (wf: Workflow) => {
-    setRunningId(wf.id);
-    try {
-      await runNow.mutateAsync(wf.id);
-      message.success("Run started — open the workflow to see its history.");
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : "Run failed.");
-    } finally {
-      setRunningId(null);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    try {
-      await deleteWorkflow.mutateAsync(id);
-      message.success("Workflow deleted.");
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : "Failed to delete.");
-    }
-  };
-
-  const columns: ColumnsType<Workflow> = [
-    {
-      title: "Name",
-      dataIndex: "name",
-      key: "name",
-      render: (name: string, record) => (
-        <a onClick={() => router.push(`/workflows/${record.id}`)}>{name}</a>
-      ),
-    },
-    {
-      title: "Trigger",
-      dataIndex: "trigger_type",
-      key: "trigger",
-      width: 120,
-      render: (t: string) => <Tag>{triggerLabel(t)}</Tag>,
-    },
-    {
-      title: "Runs",
-      dataIndex: "run_count",
-      key: "runs",
-      width: 80,
-    },
-    {
-      title: "Enabled",
-      key: "enabled",
-      width: 90,
-      render: (_, record) => (
-        <Switch
-          size="small"
-          checked={record.enabled}
-          disabled={!canManage}
-          onChange={(checked) => void handleToggle(record, checked)}
-        />
-      ),
-    },
-    {
-      title: "Actions",
-      key: "actions",
-      width: 200,
-      align: "right",
-      render: (_, record) => (
-        <Space>
-          <Button
-            size="small"
-            icon={<ThunderboltOutlined />}
-            loading={runningId === record.id}
-            onClick={() => void handleRun(record)}
-          >
-            Run now
-          </Button>
-          <Button size="small" onClick={() => router.push(`/workflows/${record.id}`)}>
-            Open
-          </Button>
-          {canManage ? (
-            <Popconfirm
-              title="Delete this workflow?"
-              okText="Delete"
-              okButtonProps={{ danger: true }}
-              onConfirm={() => handleDelete(record.id)}
-            >
-              <Button type="text" danger icon={<DeleteOutlined />} aria-label="Delete" />
-            </Popconfirm>
-          ) : null}
-        </Space>
-      ),
-    },
+  const upcoming = [
+    { icon: "bolt", title: "Triggers", desc: "Kick off on a schedule, an event, or on demand." },
+    { icon: "call_split", title: "Conditions", desc: "Branch on task status, priority, assignee and more." },
+    { icon: "smart_toy", title: "Agent actions", desc: "Let your agents do the work at each step." },
+    { icon: "forum", title: "Notify & post", desc: "Ping owners in chat and post updates automatically." },
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div
+      style={{
+        minHeight: "calc(100vh - 120px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "40px 20px",
+      }}
+    >
       <div
         style={{
+          width: "100%",
+          maxWidth: 620,
+          textAlign: "center",
           display: "flex",
-          alignItems: "flex-end",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
+          flexDirection: "column",
+          alignItems: "center",
         }}
       >
-        <div>
-          <h1 style={{ margin: 0, fontSize: 21, fontWeight: 600, letterSpacing: "-.4px", color: token.colorText }}>
-            Workflows
-          </h1>
-          <div style={{ margin: "4px 0 0", fontSize: 13, color: token.colorTextSecondary }}>
-            Automate multi-step sequences. Deterministic runs use zero AI tokens.
-          </div>
-        </div>
-        <Button type="primary" icon={<PlusOutlined />} disabled={!canManage} onClick={() => setCreateOpen(true)}>
-          New workflow
-        </Button>
-      </div>
-
-      <Card>
-      {(workflows?.length ?? 0) === 0 && !isLoading ? (
-        <Empty
-          description="No workflows yet"
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          style={{ padding: "32px 0" }}
+        <div
+          style={{
+            width: 76,
+            height: 76,
+            borderRadius: 20,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#fff",
+            background: "linear-gradient(135deg,#4a4ad0 0%,#7c6cff 60%,#b46ff0 100%)",
+            boxShadow: "0 14px 34px rgba(74,74,208,.32)",
+          }}
         >
-          <Button type="primary" icon={<PlusOutlined />} disabled={!canManage} onClick={() => setCreateOpen(true)}>
-            New workflow
-          </Button>
-        </Empty>
-      ) : (
-        <Table<Workflow>
-          rowKey="id"
-          loading={isLoading}
-          columns={columns}
-          dataSource={workflows ?? []}
-          pagination={{ pageSize: 12, hideOnSinglePage: true }}
-          scroll={{ x: "max-content" }}
-        />
-      )}
+          <MIcon name="account_tree" size={38} />
+        </div>
 
-      <Modal
-        title="New workflow"
-        open={createOpen}
-        onOk={handleCreate}
-        okText="Create"
-        confirmLoading={createWorkflow.isPending}
-        onCancel={() => {
-          setCreateOpen(false);
-          form.resetFields();
-        }}
-        destroyOnHidden
-      >
-        <Form form={form} layout="vertical" requiredMark={false}>
-          <Form.Item
-            label="Name"
-            name="name"
-            rules={[{ required: true, message: "Please enter a name." }]}
-          >
-            <Input placeholder="Weekly HR pulse" autoFocus />
-          </Form.Item>
-          <Form.Item label="Description" name="description">
-            <Input.TextArea placeholder="Optional" rows={2} maxLength={500} />
-          </Form.Item>
-        </Form>
-      </Modal>
-      </Card>
+        <span
+          style={{
+            marginTop: 20,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12,
+            fontWeight: 700,
+            letterSpacing: 0.4,
+            textTransform: "uppercase",
+            color: "#4a4ad0",
+            background: token.colorPrimaryBg,
+            border: `1px solid ${token.colorPrimaryBorder}`,
+            padding: "4px 12px",
+            borderRadius: 999,
+          }}
+        >
+          <MIcon name="schedule" size={14} /> Coming soon
+        </span>
+
+        <h1
+          style={{
+            margin: "16px 0 0",
+            fontSize: 30,
+            fontWeight: 700,
+            letterSpacing: "-0.6px",
+            color: token.colorText,
+          }}
+        >
+          Workflows
+        </h1>
+        <p
+          style={{
+            margin: "10px 0 0",
+            fontSize: 15,
+            lineHeight: 1.6,
+            color: token.colorTextSecondary,
+            maxWidth: 480,
+          }}
+        >
+          Automate the busywork — chain triggers, conditions and agent actions
+          across your projects. We&apos;re rebuilding the builder to make it
+          genuinely easy, even for non-technical teams. It&apos;ll land here soon.
+        </p>
+
+        {/* What's coming */}
+        <div
+          style={{
+            marginTop: 28,
+            width: "100%",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+            gap: 12,
+            textAlign: "left",
+          }}
+        >
+          {upcoming.map((u) => (
+            <div
+              key={u.title}
+              style={{
+                display: "flex",
+                gap: 12,
+                padding: 14,
+                borderRadius: 14,
+                border: `1px solid ${token.colorBorderSecondary}`,
+                background: token.colorBgContainer,
+              }}
+            >
+              <span
+                style={{
+                  width: 36,
+                  height: 36,
+                  flex: "none",
+                  borderRadius: 10,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#4a4ad0",
+                  background: token.colorPrimaryBg,
+                }}
+              >
+                <MIcon name={u.icon} size={20} />
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: token.colorText }}>
+                  {u.title}
+                </div>
+                <div style={{ fontSize: 12.5, color: token.colorTextTertiary, marginTop: 1 }}>
+                  {u.desc}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Meanwhile, Agents are live */}
+        <Link
+          href="/workflows/agents"
+          style={{
+            marginTop: 26,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            height: 44,
+            padding: "0 22px",
+            borderRadius: 12,
+            background: "#4a4ad0",
+            color: "#fff",
+            fontSize: 14,
+            fontWeight: 700,
+            boxShadow: "0 10px 24px rgba(74,74,208,.24)",
+          }}
+        >
+          <MIcon name="smart_toy" size={18} />
+          Meanwhile, explore Agents
+          <MIcon name="arrow_forward" size={18} />
+        </Link>
+      </div>
     </div>
   );
 }
