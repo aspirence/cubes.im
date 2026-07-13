@@ -654,6 +654,44 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <span>Everything&apos;s already on your sidebar.</span>
         </div>
       )}
+
+      {/* Discover & install new apps — admin-managed (app installation is an
+          admin surface), so this entry point is gated to workspace admins. */}
+      {isTeamAdmin ? (
+        <>
+          <div style={{ height: 1, background: hair, margin: "14px 0" }} />
+          <button
+            type="button"
+            onClick={() => {
+              setManageMenuOpen(false);
+              router.push("/apps");
+            }}
+            style={menuRowStyle}
+          >
+            <span style={menuChipStyle(true)}>
+              <MIcon name="apps" size={18} />
+            </span>
+            <span style={{ minWidth: 0, flex: 1 }}>
+              <span
+                style={{
+                  display: "block",
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  color: dark ? "#e6e9ef" : "#17171c",
+                }}
+              >
+                Browse App Center
+              </span>
+              <span
+                style={{ display: "block", fontSize: 12, color: "#8a8d98", marginTop: 1 }}
+              >
+                Install more apps for your workspace
+              </span>
+            </span>
+            <MIcon name="chevron_right" size={18} />
+          </button>
+        </>
+      ) : null}
     </div>
   );
 
