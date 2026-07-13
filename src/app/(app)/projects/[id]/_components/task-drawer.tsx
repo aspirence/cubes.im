@@ -590,6 +590,8 @@ function TaskDrawerContent({
   const [aiSelected, setAiSelected] = useState<Set<number>>(new Set());
   const [aiAdding, setAiAdding] = useState(false);
   const [commentText, setCommentText] = useState("");
+  // Right panel: switch between Comments and Activity.
+  const [rightTab, setRightTab] = useState<"comments" | "activity">("comments");
   const [referenceUrl, setReferenceUrl] = useState("");
   const [referenceTitle, setReferenceTitle] = useState("");
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
@@ -1855,13 +1857,68 @@ function TaskDrawerContent({
             background: token.colorBgLayout,
           }}
         >
-          <div style={{ flex: "1 1 auto", overflowY: "auto", padding: "16px 16px 12px" }}>
-            <SectionHeading
-              count={comments.length > 0 ? comments.length : undefined}
-            >
-              Comments
-            </SectionHeading>
-            {comments.length > 0 ? (
+          {/* Comments / Activity tab switch */}
+          <div
+            style={{
+              flex: "0 0 auto",
+              display: "flex",
+              gap: 4,
+              padding: "12px 16px 0",
+            }}
+          >
+            {(
+              [
+                { key: "comments" as const, label: "Comments", count: comments.length },
+                { key: "activity" as const, label: "Activity" },
+              ]
+            ).map((t) => {
+              const active = rightTab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setRightTab(t.key)}
+                  style={{
+                    border: "none",
+                    background: active ? DT.panel : "transparent",
+                    color: active ? DT.textPrimary : DT.textTertiary,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    boxShadow: active ? `inset 0 0 0 1px ${DT.hairline}` : "none",
+                    transition: "background .14s, color .14s",
+                  }}
+                >
+                  {t.label}
+                  {t.count ? (
+                    <span
+                      style={{
+                        fontFamily: DT.mono,
+                        fontSize: 11,
+                        color: DT.textTertiary,
+                        background: DT.innerDivider,
+                        borderRadius: 999,
+                        padding: "0 6px",
+                        lineHeight: "16px",
+                      }}
+                    >
+                      {t.count}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ flex: "1 1 auto", overflowY: "auto", padding: "12px 16px 12px" }}>
+            {rightTab === "activity" ? (
+              <TaskActivity taskId={task.id} />
+            ) : comments.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 {comments.map((c) => (
                   <div key={c.id} style={{ display: "flex", gap: 10 }}>
@@ -1919,18 +1976,16 @@ function TaskDrawerContent({
                 style={{ margin: "12px 0" }}
               />
             )}
-
-            <SectionDivider />
-
-            <TaskActivity taskId={task.id} />
           </div>
 
+          {/* Composer belongs to the Comments tab only. */}
           <div
             style={{
               flex: "0 0 auto",
               borderTop: `1px solid ${DT.hairline}`,
               padding: "12px 16px 14px",
               background: DT.panel,
+              display: rightTab === "comments" ? "block" : "none",
             }}
           >
             <div className="td-composer">
