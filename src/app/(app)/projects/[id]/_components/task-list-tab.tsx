@@ -4,11 +4,9 @@ import { useMemo, useState } from "react";
 import {
   App,
   Avatar,
-  Button,
   Empty,
   Input,
   Segmented,
-  Select,
   Skeleton,
   Space,
   theme,
@@ -24,13 +22,16 @@ import {
   useTaskStatuses,
   useTaskPriorities,
   type TaskStatusWithCategory,
-  type TaskPriority,
 } from "@/features/tasks/use-task-statuses";
 import { useTasksRealtime } from "@/features/tasks/use-tasks-realtime";
 import { useTeamLabels } from "@/features/settings/use-labels";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
-import { MemberSingleSelect } from "@/features/team-members/member-select";
 import { TaskIdLabel } from "@/features/tasks/task-id-label";
+import {
+  FilterControl,
+  type FilterField,
+  type FilterValues,
+} from "@/components/filters/filter-control";
 
 type GroupBy = "status" | "priority" | "assignee";
 
@@ -534,138 +535,7 @@ function TaskGroupSection({
 /* Shared select-option dot.                                                  */
 /* -------------------------------------------------------------------------- */
 
-function StatusOptionDot({ color }: { color: string }) {
-  return (
-    <span
-      aria-hidden
-      style={{
-        display: "inline-block",
-        width: 9,
-        height: 9,
-        borderRadius: "50%",
-        background: color,
-      }}
-    />
-  );
-}
 
-/* -------------------------------------------------------------------------- */
-/* Filter bar.                                                                 */
-/* -------------------------------------------------------------------------- */
-
-interface FilterState {
-  statusId: string | null;
-  priorityId: string | null;
-  labelId: string | null;
-  assigneeId: string | null;
-}
-
-const EMPTY_FILTERS: FilterState = {
-  statusId: null,
-  priorityId: null,
-  labelId: null,
-  assigneeId: null,
-};
-
-interface FilterBarProps {
-  statuses: TaskStatusWithCategory[];
-  priorities: TaskPriority[];
-  labels: { id: string; name: string; color_code: string }[];
-  members: { id: string; name: string }[];
-  filters: FilterState;
-  onChange: (next: FilterState) => void;
-}
-
-function FilterBar({
-  statuses,
-  priorities,
-  labels,
-  members,
-  filters,
-  onChange,
-}: FilterBarProps) {
-  const hasActive =
-    filters.statusId !== null ||
-    filters.priorityId !== null ||
-    filters.labelId !== null ||
-    filters.assigneeId !== null;
-
-  return (
-    <Space wrap size={8}>
-      <Select<string>
-        size="small"
-        style={{ width: 150 }}
-        placeholder="Status"
-        allowClear
-        value={filters.statusId ?? undefined}
-        onChange={(value) => onChange({ ...filters, statusId: value ?? null })}
-        options={statuses.map((s) => ({
-          value: s.id,
-          label: (
-            <Space size={6}>
-              <StatusOptionDot color={s.category?.color_code ?? "#d9d9d9"} />
-              {s.name}
-            </Space>
-          ),
-        }))}
-        aria-label="Filter by status"
-      />
-
-      <Select<string>
-        size="small"
-        style={{ width: 150 }}
-        placeholder="Priority"
-        allowClear
-        value={filters.priorityId ?? undefined}
-        onChange={(value) => onChange({ ...filters, priorityId: value ?? null })}
-        options={priorities.map((p) => ({
-          value: p.id,
-          label: (
-            <Space size={6}>
-              <StatusOptionDot color={priorityColor(p.name, p.color_code)} />
-              {p.name}
-            </Space>
-          ),
-        }))}
-        aria-label="Filter by priority"
-      />
-
-      <Select<string>
-        size="small"
-        style={{ width: 150 }}
-        placeholder="Label"
-        allowClear
-        value={filters.labelId ?? undefined}
-        onChange={(value) => onChange({ ...filters, labelId: value ?? null })}
-        options={labels.map((l) => ({
-          value: l.id,
-          label: (
-            <Space size={6}>
-              <StatusOptionDot color={l.color_code} />
-              {l.name}
-            </Space>
-          ),
-        }))}
-        aria-label="Filter by label"
-      />
-
-      <MemberSingleSelect
-        size="small"
-        style={{ width: 170 }}
-        placeholder="Assignee"
-        value={filters.assigneeId ?? undefined}
-        onChange={(value) => onChange({ ...filters, assigneeId: value ?? null })}
-        options={members.map((m) => ({ value: m.id, label: m.name }))}
-      />
-
-      {hasActive && (
-        <Button size="small" type="text" onClick={() => onChange(EMPTY_FILTERS)}>
-          Clear
-        </Button>
-      )}
-    </Space>
-  );
-}
 
 /* -------------------------------------------------------------------------- */
 /* The tab.                                                                   */
@@ -700,39 +570,59 @@ export function TaskListTab({ projectId }: { projectId: string }) {
   );
 
   const [groupBy, setGroupBy] = useState<GroupBy>("status");
-  const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
+  const [filters, setFilters] = useState<FilterValues>({});
 
-  /* ----- client-side filtering ----- */
+  const filterFields = useMemo<FilterField[]>(
+    () => [
+      {
+        key: "status",
+        label: "Status",
+        icon: "adjust",
+        options: statuses.map((s) => ({
+          value: s.id,
+          label: s.name,
+          dot: s.category?.color_code ?? "#d9d9d9",
+        })),
+      },
+      {
+        key: "priority",
+        label: "Priority",
+        icon: "flag",
+        options: priorities.map((p) => ({
+          value: p.id,
+          label: p.name,
+          dot: priorityColor(p.name, p.color_code),
+        })),
+      },
+      {
+        key: "label",
+        label: "Label",
+        icon: "sell",
+        options: labels.map((l) => ({ value: l.id, label: l.name, dot: l.color_code })),
+      },
+      {
+        key: "assignee",
+        label: "Assignee",
+        icon: "person",
+        options: members.map((m) => ({ value: m.id, label: m.name })),
+      },
+    ],
+    [statuses, priorities, labels, members],
+  );
+
+  /* ----- client-side filtering (multi-value, AND across fields) ----- */
   const tasks = useMemo(() => {
-    if (
-      filters.statusId === null &&
-      filters.priorityId === null &&
-      filters.labelId === null &&
-      filters.assigneeId === null
-    ) {
-      return allTasks;
-    }
+    const st = filters.status,
+      pr = filters.priority,
+      lb = filters.label,
+      asg = filters.assignee;
+    if (!st?.length && !pr?.length && !lb?.length && !asg?.length) return allTasks;
     return allTasks.filter((t) => {
-      if (filters.statusId !== null && t.status_id !== filters.statusId) {
+      if (st?.length && (!t.status_id || !st.includes(t.status_id))) return false;
+      if (pr?.length && (!t.priority_id || !pr.includes(t.priority_id))) return false;
+      if (lb?.length && !(t.labels ?? []).some((l) => lb.includes(l.label_id))) return false;
+      if (asg?.length && !(t.assignees ?? []).some((a) => asg.includes(a.team_member_id)))
         return false;
-      }
-      if (filters.priorityId !== null && t.priority_id !== filters.priorityId) {
-        return false;
-      }
-      if (
-        filters.labelId !== null &&
-        !(t.labels ?? []).some((l) => l.label_id === filters.labelId)
-      ) {
-        return false;
-      }
-      if (
-        filters.assigneeId !== null &&
-        !(t.assignees ?? []).some(
-          (a) => a.team_member_id === filters.assigneeId,
-        )
-      ) {
-        return false;
-      }
       return true;
     });
   }, [allTasks, filters]);
@@ -887,7 +777,7 @@ export function TaskListTab({ projectId }: { projectId: string }) {
           flexWrap: "wrap",
         }}
       >
-        <Space size={10}>
+        <Space size={10} wrap>
           <span style={{ fontSize: 13, color: T.textSecondary }}>Group by</span>
           <Segmented<GroupBy>
             value={groupBy}
@@ -897,6 +787,12 @@ export function TaskListTab({ projectId }: { projectId: string }) {
               { label: "Priority", value: "priority" },
               { label: "Assignee", value: "assignee" },
             ]}
+          />
+          <FilterControl
+            fields={filterFields}
+            value={filters}
+            onChange={setFilters}
+            buttonSize="small"
           />
         </Space>
         <span style={{ fontSize: 13, color: T.textSecondary }}>
@@ -909,26 +805,6 @@ export function TaskListTab({ projectId }: { projectId: string }) {
             ? "task"
             : "tasks"}
         </span>
-      </div>
-
-      {/* Filter bar */}
-      <div
-        style={{
-          background: T.panel,
-          border: `1px solid ${T.hairline}`,
-          borderRadius: 11,
-          boxShadow: "0 1px 2px rgba(16,24,40,.04)",
-          padding: "10px 14px",
-        }}
-      >
-        <FilterBar
-          statuses={statuses}
-          priorities={priorities}
-          labels={labels}
-          members={members}
-          filters={filters}
-          onChange={setFilters}
-        />
       </div>
 
       {groups.length === 0 ? (
