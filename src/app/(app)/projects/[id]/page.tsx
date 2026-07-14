@@ -439,7 +439,7 @@ export default function ProjectWorkspacePage() {
       : (taskTabItems[0]?.key ?? utilityTabItems[0]?.key ?? "overview");
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <ProjectWorkspaceHeader project={project} />
       <Tabs
         activeKey={activeTab}

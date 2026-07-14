@@ -137,96 +137,89 @@ export function ProjectWorkspaceHeader({
   const hasMeta = Boolean(project.client || project.category || project.key);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {/* Row 1: identity (left) + controls (right) */}
-      <div
+    // Single compact row: identity + inline metadata (left), controls (right).
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        flexWrap: "wrap",
+        rowGap: 8,
+      }}
+    >
+      <span
+        aria-hidden
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          flexWrap: "wrap",
+          display: "inline-block",
+          width: 12,
+          height: 12,
+          borderRadius: "50%",
+          background: project.color_code,
+          flex: "0 0 auto",
+          boxShadow: `0 0 0 3px ${project.color_code}22`,
         }}
-      >
-        <span
-          aria-hidden
-          style={{
-            display: "inline-block",
-            width: 12,
-            height: 12,
-            borderRadius: "50%",
-            background: project.color_code,
-            flex: "0 0 auto",
-            boxShadow: `0 0 0 3px ${project.color_code}22`,
-          }}
+      />
+
+      {editingName ? (
+        <Input
+          autoFocus
+          value={nameDraft}
+          maxLength={100}
+          style={{ maxWidth: 420, fontSize: 20, fontWeight: 600 }}
+          onChange={(e) => setNameDraft(e.target.value)}
+          onPressEnter={commitName}
+          onBlur={commitName}
         />
-
-        {editingName ? (
-          <Input
-            autoFocus
-            value={nameDraft}
-            maxLength={100}
-            style={{ maxWidth: 420, fontSize: 21, fontWeight: 600 }}
-            onChange={(e) => setNameDraft(e.target.value)}
-            onPressEnter={commitName}
-            onBlur={commitName}
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            setNameDraft(project.name);
+            setEditingName(true);
+          }}
+          className="wl-proj-name"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            border: "none",
+            background: "transparent",
+            padding: 0,
+            cursor: "pointer",
+            fontSize: 20,
+            fontWeight: 600,
+            letterSpacing: "-0.4px",
+            color: token.colorText,
+          }}
+        >
+          {project.name}
+          <EditOutlined
+            className="wl-proj-edit"
+            style={{ fontSize: 13, color: token.colorTextTertiary, opacity: 0 }}
+            aria-label="Edit project name"
           />
-        ) : (
-          <button
-            type="button"
-            onClick={() => {
-              setNameDraft(project.name);
-              setEditingName(true);
-            }}
-            className="wl-proj-name"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              border: "none",
-              background: "transparent",
-              padding: 0,
-              cursor: "pointer",
-              fontSize: 21,
-              fontWeight: 600,
-              letterSpacing: "-0.4px",
-              color: token.colorText,
-            }}
-          >
-            {project.name}
-            <EditOutlined
-              className="wl-proj-edit"
-              style={{ fontSize: 13, color: token.colorTextTertiary, opacity: 0 }}
-              aria-label="Edit project name"
-            />
-          </button>
-        )}
+        </button>
+      )}
 
-        <Tooltip title={isFavorite ? "Remove from favourites" : "Add to favourites"}>
-          <Button
-            type="text"
-            shape="circle"
-            size="small"
-            aria-label="Toggle favourite"
-            loading={toggleFavorite.isPending}
-            icon={
-              isFavorite ? (
-                <StarFilled style={{ color: "#faad14" }} />
-              ) : (
-                <StarOutlined style={{ color: token.colorTextTertiary }} />
-              )
-            }
-            onClick={handleToggleFavorite}
-          />
-        </Tooltip>
+      <Tooltip title={isFavorite ? "Remove from favourites" : "Add to favourites"}>
+        <Button
+          type="text"
+          shape="circle"
+          size="small"
+          aria-label="Toggle favourite"
+          loading={toggleFavorite.isPending}
+          icon={
+            isFavorite ? (
+              <StarFilled style={{ color: "#faad14" }} />
+            ) : (
+              <StarOutlined style={{ color: token.colorTextTertiary }} />
+            )
+          }
+          onClick={handleToggleFavorite}
+        />
+      </Tooltip>
 
-        {/* Controls cluster, right-aligned. Status & health live in the
-            Overview tab's Project settings now, not the header. */}
-        <div style={{ marginLeft: "auto" }}>
-          <AiTaskButton projectId={project.id} />
-        </div>
-      </div>
-
-      {/* Row 2: metadata line, indented to align past the colour dot */}
+      {/* Metadata chips — now inline with the title (was a separate row). */}
       {hasMeta ? (
         <div
           style={{
@@ -234,7 +227,7 @@ export function ProjectWorkspaceHeader({
             alignItems: "center",
             gap: 7,
             flexWrap: "wrap",
-            paddingLeft: 22,
+            marginLeft: 2,
           }}
         >
           {project.client ? (
@@ -255,6 +248,11 @@ export function ProjectWorkspaceHeader({
           </MetaChip>
         </div>
       ) : null}
+
+      {/* AI task, right-aligned. */}
+      <div style={{ marginLeft: "auto" }}>
+        <AiTaskButton projectId={project.id} />
+      </div>
 
       <style>{`
         .wl-proj-name:hover .wl-proj-edit { opacity: 1; }
