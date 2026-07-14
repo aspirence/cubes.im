@@ -71,6 +71,7 @@ export const SECTION_NAVS: SectionNav[] = [
       { key: "/settings/appearance", label: "Appearance", icon: "palette" },
       { key: "/settings/password", label: "Password", icon: "lock" },
       { key: "/settings/account", label: "Account", icon: "shield" },
+      { key: "/settings/cubes", label: "Cubes", icon: "deployed_code" },
       { type: "divider" },
       { key: "/settings/clients", label: "Clients", icon: "contacts", requiresAdmin: true },
       { key: "/settings/job-titles", label: "Job Titles", icon: "badge", requiresAdmin: true },
