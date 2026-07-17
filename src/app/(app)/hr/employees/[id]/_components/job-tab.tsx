@@ -66,7 +66,7 @@ export function JobTab({
   employee: HrEmployeeWithRelations;
   canEdit: boolean;
 }) {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const { data: departments } = useDepartments();
   const { data: designations } = useDesignations();
   const { data: employees } = useHrEmployees();
@@ -103,13 +103,36 @@ export function JobTab({
     value: d.id,
     label: d.title,
   }));
+  // Anyone below this employee is an invalid manager — picking one would make a
+  // reporting cycle, which silently drops the whole loop out of the org chart.
+  const descendantIds = (() => {
+    const kids = new Map<string, string[]>();
+    for (const e of employees ?? []) {
+      if (!e.manager_id) continue;
+      kids.set(e.manager_id, [...(kids.get(e.manager_id) ?? []), e.id]);
+    }
+    const out = new Set<string>();
+    const walk = (id: string) => {
+      for (const childId of kids.get(id) ?? []) {
+        if (out.has(childId)) continue;
+        out.add(childId);
+        walk(childId);
+      }
+    };
+    walk(employee.id);
+    return out;
+  })();
+
   const managerOptions = (employees ?? [])
-    .filter((e) => e.id !== employee.id)
+    .filter((e) => e.id !== employee.id && !descendantIds.has(e.id))
     .map((e) => ({ value: e.id, label: e.full_name }));
 
-  const handleSave = async () => {
-    const values = await form.validateFields();
-    const patch = toEmployeePatch(values as EmployeeFormValues);
+  const nameOf = (id: string | null | undefined) =>
+    (employees ?? []).find((e) => e.id === id)?.full_name ?? "No manager";
+  const deptOf = (id: string | null | undefined) =>
+    (departments ?? []).find((d) => d.id === id)?.name ?? "No department";
+
+  const save = async (patch: ReturnType<typeof toEmployeePatch>) => {
     try {
       await updateEmployee.mutateAsync({ id: employee.id, patch });
       message.success("Job details updated.");
@@ -117,6 +140,55 @@ export function JobTab({
     } catch (err) {
       message.error(errorMessage(err, "Failed to update job details."));
     }
+  };
+
+  const handleSave = async () => {
+    const values = await form.validateFields();
+    const patch = toEmployeePatch(values as EmployeeFormValues);
+
+    // Moving someone's reporting line or department reorganises the org chart,
+    // so those two changes are confirmed rather than saved silently.
+    const managerChanged =
+      "manager_id" in patch &&
+      (patch.manager_id ?? null) !== (employee.manager_id ?? null);
+    const deptChanged =
+      "department_id" in patch &&
+      (patch.department_id ?? null) !== (employee.department_id ?? null);
+
+    if (!managerChanged && !deptChanged) {
+      await save(patch);
+      return;
+    }
+
+    modal.confirm({
+      title: `Confirm changes for ${employee.full_name}`,
+      okText: "Save changes",
+      cancelText: "Cancel",
+      content: (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+          {managerChanged ? (
+            <span>
+              Reports to: <b>{nameOf(employee.manager_id)}</b> →{" "}
+              <b>{nameOf(patch.manager_id)}</b>
+            </span>
+          ) : null}
+          {deptChanged ? (
+            <span>
+              Department: <b>{deptOf(employee.department_id)}</b> →{" "}
+              <b>{deptOf(patch.department_id)}</b>
+            </span>
+          ) : null}
+          {descendantIds.size > 0 && managerChanged ? (
+            <span style={{ marginTop: 4 }}>
+              {descendantIds.size}{" "}
+              {descendantIds.size === 1 ? "person" : "people"} in their org move
+              with them.
+            </span>
+          ) : null}
+        </div>
+      ),
+      onOk: () => save(patch),
+    });
   };
 
   if (editing) {

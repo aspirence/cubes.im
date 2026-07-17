@@ -2,9 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Avatar, Empty, Input, Skeleton, Tag, Tooltip, Typography, theme } from "antd";
+import { Avatar, Button, Empty, Mentions, Skeleton, Space, Tag, Tooltip, Typography, theme } from "antd";
 import dayjs from "dayjs";
-import type { TeamTaskWithProject } from "@/features/tasks/use-all-tasks";
+import { useAllTeamTasks, type TeamTaskWithProject } from "@/features/tasks/use-all-tasks";
+import { useTeamMembers } from "@/features/team-members/use-team-members";
+import { useTaskDrawer } from "@/store/task-drawer-store";
+import { useRef } from "react";
 import {
   usePersonalTodos,
   useCreateTodo,
@@ -12,8 +15,17 @@ import {
   useDeleteTodo,
   useActivityFeed,
 } from "@/features/home/use-home";
+import { useUIStore } from "@/store/ui-store";
 import { GroupedChart } from "./dashboard-grouped-chart";
-import { visibleTasks, groupTasks, computeMetric } from "./dashboard-engine";
+import { ChartDrillDown } from "./chart-drill-down";
+import { useAnalyticsCapabilities, clampCardForViewer } from "./analytics-access";
+import {
+  visibleTasks,
+  groupTasks,
+  computeMetric,
+  tasksInGroup,
+  paletteFor,
+} from "./dashboard-engine";
 import { METRIC_OPTIONS, type DashboardCard } from "./dashboard-types";
 
 const { Text } = Typography;
@@ -88,16 +100,34 @@ function ChartBody({
   myTeamMemberId: string | undefined;
   height?: number;
 }) {
+  const [drill, setDrill] = useState<string | null>(null);
+  const dark = useUIStore((s) => s.themeMode === "dark");
   const visible = visibleTasks(tasks, card.filter, myTeamMemberId);
   // When grouping by assignee, only count assignees the card's filter allows so
   // co-assignees outside the filter/scope don't leak into the chart.
   const assigneeAllow = new Set<string>(card.filter.assigneeIds);
   if (card.filter.scope === "me" && myTeamMemberId) assigneeAllow.add(myTeamMemberId);
-  const data = groupTasks(visible, card.groupBy ?? "status", assigneeAllow);
+  const groupBy = card.groupBy ?? "status";
+  const data = groupTasks(visible, groupBy, assigneeAllow, paletteFor(dark));
   const chartHeight = height ? Math.max(120, height - 16) : card.span === "full" ? 240 : 210;
+
+  const drilled = drill ? tasksInGroup(visible, groupBy, drill, assigneeAllow) : [];
+  const drillLabel = data.find((d) => d.key === drill)?.label ?? "";
+
   return (
     <div style={{ padding: "10px 12px 6px" }}>
-      <GroupedChart data={data} chart={card.chart ?? "donut"} height={chartHeight} />
+      <GroupedChart
+        data={data}
+        chart={card.chart ?? "donut"}
+        height={chartHeight}
+        onSelect={setDrill}
+      />
+      <ChartDrillDown
+        open={drill !== null}
+        title={`${drillLabel} · ${card.title}`}
+        tasks={drilled}
+        onClose={() => setDrill(null)}
+      />
     </div>
   );
 }
@@ -232,32 +262,166 @@ function ActivityBody() {
   );
 }
 
+/**
+ * Inline `@`-mentions for to-dos. A picked suggestion is stored inside the
+ * to-do's text as `@[Label](t:<id>)` / `@[Label](p:<id>)` so it survives as
+ * plain text everywhere, and renders here as a chip — task chips open the
+ * task drawer. Text typed as a bare "@something" with no pick stays plain.
+ */
+const MENTION_RE = /@\[([^\]]+)\]\((t|p):([^)]+)\)/g;
+
+function TodoText({ name, done }: { name: string; done: boolean }) {
+  const { token } = theme.useToken();
+  const openTask = useTaskDrawer((s) => s.open);
+
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  const re = new RegExp(MENTION_RE.source, "g");
+  while ((m = re.exec(name)) !== null) {
+    if (m.index > last) parts.push(name.slice(last, m.index));
+    const [, label, type, id] = m;
+    const isTask = type === "t";
+    parts.push(
+      <span
+        key={`${type}:${id}:${m.index}`}
+        role={isTask ? "button" : undefined}
+        tabIndex={isTask ? 0 : undefined}
+        onClick={isTask ? () => openTask(id) : undefined}
+        onKeyDown={
+          isTask
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") openTask(id);
+              }
+            : undefined
+        }
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 3,
+          padding: "0 6px",
+          margin: "0 1px",
+          borderRadius: 6,
+          fontSize: 12,
+          fontWeight: 600,
+          lineHeight: "18px",
+          verticalAlign: "text-bottom",
+          cursor: isTask ? "pointer" : "default",
+          color: isTask ? "#4a4ad0" : token.colorTextSecondary,
+          background: isTask ? token.colorPrimaryBg : token.colorFillSecondary,
+        }}
+      >
+        <MIcon name={isTask ? "task_alt" : "person"} size={12} />
+        {label}
+      </span>,
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < name.length) parts.push(name.slice(last));
+
+  return (
+    <span
+      style={{
+        flex: 1,
+        minWidth: 0,
+        fontSize: 13,
+        color: done ? token.colorTextQuaternary : token.colorText,
+        textDecoration: done ? "line-through" : "none",
+      }}
+    >
+      {parts}
+    </span>
+  );
+}
+
 function TodoBody() {
   const { token } = theme.useToken();
   const { data: todos } = usePersonalTodos();
   const createTodo = useCreateTodo();
   const updateTodo = useUpdateTodo();
   const deleteTodo = useDeleteTodo();
+  // Both already cached by the dashboard's own queries — no extra fetch.
+  const { data: teamTasks } = useAllTeamTasks();
+  const { data: members } = useTeamMembers();
   const [text, setText] = useState("");
+  // Labels the user actually PICKED this compose session → their entity. Only
+  // these get encoded on save; typing a bare "@word" stays plain text.
+  const picked = useRef(new Map<string, { type: "t" | "p"; id: string }>());
+
   const list = todos ?? [];
 
+  const options = [
+    ...(teamTasks ?? [])
+      .filter((t) => !t.done)
+      .slice(0, 200)
+      .map((t) => ({
+        key: `t:${t.id}`,
+        value: t.name,
+        label: (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 7, maxWidth: 320 }}>
+            <MIcon name="task_alt" size={14} color="#4a4ad0" />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
+            <span style={{ fontSize: 11, color: token.colorTextQuaternary, flex: "none" }}>
+              {t.project?.name}
+            </span>
+          </span>
+        ),
+      })),
+    ...(members ?? [])
+      .filter((m) => m.user)
+      .map((m) => ({
+        key: `p:${m.id}`,
+        value: m.user!.name,
+        label: (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+            <MIcon name="person" size={14} color={token.colorTextTertiary} />
+            {m.user!.name}
+          </span>
+        ),
+      })),
+  ];
+
   const add = () => {
-    const name = text.trim();
+    let name = text.trim();
     if (!name) return;
+    // Encode picked mentions so they survive as structured tokens in plain text.
+    for (const [label, ent] of picked.current) {
+      name = name.split(`@${label}`).join(`@[${label}](${ent.type}:${ent.id})`);
+    }
     createTodo.mutate({ name });
     setText("");
+    picked.current.clear();
   };
 
   return (
     <div style={{ padding: "8px 12px 12px" }}>
-      <Input
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onPressEnter={add}
-        placeholder="Add a to-do…"
-        size="small"
-        style={{ marginBottom: 8 }}
-      />
+      <Space.Compact style={{ width: "100%", marginBottom: 8 }}>
+        <Mentions
+          value={text}
+          onChange={setText}
+          onSelect={(option) => {
+            const key = String(option.key ?? "");
+            const [type, ...rest] = key.split(":");
+            if ((type === "t" || type === "p") && rest.length && option.value) {
+              picked.current.set(option.value, { type, id: rest.join(":") });
+            }
+          }}
+          onPressEnter={add}
+          options={options}
+          prefix="@"
+          placeholder="Add a to-do…  (@ to tag a task or person)"
+          autoSize={{ minRows: 1, maxRows: 3 }}
+          style={{ width: "100%" }}
+        />
+        <Button
+          type="primary"
+          onClick={add}
+          disabled={!text.trim()}
+          loading={createTodo.isPending}
+          icon={<MIcon name="add" size={16} />}
+          aria-label="Add to-do"
+        />
+      </Space.Compact>
       {list.length === 0 ? (
         <div style={{ fontSize: 12.5, color: token.colorTextTertiary, padding: "6px 2px" }}>Nothing yet.</div>
       ) : (
@@ -269,16 +433,7 @@ function TodoBody() {
                 checked={Boolean(td.done)}
                 onChange={(e) => updateTodo.mutate({ id: td.id, done: e.target.checked })}
               />
-              <span
-                style={{
-                  flex: 1,
-                  fontSize: 13,
-                  color: td.done ? token.colorTextQuaternary : token.colorText,
-                  textDecoration: td.done ? "line-through" : "none",
-                }}
-              >
-                {td.name}
-              </span>
+              <TodoText name={td.name} done={Boolean(td.done)} />
               <button
                 type="button"
                 aria-label="Delete to-do"
@@ -298,7 +453,7 @@ function TodoBody() {
 /* ------------------------------------------------------------------- shell */
 
 export function DashboardCardView({
-  card,
+  card: rawCard,
   tasks,
   tasksLoading,
   myTeamMemberId,
@@ -321,6 +476,13 @@ export function DashboardCardView({
   onRemove: () => void;
 }) {
   const { token } = theme.useToken();
+  const caps = useAnalyticsCapabilities();
+  // Render-time role enforcement: gallery/drawer gating shapes what can be
+  // BUILT, but stored layouts, seeded defaults, and layouts from before a role
+  // change all land here — so the renderer clamps team-scoped cards to "me"
+  // for viewers without team scope. (Their DATA is RLS-scoped regardless; this
+  // stops a chart labelled "by member" from lying about what it shows.)
+  const card = clampCardForViewer(rawCard, caps);
   // Height applies to every kind: charts size their canvas via ChartBody, metric
   // cards grow (minHeight), lists get a fixed height + scroll.
   const bodyStyle: React.CSSProperties | undefined =
@@ -355,6 +517,16 @@ export function DashboardCardView({
         <Text strong style={{ fontSize: 13.5, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {card.title}
         </Text>
+        {/* The clamp narrows WHAT the card shows but leaves the title alone
+            (it's the user's text) — so when it changed anything, say so here
+            instead of letting a "by member" title sit over personal data. */}
+        {card !== rawCard ? (
+          <Tooltip title="Shown as your own tasks — team analytics need a member role.">
+            <Tag style={{ margin: 0, fontSize: 10.5, lineHeight: "16px", flex: "none" }}>
+              Personal
+            </Tag>
+          </Tooltip>
+        ) : null}
         {editMode ? (
           <div style={{ display: "flex", alignItems: "center", gap: 2, position: "relative", zIndex: 7 }}>
             <IconBtn label="Configure card" onClick={onEdit} icon="tune" />

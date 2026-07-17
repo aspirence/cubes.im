@@ -36,6 +36,10 @@ import { useDashboardCards, useSaveDashboardCards } from "@/features/home/use-da
 import { GettingStarted } from "@/features/home/getting-started";
 import { DashboardCardView } from "@/features/home/dashboard-card";
 import { CardConfigDrawer } from "@/features/home/card-config-drawer";
+import { AddCardGallery } from "@/features/home/add-card-gallery";
+import { TaskDrawer } from "@/app/(app)/projects/[id]/_components/task-drawer";
+import { useAnalyticsCapabilities } from "@/features/home/analytics-access";
+import type { CardPreset } from "@/features/home/card-presets";
 import { distinctFacets } from "@/features/home/dashboard-engine";
 import {
   type DashboardCard,
@@ -89,6 +93,7 @@ function SortableCard({
   onEdit,
   onRemove,
   onResize,
+  snapHeights,
 }: {
   card: DashboardCard;
   editMode: boolean;
@@ -98,6 +103,8 @@ function SortableCard({
   onEdit: () => void;
   onRemove: () => void;
   onResize: (id: string, w: number, h: number | undefined) => void;
+  /** Other cards' heights — magnetic targets so rows line up exactly. */
+  snapHeights: number[];
 }) {
   const { token } = theme.useToken();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -166,7 +173,18 @@ function SortableCard({
         ? cardCols(card)
         : Math.max(1, Math.min(GRID_COLS, Math.round((wPx + GRID_GAP) / (s.colUnit + GRID_GAP))));
     // Width-only handles leave height untouched (preserve natural height).
-    const h = s.dirY === 0 ? card.h : Math.max(140, Math.min(760, Math.round(hPx)));
+    let h: number | undefined;
+    if (s.dirY === 0) {
+      h = card.h;
+    } else {
+      // A neighbour's height within reach is magnetic — matching it exactly is
+      // what makes cards in a row align; otherwise fall to tidy 20px steps.
+      const near = snapHeights
+        .filter((nh) => Math.abs(hPx - nh) <= 14)
+        .sort((a, b) => Math.abs(hPx - a) - Math.abs(hPx - b))[0];
+      h = near ?? Math.max(140, Math.min(760, Math.round(hPx / 20) * 20));
+      h = Math.max(140, Math.min(760, h));
+    }
     return { w, h };
   };
 
@@ -291,8 +309,12 @@ export default function HomePage() {
   const facets = useMemo(() => distinctFacets(tasks), [tasks]);
 
   const [editMode, setEditMode] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [editingCard, setEditingCard] = useState<DashboardCard | null>(null);
+  // The gallery pick that seeds the drawer when creating (null = blank card).
+  const [pendingPreset, setPendingPreset] = useState<CardPreset | null>(null);
+  const analyticsCaps = useAnalyticsCapabilities();
 
   const persist = (next: DashboardCard[]) => {
     save.mutate(next, {
@@ -306,6 +328,7 @@ export default function HomePage() {
     persist(exists ? cards.map((c) => (c.id === card.id ? card : c)) : [...cards, card]);
     setConfigOpen(false);
     setEditingCard(null);
+    setPendingPreset(null);
   };
   const handleRemove = (id: string) => persist(cards.filter((c) => c.id !== id));
   const handleResize = (id: string, w: number, h: number | undefined) =>
@@ -325,10 +348,15 @@ export default function HomePage() {
     persist(arrayMove(cards, from, to));
   };
 
+  // Viewers without team scope only get the personal template — the team
+  // layouts chart other members' work, which their cards can't honestly show.
+  const availableTemplates = analyticsCaps.teamScope
+    ? dashboardTemplates()
+    : dashboardTemplates().filter((t) => t.key === "my-work");
   const templateMenu: MenuProps = {
-    items: dashboardTemplates().map((t) => ({ key: t.key, label: t.label })),
+    items: availableTemplates.map((t) => ({ key: t.key, label: t.label })),
     onClick: ({ key }) => {
-      const tpl = dashboardTemplates().find((t) => t.key === key);
+      const tpl = availableTemplates.find((t) => t.key === key);
       if (tpl) persist(tpl.cards);
     },
   };
@@ -370,7 +398,7 @@ export default function HomePage() {
                 icon={<PlusOutlined />}
                 onClick={() => {
                   setEditingCard(null);
-                  setConfigOpen(true);
+                  setGalleryOpen(true);
                 }}
               >
                 Card
@@ -409,6 +437,8 @@ export default function HomePage() {
             onClick={() => {
               setEditMode(true);
               setEditingCard(null);
+              // A gallery pick from an earlier add must not seed this one.
+              setPendingPreset(null);
               setConfigOpen(true);
             }}
           >
@@ -448,6 +478,15 @@ export default function HomePage() {
                   }}
                   onRemove={() => handleRemove(card.id)}
                   onResize={handleResize}
+                  snapHeights={[
+                    ...new Set([
+                      210,
+                      240,
+                      ...cards
+                        .filter((c) => c.id !== card.id && typeof c.h === "number")
+                        .map((c) => c.h as number),
+                    ]),
+                  ]}
                 />
               ))}
             </div>
@@ -455,13 +494,28 @@ export default function HomePage() {
         </DndContext>
       )}
 
+      {/* Task chips in to-dos and chart drill-down rows open tasks in place —
+          without this mount those clicks would silently do nothing. */}
+      <TaskDrawer />
+      <AddCardGallery
+        open={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        onPick={(preset) => {
+          setGalleryOpen(false);
+          setPendingPreset(preset);
+          setEditingCard(null);
+          setConfigOpen(true);
+        }}
+      />
       <CardConfigDrawer
         open={configOpen}
         card={editingCard}
+        preset={editingCard ? null : pendingPreset}
         facets={facets}
         onClose={() => {
           setConfigOpen(false);
           setEditingCard(null);
+          setPendingPreset(null);
         }}
         onSubmit={handleSubmitCard}
       />

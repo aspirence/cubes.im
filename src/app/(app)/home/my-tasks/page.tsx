@@ -26,6 +26,13 @@ import { useUpdateTask } from "@/features/tasks/use-tasks";
 import { useTaskPriorities } from "@/features/tasks/use-task-statuses";
 import { useTaskDrawer } from "@/store/task-drawer-store";
 import { TaskDrawer } from "@/app/(app)/projects/[id]/_components/task-drawer";
+import {
+  FilterControl,
+  type FilterField,
+  type FilterValues,
+} from "@/components/filters/filter-control";
+import { GroupControl } from "@/components/filters/group-control";
+import { useCelebrateTaskDone } from "@/features/celebrations/use-celebrations";
 
 function MIcon({ name, size = 18, color }: { name: string; size?: number; color?: string }) {
   return (
@@ -95,8 +102,8 @@ type GroupMode = "due" | "project" | "priority";
 
 /**
  * Full-page "My Tasks": every open task assigned to me, fully manageable in
- * place — mark done, change status / priority / due date inline, filter by a
- * clickable stat strip, search, and group by due date, project or priority.
+ * place — mark done, change status / priority / due date inline, with search,
+ * unified filters (project / due / priority) and grouping.
  * Clicking a task title opens the drawer on this same screen for deeper edits
  * (assignees, labels, description, comments, subtasks).
  */
@@ -116,11 +123,12 @@ export default function MyTasksPage() {
   const { data: priorities } = useTaskPriorities();
   const updateTask = useUpdateTask();
   const { open: openTask } = useTaskDrawer();
+  const celebrateTaskDone = useCelebrateTaskDone();
 
-  const [projectFilter, setProjectFilter] = useState<string | null>(null);
-  const [bucketFilter, setBucketFilter] = useState<Bucket | null>(null);
+  const [filters, setFilters] = useState<FilterValues>({});
   const [search, setSearch] = useState("");
   const [groupMode, setGroupMode] = useState<GroupMode>("due");
+  const [view, setView] = useState<"list" | "board">("list");
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const priorityById = useMemo(() => {
@@ -144,15 +152,34 @@ export default function MyTasksPage() {
     queryClient.invalidateQueries({ queryKey: ["home", "my-task-edits"] });
   };
 
-  const patch = async (id: string, p: Record<string, unknown>, label: string) => {
+  const patch = async (id: string, p: Record<string, unknown>, label: string): Promise<boolean> => {
     setBusyId(id);
     try {
       await updateTask.mutateAsync({ id, ...p });
       refresh();
+      return true;
     } catch {
       message.error(`Couldn't update ${label}.`);
+      return false;
     } finally {
       setBusyId(null);
+    }
+  };
+
+  /**
+   * Status writes funnel here so the open -> done transition celebrates once,
+   * regardless of which control (toggle or select, list or board) fired it.
+   */
+  const patchStatus = async (t: MyTask, statusId: string) => {
+    const options = statusMap?.[t.project_id] ?? [];
+    const target = options.find((s) => s.id === statusId);
+    const currentId = edits?.[t.task_id]?.status_id;
+    const current = currentId
+      ? options.find((s) => s.id === currentId)
+      : options.find((s) => s.name === t.status_name);
+    const ok = await patch(t.task_id, { status_id: statusId }, "status");
+    if (ok && target?.isDone && !current?.isDone) {
+      celebrateTaskDone({ taskId: t.task_id, taskName: t.name });
     }
   };
 
@@ -161,23 +188,67 @@ export default function MyTasksPage() {
     [edits],
   );
 
-  // Counts per bucket over ALL tasks (drive the filter strip; not affected by
-  // the active bucket filter, so the strip is stable to click around).
-  const bucketCounts = useMemo(() => {
-    const base = projectFilter ? (tasks ?? []).filter((t) => t.project_id === projectFilter) : tasks ?? [];
-    const c: Record<Bucket, number> = { overdue: 0, today: 0, week: 0, later: 0, none: 0 };
-    for (const t of base) c[bucketOf(dueOf(t))] += 1;
-    return { counts: c, total: base.length };
-  }, [tasks, projectFilter, dueOf]);
+  // A task's current priority name (respecting inline edits), lowercased —
+  // shared by the priority filter and the priority grouping.
+  const priorityKeyOf = useCallback(
+    (t: MyTask) => {
+      const pid = edits?.[t.task_id]?.priority_id;
+      return ((pid ? priorityById.get(pid)?.name : t.priority) ?? "").toLowerCase();
+    },
+    [edits, priorityById],
+  );
+
+  // Unified filter config (Project + Priority), mirroring the project List view.
+  const filterFields = useMemo<FilterField[]>(() => {
+    const fields: FilterField[] = [];
+    if (projectOptions.length > 1) {
+      fields.push({
+        key: "project",
+        label: "Project",
+        icon: "folder",
+        options: projectOptions.map((o) => ({ value: o.value, label: o.label })),
+      });
+    }
+    fields.push({
+      key: "due",
+      label: "Due",
+      icon: "event",
+      options: BUCKETS.map((b) => ({ value: b.key, label: b.label, dot: b.tone })),
+    });
+    if ((priorities ?? []).length) {
+      fields.push({
+        key: "priority",
+        label: "Priority",
+        icon: "flag",
+        options: (priorities ?? []).map((p) => ({
+          value: p.name.toLowerCase(),
+          label: p.name,
+          dot: p.color_code ?? PRIORITY_TONE[p.name.toLowerCase()] ?? token.colorTextTertiary,
+        })),
+      });
+    }
+    return fields;
+  }, [projectOptions, priorities, token]);
+
+  const applyFilters = useCallback(
+    (list: MyTask[]) => {
+      const proj = filters.project;
+      const prio = filters.priority;
+      const due = filters.due;
+      if (proj?.length) list = list.filter((t) => proj.includes(t.project_id));
+      if (prio?.length) list = list.filter((t) => prio.includes(priorityKeyOf(t)));
+      if (due?.length) list = list.filter((t) => due.includes(bucketOf(dueOf(t))));
+      return list;
+    },
+    [filters, priorityKeyOf, dueOf],
+  );
 
   const visible = useMemo(() => {
-    let list = tasks ?? [];
-    if (projectFilter) list = list.filter((t) => t.project_id === projectFilter);
-    if (bucketFilter) list = list.filter((t) => bucketOf(dueOf(t)) === bucketFilter);
+    let list = applyFilters(tasks ?? []);
     const q = search.trim().toLowerCase();
     if (q) list = list.filter((t) => t.name.toLowerCase().includes(q));
     return list;
-  }, [tasks, projectFilter, bucketFilter, search, dueOf]);
+  }, [tasks, applyFilters, search]);
 
   /** Ordered groups for the current grouping mode. */
   const groups = useMemo(() => {
@@ -264,10 +335,7 @@ export default function MyTasksPage() {
       <div
         key={t.task_id}
         className="mt-row"
-        style={{
-          opacity: busy ? 0.55 : 1,
-          boxShadow: prio ? `inset 3px 0 0 ${prio.color}` : undefined,
-        }}
+        style={{ opacity: busy ? 0.55 : 1 }}
       >
         {/* Done toggle */}
         <Tooltip title={doneStatus ? "Mark done" : "No done status in this project"}>
@@ -275,7 +343,7 @@ export default function MyTasksPage() {
             type="button"
             className="mt-check"
             disabled={!doneStatus || busy}
-            onClick={() => doneStatus && patch(t.task_id, { status_id: doneStatus.id }, "status")}
+            onClick={() => doneStatus && patchStatus(t, doneStatus.id)}
             aria-label="Mark done"
           >
             <span className="mt-check-off"><MIcon name="radio_button_unchecked" size={20} /></span>
@@ -343,7 +411,7 @@ export default function MyTasksPage() {
             placeholder={t.status_name ?? "Status"}
             options={statusOptions}
             disabled={busy || statuses.length === 0}
-            onChange={(v) => patch(t.task_id, { status_id: v }, "status")}
+            onChange={(v) => patchStatus(t, v)}
             style={{ minWidth: 130 }}
             popupMatchSelectWidth={false}
             suffixIcon={null}
@@ -390,10 +458,149 @@ export default function MyTasksPage() {
     );
   };
 
-  const total = bucketCounts.total;
+  /** Grid-view card: same inline controls as a row, stacked into a tile. */
+  const renderCard = (t: MyTask) => {
+    const meta = edits?.[t.task_id];
+    const statuses: MyTaskStatusOption[] = statusMap?.[t.project_id] ?? [];
+    const current = statuses.find((s) => s.id === meta?.status_id);
+    const doneStatus = statuses.find((s) => s.isDone);
+    const busy = busyId === t.task_id;
+    const prio = meta?.priority_id ? priorityById.get(meta.priority_id) : undefined;
+    const end = meta?.end_date ?? t.end_date;
+    const due = end ? dueLabel(end) : null;
+    const daysLate =
+      due?.overdue && end
+        ? dayjs().startOf("day").diff(dayjs(end).startOf("day"), "day")
+        : 0;
+
+    const statusOptions = statuses.map((st) => ({
+      value: st.id,
+      label: (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <Dot color={st.color ?? token.colorTextTertiary} />
+          {st.name}
+        </span>
+      ),
+    }));
+
+    return (
+      <div key={t.task_id} className="mt-gcard" style={{ opacity: busy ? 0.55 : 1 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+          <Tooltip title={doneStatus ? "Mark done" : "No done status in this project"}>
+            <button
+              type="button"
+              className="mt-check"
+              disabled={!doneStatus || busy}
+              onClick={() => doneStatus && patchStatus(t, doneStatus.id)}
+              aria-label="Mark done"
+            >
+              <span className="mt-check-off"><MIcon name="radio_button_unchecked" size={19} /></span>
+              <span className="mt-check-on"><MIcon name="check_circle" size={19} /></span>
+            </button>
+          </Tooltip>
+          <span
+            className="mt-gname"
+            role="button"
+            tabIndex={0}
+            onClick={() => openTask(t.task_id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") openTask(t.task_id);
+            }}
+            title={t.name}
+          >
+            {t.name}
+          </span>
+          <Tooltip title="Open task">
+            <button type="button" className="mt-open" aria-label="Open task" onClick={() => openTask(t.task_id)}>
+              <MIcon name="open_in_full" size={14} />
+            </button>
+          </Tooltip>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          <Link href={`/projects/${t.project_id}`} title={`Open ${t.project_name}`}>
+            <span className="mt-chip mt-project">
+              <MIcon name="folder_open" size={13} color={token.colorTextTertiary} />
+              {t.project_name}
+            </span>
+          </Link>
+          {daysLate > 0 ? (
+            <Tooltip title={`${daysLate} day${daysLate === 1 ? "" : "s"} overdue`}>
+              <span className="mt-late">{daysLate}d late</span>
+            </Tooltip>
+          ) : null}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          <Select
+            size="small"
+            variant="filled"
+            value={meta?.status_id ?? undefined}
+            placeholder={t.status_name ?? "Status"}
+            options={statusOptions}
+            disabled={busy || statuses.length === 0}
+            onChange={(v) => patchStatus(t, v)}
+            style={{ flex: 1, minWidth: 110 }}
+            popupMatchSelectWidth={false}
+            suffixIcon={null}
+            labelRender={() =>
+              current ? (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <Dot color={current.color ?? token.colorTextTertiary} />
+                  <span style={{ color: token.colorText }}>{current.name}</span>
+                </span>
+              ) : (
+                <span style={{ color: token.colorTextTertiary }}>{t.status_name ?? "Status"}</span>
+              )
+            }
+          />
+          <Select
+            size="small"
+            variant="filled"
+            value={meta?.priority_id ?? undefined}
+            placeholder="Priority"
+            options={priorityOptions}
+            disabled={busy}
+            onChange={(v) => patch(t.task_id, { priority_id: v }, "priority")}
+            style={{ width: 96 }}
+            popupMatchSelectWidth={false}
+            suffixIcon={null}
+            labelRender={() =>
+              prio ? (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                  <MIcon name="flag" size={13} color={prio.color} />
+                  <span style={{ color: token.colorText }}>{prio.name}</span>
+                </span>
+              ) : (
+                <span style={{ color: token.colorTextTertiary, display: "inline-flex", alignItems: "center", gap: 5 }}>
+                  <MIcon name="outlined_flag" size={13} /> Priority
+                </span>
+              )
+            }
+          />
+          <DatePicker
+            size="small"
+            variant="filled"
+            value={end ? dayjs(end) : null}
+            onChange={(d) =>
+              patch(t.task_id, { end_date: d ? d.startOf("day").toISOString() : null }, "due date")
+            }
+            format={(v) => dueLabel(v.toISOString()).text}
+            placeholder="Due"
+            allowClear
+            suffixIcon={<MIcon name="event" size={14} color={due?.overdue ? token.colorError : token.colorTextTertiary} />}
+            style={{ width: 108 }}
+            rootClassName={due?.overdue ? "mt-due-overdue" : undefined}
+          />
+        </div>
+      </div>
+    );
+  };
+
+  const total = (tasks ?? []).length;
 
   return (
-    <div style={{ maxWidth: 1040, margin: "0 auto" }}>
+    <div style={{ width: "100%" }}>
       <style>{STYLE(token)}</style>
 
       {/* Header */}
@@ -427,61 +634,29 @@ export default function MyTasksPage() {
             prefix={<MIcon name="search" size={16} color={token.colorTextTertiary} />}
             style={{ width: 200 }}
           />
-          {projectOptions.length > 1 ? (
-            <Select
-              allowClear
-              value={projectFilter ?? undefined}
-              onChange={(v) => setProjectFilter(v ?? null)}
-              placeholder="All projects"
-              options={projectOptions}
-              style={{ minWidth: 170 }}
-              suffixIcon={<MIcon name="filter_list" size={16} />}
-            />
-          ) : null}
-          <Segmented
+          <GroupControl
             value={groupMode}
             onChange={(v) => setGroupMode(v as GroupMode)}
             options={[
-              { value: "due", label: "Due", icon: <MIcon name="event" size={15} /> },
-              { value: "project", label: "Project", icon: <MIcon name="folder" size={15} /> },
-              { value: "priority", label: "Priority", icon: <MIcon name="flag" size={15} /> },
+              { value: "due", label: "Due date", icon: "event" },
+              { value: "project", label: "Project", icon: "folder" },
+              { value: "priority", label: "Priority", icon: "flag" },
             ]}
+          />
+          {filterFields.length ? (
+            <FilterControl fields={filterFields} value={filters} onChange={setFilters} />
+          ) : null}
+          <Segmented
+            value={view}
+            onChange={(v) => setView(v as "list" | "board")}
+            options={[
+              { value: "list", icon: <MIcon name="format_list_bulleted" size={16} /> },
+              { value: "board", icon: <MIcon name="view_kanban" size={16} /> },
+            ]}
+            aria-label="Switch between list and grid view"
           />
         </div>
       </div>
-
-      {/* Stat / filter strip */}
-      {!isLoading && total > 0 ? (
-        <div className="mt-strip">
-          <button
-            type="button"
-            className={`mt-stat${bucketFilter === null ? " on" : ""}`}
-            onClick={() => setBucketFilter(null)}
-            style={{ ["--tone" as string]: token.colorTextSecondary }}
-          >
-            <span className="mt-stat-ic"><MIcon name="all_inbox" size={15} color={token.colorTextSecondary} /></span>
-            <span className="mt-stat-k">{total}</span>
-            <span className="mt-stat-l">All</span>
-          </button>
-          {BUCKETS.map((b) => {
-            const n = bucketCounts.counts[b.key];
-            if (n === 0) return null;
-            return (
-              <button
-                key={b.key}
-                type="button"
-                className={`mt-stat${bucketFilter === b.key ? " on" : ""}`}
-                onClick={() => setBucketFilter(bucketFilter === b.key ? null : b.key)}
-                style={{ ["--tone" as string]: b.tone }}
-              >
-                <span className="mt-stat-ic"><MIcon name={b.icon} size={15} color={b.tone} /></span>
-                <span className="mt-stat-k">{n}</span>
-                <span className="mt-stat-l">{b.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
 
       {/* List */}
       {isLoading ? (
@@ -503,8 +678,27 @@ export default function MyTasksPage() {
             No tasks match your filters
           </div>
           <div style={{ marginTop: 4, fontSize: 13, color: token.colorTextTertiary }}>
-            Clear the search or bucket filter to see everything.
+            Clear the search or filters to see everything.
           </div>
+        </div>
+      ) : view === "board" ? (
+        /* Board: every group becomes a kanban column on one horizontal rail. */
+        <div className="mt-board">
+          {groups.map((g) => (
+            <div key={g.label} className="mt-col">
+              <div className="mt-group-head" style={{ margin: "0 0 10px" }}>
+                <span
+                  className="mt-group-ic"
+                  style={{ background: `color-mix(in srgb, ${g.tone} 14%, transparent)` }}
+                >
+                  <MIcon name={g.icon} size={14} color={g.tone} />
+                </span>
+                <span className="mt-group-l" style={{ color: g.tone }}>{g.label}</span>
+                <span className="mt-group-n">{g.tasks.length}</span>
+              </div>
+              <div className="mt-col-body">{g.tasks.map((t) => renderCard(t))}</div>
+            </div>
+          ))}
         </div>
       ) : (
         groups.map((g) => (
@@ -536,15 +730,7 @@ function STYLE(token: ReturnType<typeof theme.useToken>["token"]): string {
   .mt-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
   .mt-count{font-size:13px;font-weight:600;color:${token.colorTextSecondary};background:${token.colorFillSecondary};border-radius:999px;padding:1px 10px;}
 
-  .mt-strip{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;}
-  .mt-stat{display:inline-flex;align-items:center;gap:8px;padding:7px 14px 7px 10px;border-radius:12px;cursor:pointer;background:${token.colorBgContainer};border:1px solid ${token.colorBorderSecondary};transition:background .15s,border-color .15s;}
-  .mt-stat:hover{background:${token.colorFillQuaternary};}
   /* Active = neutral filled pill (no blue ring). Tone shows only via the icon dot. */
-  .mt-stat.on{background:color-mix(in srgb, var(--tone) 12%, ${token.colorBgContainer});border-color:color-mix(in srgb, var(--tone) 22%, ${token.colorBorderSecondary});}
-  .mt-stat.on .mt-stat-l{color:var(--tone);}
-  .mt-stat-ic{width:24px;height:24px;flex:none;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb, var(--tone) 14%, transparent);}
-  .mt-stat-k{font-size:15px;font-weight:700;color:${token.colorText};font-variant-numeric:tabular-nums;line-height:1;}
-  .mt-stat-l{font-size:12.5px;font-weight:600;color:${token.colorTextSecondary};}
   .mt-late{display:inline-flex;align-items:center;font-size:10.5px;font-weight:700;color:${token.colorError};background:${token.colorErrorBg};border-radius:999px;padding:1px 7px;white-space:nowrap;flex:none;}
 
   .mt-group-head{display:flex;align-items:center;gap:8px;margin:0 0 8px;padding-inline:6px;}
@@ -554,6 +740,14 @@ function STYLE(token: ReturnType<typeof theme.useToken>["token"]): string {
   .mt-card{background:${token.colorBgContainer};border:1px solid ${token.colorBorderSecondary};border-radius:12px;padding:5px;box-shadow:0 1px 2px rgba(16,24,40,0.03);}
 
   .mt-row{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;transition:background 120ms;flex-wrap:wrap;}
+
+  .mt-board{display:flex;gap:12px;overflow-x:auto;align-items:flex-start;padding-bottom:10px;}
+  .mt-col{flex:0 0 300px;background:${token.colorFillQuaternary};border:1px solid ${token.colorBorderSecondary};border-radius:12px;padding:10px;}
+  .mt-col-body{display:flex;flex-direction:column;gap:8px;max-height:62vh;overflow-y:auto;padding:1px;}
+  .mt-gcard{display:flex;flex-direction:column;gap:9px;background:${token.colorBgContainer};border:1px solid ${token.colorBorderSecondary};border-radius:12px;padding:12px;box-shadow:0 1px 2px rgba(16,24,40,0.03);transition:border-color .12s,box-shadow .12s;}
+  .mt-gcard:hover{border-color:${token.colorPrimaryBorder};box-shadow:0 4px 14px -6px rgba(74,74,208,.18);}
+  .mt-gname{flex:1;min-width:0;font-size:13.5px;font-weight:600;color:${token.colorText};line-height:1.35;cursor:pointer;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  .mt-gname:hover{color:${token.colorPrimary};}
   .mt-row:hover{background:${token.colorFillQuaternary};}
   .mt-check{border:none;background:transparent;padding:0;flex:none;cursor:pointer;display:flex;color:${token.colorTextTertiary};position:relative;}
   .mt-check:disabled{cursor:not-allowed;}

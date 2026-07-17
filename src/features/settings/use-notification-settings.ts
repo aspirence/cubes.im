@@ -11,7 +11,10 @@ import { useActiveTeam } from "@/features/teams/use-teams";
 import type { Database } from "@/types/database";
 
 export type NotificationSettings =
-  Database["public"]["Tables"]["notification_settings"]["Row"];
+  Database["public"]["Tables"]["notification_settings"]["Row"] & {
+    /** Newer than the generated types (20261072 celebrations migration). */
+    celebrations_muted?: boolean;
+  };
 
 /** The user-editable subset of a notification_settings row. */
 export type NotificationSettingsInput = {
@@ -24,6 +27,8 @@ export type NotificationSettingsInput = {
    * server-side in the `create_notification` RPC.
    */
   muted_types?: string[];
+  /** Personal off-switch for the celebration overlay (client-enforced). */
+  celebrations_muted?: boolean;
 };
 
 const notificationSettingsKey = (
@@ -92,18 +97,19 @@ export function useUpdateNotificationSettings() {
       const { data, error } = await supabase
         .from("notification_settings")
         .upsert(
+          // Cast: celebrations_muted (20261072) postdates the generated types.
           {
             user_id: user.id,
             team_id: teamId,
             ...input,
-          },
+          } as never,
           { onConflict: "user_id,team_id" },
         )
         .select("*")
         .single();
 
       if (error) throw error;
-      return data;
+      return data as NotificationSettings;
     },
     // Seed the cache with the row the upsert just returned rather than kicking
     // off a background refetch. A refetch leaves a stale window: the mutation

@@ -63,6 +63,12 @@ function parseCard(raw: unknown): DashboardCard | null {
       statuses: Array.isArray(filterRaw.statuses)
         ? (filterRaw.statuses as string[])
         : [],
+      completedWithin:
+        filterRaw.completedWithin === "today" ||
+        filterRaw.completedWithin === "week" ||
+        filterRaw.completedWithin === "month"
+          ? filterRaw.completedWithin
+          : "any",
     },
   };
 }

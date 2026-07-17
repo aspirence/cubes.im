@@ -1,35 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import {
-  Alert,
-  Card,
-  Col,
-  Empty,
-  List,
-  Progress,
-  Row,
-  Skeleton,
-  Space,
-  Statistic,
-  Tag,
-  Typography,
-  theme,
-} from "antd";
-import {
-  TeamOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  CalendarOutlined,
-  UserAddOutlined,
-  DollarOutlined,
-  GiftOutlined,
-  TrophyOutlined,
-  EnvironmentOutlined,
-  ApartmentOutlined,
-} from "@ant-design/icons";
+import { Alert, Col, Empty, Row, Skeleton, Tooltip, Typography, theme } from "antd";
 import dayjs from "dayjs";
 import { useOrgAnalytics } from "@/features/hr/use-analytics";
+import { useUserOrg } from "@/features/admin/use-admin";
 import {
   asOrgAnalytics,
   formatCount,
@@ -41,9 +16,31 @@ import {
   type AnalyticsAnniversary,
   type AnalyticsCount,
 } from "../_lib/analytics";
-import { employmentTypeLabel, statusColor, statusLabel } from "../_lib/labels";
+import {
+  employmentTypeLabel,
+  initials,
+  statusColor,
+  statusLabel,
+} from "../_lib/labels";
 
 const { Text } = Typography;
+
+function MIcon({ name, size = 17, color }: { name: string; size?: number; color?: string }) {
+  return (
+    <span className="material-symbols-rounded" aria-hidden style={{ fontSize: size, lineHeight: 1, color }}>
+      {name}
+    </span>
+  );
+}
+
+/**
+ * One accent for magnitude, per the app's restrained standard: colour is
+ * reserved for status/meaning, so department bars all wear the brand accent
+ * (the label carries identity) and the employment mix uses an ordinal
+ * indigo ramp rather than a categorical rainbow.
+ */
+const BAR_COLOR = "#5a5ad6";
+const TYPE_PALETTE = ["#4a4ad0", "#7b7bea", "#b3b3f1", "#d9d9f8", "#8a8d98"];
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Please try again.";
@@ -63,23 +60,190 @@ function formatDay(day: string | null | undefined, fallback?: string | null) {
   return "—";
 }
 
+/* ------------------------------------------------------------- primitives */
+
+function SectionCard({
+  icon,
+  title,
+  extra,
+  children,
+  bodyPadding = "14px 16px 16px",
+}: {
+  icon: string;
+  title: string;
+  extra?: React.ReactNode;
+  children: React.ReactNode;
+  bodyPadding?: string;
+}) {
+  const { token } = theme.useToken();
+  return (
+    <div
+      style={{
+        background: token.colorBgContainer,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        borderRadius: 12,
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 9,
+          padding: "12px 16px",
+          borderBottom: `1px solid ${token.colorSplit}`,
+        }}
+      >
+        <span
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 8,
+            flex: "none",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: token.colorPrimaryBg,
+          }}
+        >
+          <MIcon name={icon} size={16} color="#4a4ad0" />
+        </span>
+        <span style={{ fontSize: 13.5, fontWeight: 700, color: token.colorText, flex: 1 }}>
+          {title}
+        </span>
+        {extra}
+      </div>
+      <div style={{ flex: 1, padding: bodyPadding }}>{children}</div>
+    </div>
+  );
+}
+
+function PersonRow({
+  name,
+  meta,
+  badge,
+  tint,
+}: {
+  name: string;
+  meta: React.ReactNode;
+  badge?: React.ReactNode;
+  tint: string;
+}) {
+  const { token } = theme.useToken();
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
+      <span
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 999,
+          flex: "none",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 11.5,
+          fontWeight: 700,
+          color: tint,
+          background: `color-mix(in srgb, ${tint} 13%, transparent)`,
+        }}
+      >
+        {initials(name)}
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: token.colorText,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {name}
+        </div>
+        <div style={{ fontSize: 11.5, color: token.colorTextTertiary }}>{meta}</div>
+      </div>
+      {badge}
+    </div>
+  );
+}
+
+/** One horizontal stacked mix bar + dot legend (employment type, status). */
+function MixBar({
+  items,
+  total,
+}: {
+  items: { label: string; count: number; color: string }[];
+  total: number;
+}) {
+  const { token } = theme.useToken();
+  if (total <= 0 || items.length === 0) {
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No data" />;
+  }
+  return (
+    <div>
+      <div
+        style={{
+          display: "flex",
+          gap: 2,
+          height: 10,
+          borderRadius: 999,
+          overflow: "hidden",
+        }}
+      >
+        {items.map((it) => (
+          <Tooltip key={it.label} title={`${it.label}: ${it.count}`}>
+            <span
+              style={{
+                width: `${Math.max(2, (it.count / total) * 100)}%`,
+                background: it.color,
+              }}
+            />
+          </Tooltip>
+        ))}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px", marginTop: 10 }}>
+        {items.map((it) => (
+          <span
+            key={it.label}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: token.colorTextSecondary }}
+          >
+            <span style={{ width: 8, height: 8, borderRadius: 999, background: it.color, flex: "none" }} />
+            {it.label}
+            <span style={{ fontWeight: 700, color: token.colorText }}>{it.count}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ page */
+
 export default function HRDashboardPage() {
   const { token } = theme.useToken();
   const { data, isLoading, isError, error } = useOrgAnalytics();
+  const { data: userOrg } = useUserOrg();
 
   const analytics = useMemo(() => asOrgAnalytics(data), [data]);
+  const orgName = (userOrg as { organization_name?: string } | null | undefined)
+    ?.organization_name;
 
-  const headcount = formatCount(
-    analytics?.headcount ?? analytics?.total_employees,
-  );
-
+  const headcount = formatCount(analytics?.headcount ?? analytics?.total_employees);
+  const presentToday = formatCount(analytics?.present_today);
   const attendanceRate = toNumber(analytics?.attendance_rate_month);
+  const joiners = formatCount(analytics?.new_joiners_30d);
+  const exits = formatCount(analytics?.exits_30d);
+  const probation = formatCount(analytics?.on_probation);
+  const leavePending = formatCount(analytics?.leave_pending);
 
   const departments = useMemo<AnalyticsCount[]>(() => {
     const list = analytics?.by_department ?? [];
-    return [...list].sort(
-      (a, b) => formatCount(b.count) - formatCount(a.count),
-    );
+    return [...list].sort((a, b) => formatCount(b.count) - formatCount(a.count));
   }, [analytics]);
 
   const byStatus = analytics?.by_status ?? [];
@@ -88,68 +252,64 @@ export default function HRDashboardPage() {
   const birthdays = analytics?.upcoming_birthdays ?? [];
   const anniversaries = analytics?.upcoming_anniversaries ?? [];
 
-  const kpis = [
+  // Movement chips stay neutral; colour only where it means something
+  // (people leaving is worth a warning tone, the rest is information).
+  const deltaChips: { icon: string; label: string; tone?: string }[] = [
+    { icon: "person_add", label: `${joiners} joined · 30d` },
+    ...(exits > 0
+      ? [{ icon: "person_remove", label: `${exits} left · 30d`, tone: "#c0453c" }]
+      : []),
+    ...(probation > 0 ? [{ icon: "hourglass_top", label: `${probation} on probation` }] : []),
+  ];
+
+  const statTiles = [
     {
-      title: "Headcount",
-      value: headcount,
-      icon: <TeamOutlined />,
+      icon: "event_available",
+      label: "Present today",
+      value: `${presentToday}`,
+      sub: headcount > 0 ? `of ${headcount} people` : undefined,
     },
     {
-      title: "Present today",
-      value: formatCount(analytics?.present_today),
-      icon: <CheckCircleOutlined />,
+      icon: "schedule",
+      label: "Attendance this month",
+      value: typeof attendanceRate === "number" ? `${Math.round(attendanceRate)}%` : "—",
+      sub: "across the company",
     },
     {
-      title: "Attendance rate (month)",
-      value:
-        typeof attendanceRate === "number"
-          ? Math.round(attendanceRate)
-          : null,
-      suffix: typeof attendanceRate === "number" ? "%" : undefined,
-      icon: <ClockCircleOutlined />,
+      icon: "pending_actions",
+      label: "Leave awaiting decision",
+      value: `${leavePending}`,
+      sub: leavePending > 0 ? "requests to review" : "all clear",
     },
     {
-      title: "Leave pending",
-      value: formatCount(analytics?.leave_pending),
-      icon: <CalendarOutlined />,
-    },
-    {
-      title: "New joiners (30d)",
-      value: formatCount(analytics?.new_joiners_30d),
-      icon: <UserAddOutlined />,
-    },
-    {
-      title: "Last payroll net",
+      icon: "payments",
+      label: "Last payroll",
       value:
         analytics?.payroll_last?.total_net != null
-          ? formatMoney(analytics.payroll_last.total_net)
-          : null,
-      suffix: payrollPeriodLabel(analytics?.payroll_last) ?? undefined,
-      icon: <DollarOutlined />,
+          ? `${formatMoney(analytics.payroll_last.total_net)}`
+          : "—",
+      sub: payrollPeriodLabel(analytics?.payroll_last) ?? undefined,
     },
   ];
 
   return (
     <div>
-      <h1
-        style={{
-          fontSize: 21,
-          fontWeight: 600,
-          letterSpacing: "-.4px",
-          color: token.colorText,
-          margin: 0,
-        }}
-      >
-        HR dashboard
-      </h1>
-      <div
-        style={{
-          fontSize: 13,
-          color: token.colorTextSecondary,
-          margin: "4px 0 0",
-        }}
-      >
-        A snapshot of your people across the organization.
+      {/* Company header */}
+      <div>
+        <h1
+          style={{
+            fontSize: 21,
+            fontWeight: 600,
+            letterSpacing: "-.4px",
+            color: token.colorText,
+            margin: 0,
+          }}
+        >
+          People{orgName ? ` at ${orgName}` : ""}
+        </h1>
+        <div style={{ fontSize: 13, color: token.colorTextSecondary, margin: "4px 0 0" }}>
+          How the company looks today — team, attendance, pay and the moments coming up.
+        </div>
       </div>
 
       {isError ? (
@@ -160,56 +320,150 @@ export default function HRDashboardPage() {
           message="Failed to load HR analytics"
           description={errorMessage(error)}
         />
+      ) : isLoading ? (
+        <div
+          style={{
+            marginTop: 16,
+            background: token.colorBgContainer,
+            border: `1px solid ${token.colorBorderSecondary}`,
+            borderRadius: 12,
+            padding: 20,
+          }}
+        >
+          <Skeleton active paragraph={{ rows: 6 }} />
+        </div>
       ) : (
         <>
-          {/* KPI cards */}
+          {/* Hero — the company in one line */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 20,
+              flexWrap: "wrap",
+              marginTop: 16,
+              padding: "18px 20px",
+              borderRadius: 12,
+              border: `1px solid ${token.colorBorderSecondary}`,
+              background: token.colorBgContainer,
+            }}
+          >
+            <span
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: 15,
+                flex: "none",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: token.colorPrimaryBg,
+              }}
+            >
+              <MIcon name="groups" size={28} color="#4a4ad0" />
+            </span>
+            <div style={{ minWidth: 120 }}>
+              <div
+                style={{
+                  fontSize: 34,
+                  fontWeight: 700,
+                  letterSpacing: "-1.2px",
+                  lineHeight: 1,
+                  color: token.colorText,
+                }}
+              >
+                {headcount}
+              </div>
+              <div style={{ marginTop: 4, fontSize: 12.5, color: token.colorTextTertiary }}>
+                people in the company
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginLeft: "auto" }}>
+              {deltaChips.map((c) => (
+                <span
+                  key={c.label}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    height: 28,
+                    padding: "0 11px",
+                    borderRadius: 999,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    color: c.tone ?? token.colorTextSecondary,
+                    border: `1px solid ${token.colorBorderSecondary}`,
+                    background: token.colorFillQuaternary,
+                  }}
+                >
+                  <MIcon name={c.icon} size={15} color={c.tone ?? token.colorTextTertiary} />
+                  {c.label}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Company stat tiles */}
           <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-            {kpis.map((card) => (
-              <Col key={card.title} xs={24} sm={12} xl={8}>
-                <Card>
-                  {isLoading ? (
-                    <Skeleton
-                      active
-                      paragraph={false}
-                      title={{ width: "60%" }}
-                    />
-                  ) : (
-                    <Statistic
-                      title={card.title}
-                      value={card.value ?? "—"}
-                      suffix={card.value != null ? card.suffix : undefined}
-                      prefix={card.icon}
-                    />
-                  )}
-                </Card>
+            {statTiles.map((t) => (
+              <Col key={t.label} xs={24} sm={12} xl={6}>
+                <div
+                  style={{
+                    background: token.colorBgContainer,
+                    border: `1px solid ${token.colorBorderSecondary}`,
+                    borderRadius: 12,
+                    padding: "14px 16px",
+                    display: "flex",
+                    gap: 12,
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: 10,
+                      flex: "none",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: token.colorPrimaryBg,
+                    }}
+                  >
+                    <MIcon name={t.icon} size={18} color="#4a4ad0" />
+                  </span>
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 22,
+                        fontWeight: 700,
+                        letterSpacing: "-.6px",
+                        lineHeight: 1.1,
+                        color: token.colorText,
+                      }}
+                    >
+                      {t.value}
+                    </div>
+                    <div style={{ marginTop: 3, fontSize: 12.5, fontWeight: 600, color: token.colorTextSecondary }}>
+                      {t.label}
+                    </div>
+                    {t.sub ? (
+                      <div style={{ fontSize: 11.5, color: token.colorTextTertiary }}>{t.sub}</div>
+                    ) : null}
+                  </div>
+                </div>
               </Col>
             ))}
           </Row>
 
-          {/* By department + by status / type */}
+          {/* Team shape */}
           <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
             <Col xs={24} lg={12}>
-              <Card
-                title={
-                  <span>
-                    <ApartmentOutlined style={{ marginInlineEnd: 8 }} />
-                    By department
-                  </span>
-                }
-              >
-                {isLoading ? (
-                  <Skeleton active />
-                ) : departments.length === 0 ? (
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="No departments"
-                  />
+              <SectionCard icon="account_tree" title="Departments">
+                {departments.length === 0 ? (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No departments" />
                 ) : (
-                  <Space
-                    direction="vertical"
-                    size={12}
-                    style={{ width: "100%" }}
-                  >
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                     {departments.map((d, i) => {
                       const count = formatCount(d.count);
                       const pct = sharePct(count, headcount);
@@ -219,200 +473,195 @@ export default function HRDashboardPage() {
                             style={{
                               display: "flex",
                               justifyContent: "space-between",
-                              marginBottom: 2,
+                              alignItems: "baseline",
+                              marginBottom: 4,
                             }}
                           >
-                            <Text>{d.name || "Unassigned"}</Text>
-                            <Text type="secondary">
-                              {count} · {pct}%
+                            <span style={{ fontSize: 13, fontWeight: 600, color: token.colorText }}>
+                              {d.name || "Unassigned"}
+                            </span>
+                            <Text type="secondary" style={{ fontSize: 12.5 }}>
+                              <b style={{ color: token.colorText }}>{count}</b> · {pct}%
                             </Text>
                           </div>
-                          <Progress percent={pct} showInfo={false} />
+                          <div
+                            style={{
+                              height: 6,
+                              borderRadius: 999,
+                              background: token.colorFillSecondary,
+                              overflow: "hidden",
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: `${pct}%`,
+                                height: "100%",
+                                borderRadius: 999,
+                                background: BAR_COLOR,
+                              }}
+                            />
+                          </div>
                         </div>
                       );
                     })}
-                  </Space>
+                  </div>
                 )}
-              </Card>
+              </SectionCard>
             </Col>
 
             <Col xs={24} lg={12}>
-              <Space
-                direction="vertical"
-                size={16}
-                style={{ width: "100%" }}
-              >
-                <Card
-                  title={
-                    <span>
-                      <TeamOutlined style={{ marginInlineEnd: 8 }} />
-                      By status
-                    </span>
-                  }
-                  styles={{ body: { paddingBottom: 8 } }}
-                >
-                  {isLoading ? (
-                    <Skeleton active paragraph={{ rows: 2 }} />
-                  ) : byStatus.length === 0 ? (
-                    <Empty
-                      image={Empty.PRESENTED_IMAGE_SIMPLE}
-                      description="No data"
-                    />
+              <div style={{ display: "flex", flexDirection: "column", gap: 16, height: "100%" }}>
+                <SectionCard icon="work" title="Employment mix">
+                  <MixBar
+                    total={byType.reduce((s, t) => s + formatCount(t.count), 0)}
+                    items={byType.map((t, i) => ({
+                      label: employmentTypeLabel(t.type),
+                      count: formatCount(t.count),
+                      color: TYPE_PALETTE[i % TYPE_PALETTE.length],
+                    }))}
+                  />
+                </SectionCard>
+                <SectionCard icon="how_to_reg" title="Status">
+                  {byStatus.length === 0 ? (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No data" />
                   ) : (
-                    <Space size={[8, 8]} wrap>
-                      {byStatus.map((s, i) => (
-                        <Tag
-                          key={s.status ?? `status-${i}`}
-                          color={statusColor(s.status)}
-                          style={{ fontSize: 13, padding: "2px 8px" }}
-                        >
-                          {statusLabel(s.status)}: {formatCount(s.count)}
-                        </Tag>
-                      ))}
-                    </Space>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {byStatus.map((s, i) => {
+                        const color = statusColor(s.status);
+                        return (
+                          <span
+                            key={s.status ?? `status-${i}`}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 7,
+                              height: 30,
+                              padding: "0 12px",
+                              borderRadius: 999,
+                              fontSize: 13,
+                              fontWeight: 600,
+                              color: token.colorTextSecondary,
+                              border: `1px solid ${token.colorBorderSecondary}`,
+                              background: token.colorFillQuaternary,
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: 999,
+                                // antd preset color names (green/gold/…) aren't CSS
+                                // colours — approximate with the label tone.
+                                background:
+                                  color === "green"
+                                    ? "#2f8f5f"
+                                    : color === "gold"
+                                      ? "#c98a1b"
+                                      : color === "red"
+                                        ? "#c0453c"
+                                        : token.colorTextTertiary,
+                              }}
+                            />
+                            {statusLabel(s.status)}
+                            <b style={{ color: token.colorText }}>{formatCount(s.count)}</b>
+                          </span>
+                        );
+                      })}
+                    </div>
                   )}
-                </Card>
-
-                <Card
-                  title={
-                    <span>
-                      <ApartmentOutlined style={{ marginInlineEnd: 8 }} />
-                      By employment type
-                    </span>
-                  }
-                  styles={{ body: { paddingBottom: 8 } }}
-                >
-                  {isLoading ? (
-                    <Skeleton active paragraph={{ rows: 2 }} />
-                  ) : byType.length === 0 ? (
-                    <Empty
-                      image={Empty.PRESENTED_IMAGE_SIMPLE}
-                      description="No data"
-                    />
-                  ) : (
-                    <Space size={[8, 8]} wrap>
-                      {byType.map((t, i) => (
-                        <Tag
-                          key={t.type ?? `type-${i}`}
-                          style={{ fontSize: 13, padding: "2px 8px" }}
-                        >
-                          {employmentTypeLabel(t.type)}: {formatCount(t.count)}
-                        </Tag>
-                      ))}
-                    </Space>
-                  )}
-                </Card>
-              </Space>
+                </SectionCard>
+              </div>
             </Col>
           </Row>
 
-          {/* By location + birthdays + anniversaries */}
+          {/* People moments + where people are */}
           <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
             <Col xs={24} lg={8}>
-              <Card
-                title={
-                  <span>
-                    <EnvironmentOutlined style={{ marginInlineEnd: 8 }} />
-                    By location
-                  </span>
-                }
-              >
-                {isLoading ? (
-                  <Skeleton active />
-                ) : byLocation.length === 0 ? (
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="No locations"
-                  />
+              <SectionCard icon="cake" title="Upcoming birthdays">
+                {birthdays.length === 0 ? (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="None coming up" />
                 ) : (
-                  <List
-                    size="small"
-                    dataSource={byLocation}
-                    renderItem={(l, i) => (
-                      <List.Item key={l.location ?? `loc-${i}`}>
-                        <Text>{l.location || "Unspecified"}</Text>
-                        <Text type="secondary">{formatCount(l.count)}</Text>
-                      </List.Item>
-                    )}
-                  />
+                  birthdays.map((b: AnalyticsBirthday, i) => (
+                    <PersonRow
+                      key={`${b.full_name ?? "bd"}-${i}`}
+                      name={b.full_name || "—"}
+                      meta={formatDay(b.day, b.date_of_birth)}
+                      tint="#4a4ad0"
+                      badge={<MIcon name="cake" size={16} color={token.colorTextTertiary} />}
+                    />
+                  ))
                 )}
-              </Card>
+              </SectionCard>
             </Col>
 
             <Col xs={24} lg={8}>
-              <Card
-                title={
-                  <span>
-                    <GiftOutlined style={{ marginInlineEnd: 8 }} />
-                    Upcoming birthdays
-                  </span>
-                }
-              >
-                {isLoading ? (
-                  <Skeleton active />
-                ) : birthdays.length === 0 ? (
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="None coming up"
-                  />
+              <SectionCard icon="celebration" title="Work anniversaries">
+                {anniversaries.length === 0 ? (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="None coming up" />
                 ) : (
-                  <List
-                    size="small"
-                    dataSource={birthdays}
-                    renderItem={(b: AnalyticsBirthday, i) => (
-                      <List.Item key={`${b.full_name ?? "bd"}-${i}`}>
-                        <List.Item.Meta
-                          title={b.full_name || "—"}
-                          description={formatDay(b.day, b.date_of_birth)}
-                        />
-                      </List.Item>
-                    )}
-                  />
+                  anniversaries.map((a: AnalyticsAnniversary, i) => {
+                    const years = formatCount(a.years);
+                    return (
+                      <PersonRow
+                        key={`${a.full_name ?? "ann"}-${i}`}
+                        name={a.full_name || "—"}
+                        meta={formatDay(a.day, a.date_of_joining)}
+                        tint="#4a4ad0"
+                        badge={
+                          years > 0 ? (
+                            <span
+                              style={{
+                                fontSize: 11.5,
+                                fontWeight: 700,
+                                color: "#4a4ad0",
+                                background: token.colorPrimaryBg,
+                                borderRadius: 999,
+                                padding: "2px 9px",
+                                flex: "none",
+                              }}
+                            >
+                              {years} {years === 1 ? "year" : "years"}
+                            </span>
+                          ) : undefined
+                        }
+                      />
+                    );
+                  })
                 )}
-              </Card>
+              </SectionCard>
             </Col>
 
             <Col xs={24} lg={8}>
-              <Card
-                title={
-                  <span>
-                    <TrophyOutlined style={{ marginInlineEnd: 8 }} />
-                    Work anniversaries
-                  </span>
-                }
-              >
-                {isLoading ? (
-                  <Skeleton active />
-                ) : anniversaries.length === 0 ? (
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="None coming up"
-                  />
+              <SectionCard icon="location_on" title="Where people are">
+                {byLocation.length === 0 ? (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No locations" />
                 ) : (
-                  <List
-                    size="small"
-                    dataSource={anniversaries}
-                    renderItem={(a: AnalyticsAnniversary, i) => {
-                      const years = formatCount(a.years);
-                      return (
-                        <List.Item key={`${a.full_name ?? "ann"}-${i}`}>
-                          <List.Item.Meta
-                            title={a.full_name || "—"}
-                            description={
-                              <span>
-                                {years > 0
-                                  ? `${years} year${years === 1 ? "" : "s"} · `
-                                  : ""}
-                                {formatDay(a.day, a.date_of_joining)}
-                              </span>
-                            }
-                          />
-                        </List.Item>
-                      );
-                    }}
-                  />
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {byLocation.map((l, i) => (
+                      <div
+                        key={l.location ?? `loc-${i}`}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 9,
+                          padding: "7px 10px",
+                          borderRadius: 10,
+                          background: token.colorFillQuaternary,
+                        }}
+                      >
+                        <MIcon name="location_on" size={15} color={token.colorTextTertiary} />
+                        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: token.colorText }}>
+                          {l.location || "Unspecified"}
+                        </span>
+                        <span style={{ fontSize: 12.5, color: token.colorTextSecondary }}>
+                          {formatCount(l.count)}{" "}
+                          {formatCount(l.count) === 1 ? "person" : "people"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 )}
-              </Card>
+              </SectionCard>
             </Col>
           </Row>
         </>

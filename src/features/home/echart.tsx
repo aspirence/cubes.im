@@ -9,6 +9,9 @@ import {
   PieChart,
   GaugeChart,
   HeatmapChart,
+  RadarChart,
+  FunnelChart,
+  TreemapChart,
 } from "echarts/charts";
 import {
   GridComponent,
@@ -17,23 +20,32 @@ import {
   VisualMapComponent,
   CalendarComponent,
   GraphicComponent,
+  PolarComponent,
+  RadarComponent,
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import type { EChartsOption } from "echarts";
 
 // Register only the chart types + components the dashboard uses (tree-shaken).
+// PolarComponent powers the radial-bar form; Radar/Funnel/Treemap are their own
+// series types and each needs its own registration.
 echarts.use([
   BarChart,
   LineChart,
   PieChart,
   GaugeChart,
   HeatmapChart,
+  RadarChart,
+  FunnelChart,
+  TreemapChart,
   GridComponent,
   TooltipComponent,
   LegendComponent,
   VisualMapComponent,
   CalendarComponent,
   GraphicComponent,
+  PolarComponent,
+  RadarComponent,
   CanvasRenderer,
 ]);
 
@@ -70,9 +82,15 @@ function useIsClient(): boolean {
 export function EChart({
   option,
   height = 200,
+  onEvents,
+  clickable,
 }: {
   option: EChartsOption;
   height?: number;
+  /** ECharts event name → handler, e.g. `{ click: (p) => … }`. */
+  onEvents?: Record<string, (params: never) => void>;
+  /** Shows a pointer cursor over the canvas when marks are clickable. */
+  clickable?: boolean;
 }) {
   const isClient = useIsClient();
 
@@ -84,8 +102,9 @@ export function EChart({
     <ReactEChartsCore
       echarts={echarts}
       option={option}
-      style={{ height, width: "100%" }}
+      style={{ height, width: "100%", cursor: clickable ? "pointer" : undefined }}
       opts={{ renderer: "canvas" }}
+      onEvents={onEvents}
       notMerge
       lazyUpdate
     />

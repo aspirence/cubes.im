@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, List, Segmented, Skeleton, Space, Tag, Typography, theme } from "antd";
+import { Button, Segmented, Skeleton, Space, Tooltip, theme } from "antd";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import {
@@ -15,7 +15,15 @@ import {
 
 dayjs.extend(relativeTime);
 
-const { Text } = Typography;
+const BRAND = "#4a4ad0";
+
+function MIcon({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
+  return (
+    <span className="material-symbols-rounded" aria-hidden style={{ fontSize: size, lineHeight: 1, color }}>
+      {name}
+    </span>
+  );
+}
 
 /** Derive a navigation target for a notification, preferring an explicit url. */
 function notificationHref(n: Notification): string | null {
@@ -28,12 +36,24 @@ function notificationHref(n: Notification): string | null {
   return null;
 }
 
-const TYPE_TAG: Record<string, { label: string; color?: string }> = {
-  mention: { label: "Mention", color: "gold" },
-  comment: { label: "Comment", color: "blue" },
-  assignment: { label: "Assigned", color: "purple" },
-  info: { label: "Info" },
+/** One brand-tinted chip style for every type — identity is the glyph, never a colour. */
+const TYPE_META: Record<string, { label: string; icon: string }> = {
+  mention: { label: "Mention", icon: "alternate_email" },
+  comment: { label: "Comment", icon: "chat_bubble" },
+  assignment: { label: "Assigned", icon: "assignment_ind" },
+  join_request: { label: "Join request", icon: "person_add" },
+  info: { label: "Info", icon: "info" },
 };
+
+/** Today / Yesterday / date — cheap client-side day bucketing for section headers. */
+function dayLabel(iso: string): string {
+  const d = dayjs(iso).startOf("day");
+  const today = dayjs().startOf("day");
+  const diff = today.diff(d, "day");
+  if (diff <= 0) return "Today";
+  if (diff === 1) return "Yesterday";
+  return d.format(d.year() === today.year() ? "MMM D" : "MMM D, YYYY");
+}
 
 export interface InboxPaneProps {
   title: string;
@@ -74,14 +94,92 @@ export function InboxPane({ title, description, types }: InboxPaneProps) {
     [data?.items, types],
   );
 
+  // The list arrives newest-first, so consecutive runs of the same day label
+  // are already contiguous — a single pass groups without re-sorting.
+  const groups = useMemo(() => {
+    const out: { label: string; items: Notification[] }[] = [];
+    for (const n of items) {
+      const label = dayLabel(n.created_at);
+      const last = out[out.length - 1];
+      if (last && last.label === label) last.items.push(n);
+      else out.push({ label, items: [n] });
+    }
+    return out;
+  }, [items]);
+
   const handleClick = (n: Notification) => {
     if (!n.read) markRead.mutate(n.id);
     const href = notificationHref(n);
     if (href) router.push(href);
   };
 
+  const renderRow = (n: Notification) => {
+    const meta = TYPE_META[n.type] ?? { label: n.type, icon: "notifications" };
+    const href = notificationHref(n);
+    return (
+      <div
+        key={n.id}
+        className={`ib-row${n.read ? "" : " unread"}`}
+        role="button"
+        tabIndex={0}
+        onClick={() => handleClick(n)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleClick(n);
+          }
+        }}
+      >
+        <span className="ib-chip">
+          <MIcon name={meta.icon} size={17} color={BRAND} />
+          {!n.read ? <span className="ib-dot" aria-label="Unread" /> : null}
+        </span>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="ib-msg" title={n.message}>
+            {n.message}
+          </div>
+          <div className="ib-meta">
+            <span className="ib-type">{meta.label}</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <MIcon name="schedule" size={12} color={token.colorTextQuaternary} />
+              {dayjs(n.created_at).fromNow()}
+            </span>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 2, alignSelf: "center", flex: "none" }}>
+          {!n.read ? (
+            <Tooltip title="Mark as read">
+              <button
+                type="button"
+                className="ib-act"
+                aria-label="Mark as read"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  markRead.mutate(n.id);
+                }}
+              >
+                <MIcon name="check" size={16} />
+              </button>
+            </Tooltip>
+          ) : null}
+          {href ? (
+            <Tooltip title="Open">
+              <span className="ib-act" aria-hidden>
+                <MIcon name="arrow_forward" size={16} />
+              </span>
+            </Tooltip>
+          ) : null}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <style>{IB_CSS(token)}</style>
+
       <div
         style={{
           display: "flex",
@@ -92,7 +190,7 @@ export function InboxPane({ title, description, types }: InboxPaneProps) {
         }}
       >
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <h1
               style={{
                 margin: 0,
@@ -105,9 +203,7 @@ export function InboxPane({ title, description, types }: InboxPaneProps) {
               {title}
             </h1>
             {unreadHere > 0 ? (
-              <Tag color="red" style={{ marginInlineEnd: 0, borderRadius: 10 }}>
-                {unreadHere > 99 ? "99+" : unreadHere}
-              </Tag>
+              <span className="ib-count">{unreadHere > 99 ? "99+" : unreadHere}</span>
             ) : null}
           </div>
           <p style={{ margin: "4px 0 0", fontSize: 13, color: token.colorTextSecondary }}>
@@ -125,6 +221,7 @@ export function InboxPane({ title, description, types }: InboxPaneProps) {
           />
           <Button
             size="small"
+            icon={<MIcon name="done_all" size={15} />}
             disabled={unreadHere === 0}
             loading={markAllRead.isPending}
             onClick={() => markAllRead.mutate()}
@@ -134,89 +231,89 @@ export function InboxPane({ title, description, types }: InboxPaneProps) {
         </Space>
       </div>
 
-      <Card>
+      <div className="ib-card">
         {isLoading ? (
-          <Skeleton active paragraph={{ rows: 6 }} />
+          <div style={{ padding: 16 }}>
+            <Skeleton active paragraph={{ rows: 6 }} />
+          </div>
+        ) : items.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "48px 24px 52px" }}>
+            <span
+              style={{
+                width: 54,
+                height: 54,
+                borderRadius: 16,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: token.colorPrimaryBg,
+              }}
+            >
+              <MIcon
+                name={filter === "unread" ? "mark_email_read" : "inbox"}
+                size={26}
+                color={BRAND}
+              />
+            </span>
+            <div style={{ marginTop: 12, fontSize: 14.5, fontWeight: 600, color: token.colorText }}>
+              {filter === "unread" ? "You're all caught up" : "Nothing here yet"}
+            </div>
+            <p
+              style={{
+                margin: "4px auto 0",
+                fontSize: 12.5,
+                color: token.colorTextTertiary,
+                maxWidth: 300,
+              }}
+            >
+              {filter === "unread"
+                ? "No unread notifications — new ones will surface here."
+                : "Comments, mentions and assignments will land here."}
+            </p>
+          </div>
         ) : (
-          <List<Notification>
-            dataSource={items}
-            locale={{
-              emptyText: (
-                <div style={{ textAlign: "center", padding: "48px 24px" }}>
-                  <span
-                    className="material-symbols-rounded"
-                    style={{ fontSize: 30, color: token.colorTextQuaternary }}
-                  >
-                    {filter === "unread" ? "mark_email_read" : "notifications"}
-                  </span>
-                  <div
-                    style={{
-                      fontSize: 13.5,
-                      fontWeight: 600,
-                      color: token.colorText,
-                    }}
-                  >
-                    {filter === "unread" ? "All caught up" : "Nothing here yet"}
-                  </div>
-                  <p
-                    style={{
-                      margin: "4px 0 0",
-                      fontSize: 12.5,
-                      color: token.colorTextTertiary,
-                    }}
-                  >
-                    Comments, mentions and assignments will land here.
-                  </p>
-                </div>
-              ),
-            }}
-            renderItem={(n) => {
-              const tag = TYPE_TAG[n.type] ?? { label: n.type };
-              return (
-                <List.Item
-                  onClick={() => handleClick(n)}
-                  style={{
-                    cursor: "pointer",
-                    paddingInline: 12,
-                    borderRadius: 8,
-                    background: n.read ? undefined : "rgba(64,108,255,0.06)",
-                  }}
-                >
-                  <List.Item.Meta
-                    title={
-                      <Space size={8} wrap>
-                        {!n.read ? (
-                          <span
-                            aria-label="Unread"
-                            style={{
-                              display: "inline-block",
-                              width: 8,
-                              height: 8,
-                              borderRadius: "50%",
-                              background: "#4c6fff",
-                            }}
-                          />
-                        ) : null}
-                        <Text strong={!n.read}>{n.message}</Text>
-                      </Space>
-                    }
-                    description={
-                      <Space size={8}>
-                        <Tag color={tag.color} style={{ marginInlineEnd: 0 }}>
-                          {tag.label}
-                        </Tag>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          {dayjs(n.created_at).fromNow()}
-                        </Text>
-                      </Space>
-                    }
-                  />
-                </List.Item>
-              );
-            }}
-          />
+          groups.map((g) => (
+            <div key={g.label} className="ib-group">
+              <div className="ib-day">
+                {g.label}
+                <span className="ib-day-n">{g.items.length}</span>
+              </div>
+              {g.items.map(renderRow)}
+            </div>
+          ))
         )}
-      </Card>
+      </div>
     </div>
   );
+}
+
+/** Row / chip / day-header chrome; single brand accent, tokens only for surfaces. */
+function IB_CSS(token: ReturnType<typeof theme.useToken>["token"]): string {
+  return `
+  .ib-count{display:inline-flex;align-items:center;font-size:11px;font-weight:700;color:${token.colorError};background:${token.colorErrorBg};border-radius:999px;padding:2px 9px;line-height:1.4;}
+
+  .ib-card{background:${token.colorBgContainer};border:1px solid ${token.colorBorderSecondary};border-radius:12px;padding:6px;box-shadow:0 1px 2px rgba(16,24,40,0.03);}
+
+  .ib-group + .ib-group .ib-day{margin-top:6px;border-top:1px solid ${token.colorSplit};padding-top:12px;}
+  .ib-day{display:flex;align-items:center;gap:8px;padding:8px 10px 4px;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:${token.colorTextQuaternary};}
+  .ib-day-n{font-size:10.5px;font-weight:600;color:${token.colorTextTertiary};background:${token.colorFillTertiary};border-radius:999px;padding:0 7px;line-height:16px;letter-spacing:0;}
+
+  .ib-row{display:flex;align-items:flex-start;gap:12px;padding:10px 12px;border-radius:10px;cursor:pointer;transition:background .12s;}
+  .ib-row:hover{background:${token.colorFillQuaternary};}
+  .ib-row + .ib-row{margin-top:1px;}
+  .ib-row.unread{background:color-mix(in srgb, ${BRAND} 4%, transparent);}
+  .ib-row.unread:hover{background:color-mix(in srgb, ${BRAND} 8%, transparent);}
+
+  .ib-chip{position:relative;width:32px;height:32px;border-radius:9px;flex:none;display:inline-flex;align-items:center;justify-content:center;background:${token.colorPrimaryBg};margin-top:1px;}
+  .ib-dot{position:absolute;top:-3px;right:-3px;width:6px;height:6px;border-radius:999px;background:${BRAND};box-shadow:0 0 0 2px ${token.colorBgContainer};}
+
+  .ib-msg{font-size:13px;font-weight:500;color:${token.colorTextSecondary};line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  .ib-row.unread .ib-msg{font-weight:600;color:${token.colorText};}
+  .ib-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:3px;font-size:11.5px;color:${token.colorTextTertiary};}
+  .ib-type{display:inline-flex;align-items:center;font-size:10.5px;font-weight:600;color:${token.colorTextSecondary};background:${token.colorFillQuaternary};border:1px solid ${token.colorBorderSecondary};border-radius:999px;padding:1px 8px;white-space:nowrap;}
+
+  .ib-act{display:inline-flex;align-items:center;justify-content:center;border:none;background:transparent;padding:5px;border-radius:7px;cursor:pointer;color:${token.colorTextQuaternary};opacity:0;transition:opacity .12s,background .12s,color .12s;}
+  .ib-row:hover .ib-act,.ib-row:focus-visible .ib-act{opacity:1;}
+  .ib-act:hover{background:${token.colorFillSecondary};color:${token.colorText};}
+  `;
 }

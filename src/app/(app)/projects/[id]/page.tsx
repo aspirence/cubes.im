@@ -39,6 +39,7 @@ import {
   useActivateAppForProject,
   appKeyForViewKey,
 } from "@/features/apps-platform/app-scope";
+import { ViewToolbarSlot } from "./_components/view-toolbar-slot";
 import { ProjectWorkspaceHeader } from "./_components/project-workspace-header";
 import { ProjectOverviewTab } from "./_components/project-overview-tab";
 import { TaskListTab } from "./_components/task-list-tab";
@@ -446,11 +447,18 @@ export default function ProjectWorkspacePage() {
         onChange={handleTabChange}
         items={tabItems}
         destroyOnHidden
-        tabBarExtraContent={{
-          right: (
+        // The tab row carries both: "+ View" sits immediately after the last
+        // tab, and the active view's own controls (group/filter) sit far right —
+        // which keeps a whole toolbar row out of the content area.
+        renderTabBar={(tabBarProps, DefaultTabBar) => (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <DefaultTabBar {...tabBarProps} style={{ margin: 0, flex: "0 1 auto", minWidth: 0 }} />
             <AddViewPicker existingKeys={existingKeys} onAdd={handleAdd} />
-          ),
-        }}
+            <div style={{ marginLeft: "auto", flex: "none" }}>
+              <ViewToolbarSlot />
+            </div>
+          </div>
+        )}
       />
       <TaskDrawer />
 

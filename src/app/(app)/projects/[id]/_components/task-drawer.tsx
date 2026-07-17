@@ -45,6 +45,7 @@ dayjs.extend(relativeTime);
 
 import { createClient } from "@/lib/supabase/client";
 import { useTaskDrawer } from "@/store/task-drawer-store";
+import { useCelebrateTaskDone } from "@/features/celebrations/use-celebrations";
 import {
   useUpdateTask,
   useCreateTask,
@@ -69,6 +70,7 @@ import { useTeamMembers } from "@/features/team-members/use-team-members";
 import {
   TeamMentionInput,
   extractMentionUserIds,
+  type MentionEntity,
 } from "@/features/team-members/team-mention-input";
 import { TaskIdLabel } from "@/features/tasks/task-id-label";
 import {
@@ -91,7 +93,9 @@ import {
   formatLeaveDays,
 } from "@/features/schedule/use-availability";
 import { useTeamLabels } from "@/features/settings/use-labels";
-import { useActiveTeam } from "@/features/teams/use-teams";
+import { useActiveTeam, useTeams } from "@/features/teams/use-teams";
+import { useNotifyMentions } from "@/features/notifications/use-mention-notify";
+import { useProjects } from "@/features/projects/use-projects";
 import {
   useTaskAttachments,
   useUploadAttachment,
@@ -470,6 +474,7 @@ function TaskDrawerContent({
 
   // ---- Lookups -------------------------------------------------------------
   const { data: statusesRaw } = useTaskStatuses(projectId);
+  const celebrateTaskDone = useCelebrateTaskDone();
   const { data: prioritiesRaw } = useTaskPriorities();
   const statuses = statusesRaw ?? [];
   const priorities = prioritiesRaw ?? [];
@@ -649,6 +654,29 @@ function TaskDrawerContent({
     [teamMembersRaw],
   );
 
+  // Teams and projects are also taggable from a comment; tagged teams fan out
+  // to their members' inboxes on submit (people go via the DB trigger).
+  const { data: allTeams } = useTeams();
+  const { data: allProjects } = useProjects();
+  const { data: drawerActiveTeam } = useActiveTeam();
+  const notifyMentions = useNotifyMentions();
+  const mentionEntities = useMemo<MentionEntity[]>(
+    () => [
+      ...(allTeams ?? []).map((t) => ({
+        id: t.id,
+        label: t.name,
+        kind: "team" as const,
+        meta: "Team — notifies its members",
+      })),
+      ...(allProjects ?? []).map((pr) => ({
+        id: pr.id,
+        label: pr.name,
+        kind: "project" as const,
+      })),
+    ],
+    [allTeams, allProjects],
+  );
+
   const labelOptions = useMemo(
     () =>
       (teamLabelsRaw ?? []).map((l) => ({
@@ -676,14 +704,16 @@ function TaskDrawerContent({
     queryClient.invalidateQueries({ queryKey: drawerRowKey(task.id) });
 
   // ---- Handlers ------------------------------------------------------------
-  const patch = async (changes: Record<string, unknown>) => {
+  const patch = async (changes: Record<string, unknown>): Promise<boolean> => {
     try {
       await updateTask.mutateAsync({ id: task.id, ...changes });
       await refreshRow();
+      return true;
     } catch (err) {
       message.error(
         err instanceof Error ? err.message : "Failed to update task.",
       );
+      return false;
     }
   };
 
@@ -699,8 +729,16 @@ function TaskDrawerContent({
     await patch({ description: next });
   };
 
-  const handleStatusChange = (statusId: string) =>
-    patch({ status_id: statusId });
+  const handleStatusChange = async (statusId: string) => {
+    // Celebrate only the open -> done transition, and only after the update
+    // lands (the cube award commits in the same transaction as the PATCH).
+    const target = (statusesRaw ?? []).find((s) => s.id === statusId);
+    const wasDone = Boolean(currentStatus?.category?.is_done);
+    const ok = await patch({ status_id: statusId });
+    if (ok && target?.category?.is_done && !wasDone) {
+      celebrateTaskDone({ taskId: task.id, taskName: task.name });
+    }
+  };
 
   const commitSubmission = async () => {
     const next = submissionText.length ? submissionText : null;
@@ -830,6 +868,17 @@ function TaskDrawerContent({
         // `task_comments.mentions` is a uuid[] of mentioned users; setting it
         // lets the DB trigger notify them. Omitted when empty.
         ...(mentions.length > 0 ? { mentions } : {}),
+      });
+      // Person-mentions notified by the DB trigger above; tagged TEAMS fan out
+      // client-side (fire-and-forget — never surfaces as a comment failure).
+      void notifyMentions({
+        text: trimmed,
+        members: mentionMembers,
+        entities: mentionEntities,
+        onlyTeams: true,
+        message: `Your team was mentioned on task "${task.name}"`,
+        url: `/projects/${task.project_id}`,
+        teamId: drawerActiveTeam?.id,
       });
       setCommentText("");
     } catch (err) {
@@ -2006,7 +2055,8 @@ function TaskDrawerContent({
                     value={commentText}
                     onChange={setCommentText}
                     members={mentionMembers}
-                    placeholder="Write a comment…  (type @ to mention)"
+                    entities={mentionEntities}
+                    placeholder="Write a comment…  (type @ to mention people, teams, projects)"
                     autoSize={{ minRows: 1, maxRows: 5 }}
                   />
                 </div>

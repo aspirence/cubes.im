@@ -11,7 +11,13 @@ export default function TermsPage() {
       <p>
         These Terms of Service (&ldquo;Terms&rdquo;) govern your access to and use of
         Cubes — the hosted service at cubes.im (&ldquo;Cubes Cloud&rdquo;) and the
-        websites, apps, and APIs we operate (together, the &ldquo;Service&rdquo;). By
+        websites, apps, and APIs we operate (together, the &ldquo;Service&rdquo;).
+        The Service is operated by{" "}
+        <a href="https://www.aspirence.com/" target="_blank" rel="noreferrer">
+          Aspirence Worldwide Private Limited
+        </a>{" "}
+        (CIN: U62010UP2024PTC208995), a company incorporated in India
+        (&ldquo;Aspirence&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;). By
         creating an account or using the Service you agree to these Terms. If you are
         using the Service on behalf of an organization, you agree on its behalf and
         confirm you have authority to do so.
@@ -138,7 +144,10 @@ export default function TermsPage() {
 
       <h2>14. Contact</h2>
       <p>
-        Questions about these Terms: <a href="mailto:support@cubes.im">support@cubes.im</a>.
+        Questions about these Terms: <a href="mailto:hello.cubesim@gmail.com">hello.cubesim@gmail.com</a>.
+        Cubes is operated by Aspirence Worldwide Private Limited (CIN:
+        U62010UP2024PTC208995) —{" "}
+        <a href="https://www.aspirence.com/" target="_blank" rel="noreferrer">aspirence.com</a>.
       </p>
     </LegalPage>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Alert,
@@ -14,11 +14,11 @@ import {
   Modal,
   Skeleton,
   Tag,
+  Tooltip,
   Typography,
   theme,
 } from "antd";
 import type { MenuProps } from "antd";
-import { InfoCircleOutlined } from "@ant-design/icons";
 import {
   useHrAccess,
   useHrEmployees,
@@ -50,6 +50,208 @@ function MIcon({ name, size = 16, color }: { name: string; size?: number; color?
   );
 }
 
+type Token = ReturnType<typeof theme.useToken>["token"];
+
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 1.5;
+const ZOOM_STEP = 0.1;
+const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 100) / 100));
+
+/**
+ * One employee card.
+ *
+ * Declared at module scope ON PURPOSE. Defined inside the page component it got
+ * a fresh identity on every render, so React treated it as a different
+ * component type and unmounted/remounted the whole tree on any state change —
+ * including mid-drag, which destroys the element the browser is dragging and is
+ * what made dragging feel broken. At module scope the type is stable, so React
+ * reconciles in place and a drag survives re-renders.
+ *
+ * The dragged id is passed as a REF, not state: it is only ever read inside
+ * event handlers, so keeping it out of state means a drag causes zero renders.
+ */
+function NodeCard({
+  e,
+  token,
+  tier,
+  reports,
+  isCollapsed,
+  dimmed,
+  canDrag,
+  dragIdRef,
+  menuItems,
+  onReparent,
+  onToggleCollapse,
+  onOpenProfile,
+}: {
+  e: HrEmployeeWithRelations;
+  token: Token;
+  tier: { color: string; label: string };
+  reports: number;
+  isCollapsed: boolean;
+  dimmed: boolean;
+  canDrag: boolean;
+  dragIdRef: React.MutableRefObject<string | null>;
+  menuItems: MenuProps["items"];
+  onReparent: (id: string, newManagerId: string | null) => void;
+  onToggleCollapse: (id: string) => void;
+  onOpenProfile: (id: string) => void;
+}) {
+  return (
+    <Dropdown menu={{ items: menuItems }} trigger={["contextMenu"]}>
+      <div
+        className="org-card"
+        draggable={canDrag}
+        onDragStart={(ev) => {
+          dragIdRef.current = e.id;
+          ev.dataTransfer.effectAllowed = "move";
+          // Firefox refuses to start a drag without a payload.
+          ev.dataTransfer.setData("text/plain", e.id);
+          // Without this the ghost is the whole 208px card, which is what makes
+          // the drag feel heavy. Use a compact chip that tracks the cursor.
+          const ghost = document.createElement("div");
+          ghost.textContent = e.full_name;
+          ghost.style.cssText = `position:absolute;top:-1000px;left:-1000px;padding:6px 12px;border-radius:999px;font:600 12px/1.2 system-ui,-apple-system,sans-serif;color:#fff;background:${tier.color};box-shadow:0 6px 16px -4px rgba(0,0,0,.35);white-space:nowrap;`;
+          document.body.appendChild(ghost);
+          ev.dataTransfer.setDragImage(ghost, 12, 12);
+          // Safe next frame — the browser has snapshotted it by then.
+          requestAnimationFrame(() => ghost.remove());
+        }}
+        onDragEnd={(ev) => {
+          // Covers aborted drags (Esc, drop outside the window), which would
+          // otherwise leave the ref stuck and the chart un-droppable.
+          ev.currentTarget.removeAttribute("data-drop");
+          dragIdRef.current = null;
+        }}
+        onDragOver={(ev) => {
+          const dragId = dragIdRef.current;
+          if (dragId && dragId !== e.id) ev.preventDefault();
+        }}
+        onDragEnter={(ev) => {
+          const dragId = dragIdRef.current;
+          if (!dragId || dragId === e.id) return;
+          // Set the highlight straight on the node: routing it through React
+          // state would re-render the tree mid-drag.
+          ev.currentTarget.setAttribute("data-drop", "1");
+        }}
+        onDragLeave={(ev) => {
+          const next = ev.relatedTarget as Node | null;
+          if (next && ev.currentTarget.contains(next)) return; // moved onto a child
+          ev.currentTarget.removeAttribute("data-drop");
+        }}
+        onDrop={(ev) => {
+          ev.preventDefault();
+          // Without this the drop ALSO bubbles to the canvas handler, which
+          // reparents to top-level — two competing writes per drop.
+          ev.stopPropagation();
+          ev.currentTarget.removeAttribute("data-drop");
+          const dragId = dragIdRef.current;
+          if (dragId && dragId !== e.id) onReparent(dragId, e.id);
+          dragIdRef.current = null;
+        }}
+        onDoubleClick={() => onOpenProfile(e.id)}
+        style={{
+          display: "inline-block",
+          verticalAlign: "top",
+          textAlign: "left",
+          width: 208,
+          background: token.colorBgContainer,
+          border: `2px solid ${tier.color}`,
+          borderRadius: 14,
+          padding: "14px 14px 10px",
+          boxShadow: token.boxShadowTertiary,
+          cursor: canDrag ? "grab" : "default",
+          opacity: dimmed ? 0.4 : 1,
+          transition: "opacity .15s ease",
+          position: "relative",
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, textAlign: "center" }}>
+          <div
+            style={{
+              width: 46,
+              height: 46,
+              borderRadius: 999,
+              background: `${tier.color}22`,
+              color: tier.color,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 15,
+              fontWeight: 700,
+            }}
+          >
+            {initials(e.full_name)}
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: token.colorText, lineHeight: 1.2 }}>
+            {e.full_name}
+          </div>
+          <div style={{ fontSize: 11.5, color: token.colorTextTertiary, lineHeight: 1.3 }}>
+            {[e.designation?.title, e.department?.name].filter(Boolean).join(" · ") || "—"}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap", justifyContent: "center" }}>
+            <span
+              title={`${tier.label} · ${cubesOf(e)} cubes`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: 11.5,
+                fontWeight: 700,
+                color: tier.color,
+                background: `${tier.color}18`,
+                borderRadius: 999,
+                padding: "2px 8px",
+              }}
+            >
+              <MIcon name="deployed_code" size={13} color={tier.color} />
+              {cubesOf(e)}
+            </span>
+            {e.status ? (
+              <Tag color={statusColor(e.status)} style={{ margin: 0, fontSize: 10.5, lineHeight: "16px" }}>
+                {statusLabel(e.status)}
+              </Tag>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Reports count + collapse toggle (like the reference's "59^"). */}
+        {reports > 0 ? (
+          <button
+            type="button"
+            onClick={(ev) => {
+              ev.stopPropagation();
+              onToggleCollapse(e.id);
+            }}
+            style={{
+              position: "absolute",
+              bottom: -12,
+              left: "50%",
+              transform: "translateX(-50%)",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 3,
+              height: 22,
+              padding: "0 9px",
+              borderRadius: 999,
+              border: "none",
+              background: token.colorText,
+              color: token.colorBgContainer,
+              fontSize: 11.5,
+              fontWeight: 700,
+              cursor: "pointer",
+              zIndex: 1,
+            }}
+          >
+            {reports}
+            <MIcon name={isCollapsed ? "expand_more" : "expand_less"} size={14} />
+          </button>
+        ) : null}
+      </div>
+    </Dropdown>
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 
 export default function HrOrgChartPage() {
@@ -62,9 +264,38 @@ export default function HrOrgChartPage() {
 
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [dragId, setDragId] = useState<string | null>(null);
+  // A ref, not state: it is only read in event handlers, so a drag triggers
+  // zero re-renders and the tree is never rebuilt underneath the pointer.
+  const dragIdRef = useRef<string | null>(null);
   const [cubesTarget, setCubesTarget] = useState<HrEmployeeWithRelations | null>(null);
   const [cubesValue, setCubesValue] = useState<number>(0);
+  const [zoom, setZoom] = useState(1);
+  const canvasRef = useRef<HTMLDivElement>(null);
+
+  const toggleCollapse = useCallback((id: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  // Ctrl/Cmd + wheel zooms the chart instead of the whole page. Registered by
+  // hand because the listener must be non-passive to preventDefault the
+  // browser's native page zoom — React's onWheel can't opt out of passive.
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const onWheel = (ev: WheelEvent) => {
+      if (!ev.ctrlKey && !ev.metaKey) return;
+      ev.preventDefault();
+      setZoom((z) => clampZoom(z - Math.sign(ev.deltaY) * ZOOM_STEP));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+    // Re-attach once the canvas actually exists (it renders only with data).
+  }, [isLoading, isError, data?.length]);
 
   const employees = useMemo<HrEmployeeWithRelations[]>(() => data ?? [], [data]);
   const byId = useMemo(() => {
@@ -148,15 +379,10 @@ export default function HrOrgChartPage() {
     return set;
   }, [search, employees]);
 
-  const reparent = async (id: string, newManagerId: string | null) => {
+  /** Writes the new reporting line. Never call directly — go through `reparent`. */
+  const applyReparent = async (id: string, newManagerId: string | null) => {
     const emp = byId.get(id);
     if (!emp) return;
-    if (newManagerId === id) return;
-    if ((emp.manager_id ?? null) === newManagerId) return;
-    if (newManagerId && wouldCycle(newManagerId, id)) {
-      message.error("Can't move a manager under one of their own reports.");
-      return;
-    }
     try {
       await updateEmployee.mutateAsync({ id, patch: { manager_id: newManagerId } });
       message.success(
@@ -167,6 +393,54 @@ export default function HrOrgChartPage() {
     } catch (err) {
       message.error(err instanceof Error ? err.message : "Couldn't update the reporting line.");
     }
+  };
+
+  /**
+   * The single choke point for every reporting-line change (drag-drop, the
+   * canvas drop, and both context-menu items). Moving someone takes their whole
+   * subtree with them, so nothing is written until the change is confirmed —
+   * a mis-drop should cost a click, not a reorg.
+   */
+  const reparent = (id: string, newManagerId: string | null) => {
+    const emp = byId.get(id);
+    if (!emp) return;
+    if (newManagerId === id) return;
+    if ((emp.manager_id ?? null) === newManagerId) return;
+    if (newManagerId && wouldCycle(newManagerId, id)) {
+      message.error("Can't move a manager under one of their own reports.");
+      return;
+    }
+
+    const target = newManagerId ? byId.get(newManagerId) : null;
+    const currentMgr = emp.manager_id ? byId.get(emp.manager_id) : null;
+    const moving = descendantCount.get(id) ?? 0;
+
+    modal.confirm({
+      title: target
+        ? `Move ${emp.full_name} under ${target.full_name}?`
+        : `Make ${emp.full_name} top-level?`,
+      icon: <MIcon name="account_tree" size={20} color={token.colorWarning} />,
+      content: (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <Text type="secondary">Reports to</Text>
+            <Tag style={{ margin: 0 }}>{currentMgr?.full_name ?? "No manager"}</Tag>
+            <MIcon name="arrow_forward" size={15} color={token.colorTextTertiary} />
+            <Tag color="blue" style={{ margin: 0 }}>
+              {target?.full_name ?? "No manager (top-level)"}
+            </Tag>
+          </div>
+          {moving > 0 ? (
+            <Text type="warning">
+              {moving} {moving === 1 ? "person" : "people"} in their org move with them.
+            </Text>
+          ) : null}
+        </div>
+      ),
+      okText: target ? "Move" : "Make top-level",
+      cancelText: "Cancel",
+      onOk: () => applyReparent(id, newManagerId),
+    });
   };
 
   const saveCubes = async () => {
@@ -240,7 +514,7 @@ export default function HrOrgChartPage() {
                   key: `mgr:${m.id}`,
                   label: m.full_name,
                   disabled: (e.manager_id ?? null) === m.id,
-                  onClick: () => void reparent(e.id, m.id),
+                  onClick: () => reparent(e.id, m.id),
                 })),
             },
             {
@@ -248,142 +522,11 @@ export default function HrOrgChartPage() {
               icon: <MIcon name="vertical_align_top" />,
               label: "Remove manager (top-level)",
               disabled: !e.manager_id,
-              onClick: () => void reparent(e.id, null),
+              onClick: () => reparent(e.id, null),
             },
           ] satisfies MenuProps["items"])
         : []),
     ];
-  };
-
-  /* --------------------------------------------------------- node card --- */
-  const NodeCard = ({ e }: { e: HrEmployeeWithRelations }) => {
-    const tier = cubesTier(cubesOf(e));
-    const reports = descendantCount.get(e.id) ?? 0;
-    const isCollapsed = collapsed.has(e.id);
-    const isMatch = matched?.has(e.id) ?? false;
-    const dimmed = matched && !isMatch;
-    return (
-      <Dropdown menu={{ items: menuFor(e) }} trigger={["contextMenu"]}>
-        <div
-          draggable={isHrAdmin && !search}
-          onDragStart={(ev) => {
-            setDragId(e.id);
-            ev.dataTransfer.effectAllowed = "move";
-          }}
-          onDragOver={(ev) => {
-            if (dragId && dragId !== e.id) ev.preventDefault();
-          }}
-          onDrop={(ev) => {
-            ev.preventDefault();
-            if (dragId && dragId !== e.id) void reparent(dragId, e.id);
-            setDragId(null);
-          }}
-          onDoubleClick={() => router.push(`/hr/employees/${e.id}`)}
-          style={{
-            display: "inline-block",
-            verticalAlign: "top",
-            textAlign: "left",
-            width: 208,
-            background: token.colorBgContainer,
-            border: `2px solid ${tier.color}`,
-            borderRadius: 14,
-            padding: "14px 14px 10px",
-            boxShadow: token.boxShadowTertiary,
-            cursor: isHrAdmin && !search ? "grab" : "default",
-            opacity: dimmed ? 0.4 : 1,
-            transition: "opacity .15s ease",
-            position: "relative",
-          }}
-        >
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, textAlign: "center" }}>
-            <div
-              style={{
-                width: 46,
-                height: 46,
-                borderRadius: 999,
-                background: `${tier.color}22`,
-                color: tier.color,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 15,
-                fontWeight: 700,
-              }}
-            >
-              {initials(e.full_name)}
-            </div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: token.colorText, lineHeight: 1.2 }}>
-              {e.full_name}
-            </div>
-            <div style={{ fontSize: 11.5, color: token.colorTextTertiary, lineHeight: 1.3 }}>
-              {[e.designation?.title, e.department?.name].filter(Boolean).join(" · ") || "—"}
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap", justifyContent: "center" }}>
-              <span
-                title={`${tier.label} · ${cubesOf(e)} cubes`}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  color: tier.color,
-                  background: `${tier.color}18`,
-                  borderRadius: 999,
-                  padding: "2px 8px",
-                }}
-              >
-                <MIcon name="deployed_code" size={13} color={tier.color} />
-                {cubesOf(e)}
-              </span>
-              {e.status ? (
-                <Tag color={statusColor(e.status)} style={{ margin: 0, fontSize: 10.5, lineHeight: "16px" }}>
-                  {statusLabel(e.status)}
-                </Tag>
-              ) : null}
-            </div>
-          </div>
-
-          {/* Reports count + collapse toggle (like the reference's "59^"). */}
-          {reports > 0 ? (
-            <button
-              type="button"
-              onClick={(ev) => {
-                ev.stopPropagation();
-                setCollapsed((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(e.id)) next.delete(e.id);
-                  else next.add(e.id);
-                  return next;
-                });
-              }}
-              style={{
-                position: "absolute",
-                bottom: -12,
-                left: "50%",
-                transform: "translateX(-50%)",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 3,
-                height: 22,
-                padding: "0 9px",
-                borderRadius: 999,
-                border: "none",
-                background: token.colorText,
-                color: token.colorBgContainer,
-                fontSize: 11.5,
-                fontWeight: 700,
-                cursor: "pointer",
-                zIndex: 1,
-              }}
-            >
-              {reports}
-              <MIcon name={isCollapsed ? "expand_more" : "expand_less"} size={14} />
-            </button>
-          ) : null}
-        </div>
-      </Dropdown>
-    );
   };
 
   /* --------------------------------------------------------- recursion --- */
@@ -392,7 +535,20 @@ export default function HrOrgChartPage() {
     const showKids = kids.length > 0 && !collapsed.has(e.id);
     return (
       <li key={e.id}>
-        <NodeCard e={e} />
+        <NodeCard
+          e={e}
+          token={token}
+          tier={cubesTier(cubesOf(e))}
+          reports={descendantCount.get(e.id) ?? 0}
+          isCollapsed={collapsed.has(e.id)}
+          dimmed={Boolean(matched && !matched.has(e.id))}
+          canDrag={isHrAdmin && !search}
+          dragIdRef={dragIdRef}
+          menuItems={menuFor(e)}
+          onReparent={reparent}
+          onToggleCollapse={toggleCollapse}
+          onOpenProfile={(id) => router.push(`/hr/employees/${id}`)}
+        />
         {showKids ? <ul>{kids.map(renderNode)}</ul> : null}
       </li>
     );
@@ -416,25 +572,64 @@ export default function HrOrgChartPage() {
           </Title>
           <Text type="secondary">Reporting lines & performance across your organization.</Text>
         </div>
-        <Input.Search
-          allowClear
-          placeholder="Search by name, role or department"
-          style={{ maxWidth: 320 }}
-          value={search}
-          onChange={(ev) => setSearch(ev.target.value)}
-        />
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <Input.Search
+            allowClear
+            placeholder="Search by name, role or department"
+            style={{ width: 280 }}
+            value={search}
+            onChange={(ev) => setSearch(ev.target.value)}
+          />
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 2,
+              padding: 2,
+              borderRadius: 8,
+              border: `1px solid ${token.colorBorderSecondary}`,
+              background: token.colorBgContainer,
+            }}
+          >
+            <Tooltip title="Zoom out">
+              <Button
+                type="text"
+                size="small"
+                aria-label="Zoom out"
+                disabled={zoom <= ZOOM_MIN}
+                onClick={() => setZoom((z) => clampZoom(z - ZOOM_STEP))}
+                icon={<MIcon name="remove" size={16} />}
+              />
+            </Tooltip>
+            <Tooltip title="Reset zoom">
+              <Button
+                type="text"
+                size="small"
+                onClick={() => setZoom(1)}
+                style={{
+                  minWidth: 46,
+                  fontVariantNumeric: "tabular-nums",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: token.colorTextSecondary,
+                }}
+              >
+                {Math.round(zoom * 100)}%
+              </Button>
+            </Tooltip>
+            <Tooltip title="Zoom in">
+              <Button
+                type="text"
+                size="small"
+                aria-label="Zoom in"
+                disabled={zoom >= ZOOM_MAX}
+                onClick={() => setZoom((z) => clampZoom(z + ZOOM_STEP))}
+                icon={<MIcon name="add" size={16} />}
+              />
+            </Tooltip>
+          </div>
+        </div>
       </div>
-
-      {isHrAdmin ? (
-        <Alert
-          type="info"
-          showIcon
-          icon={<InfoCircleOutlined />}
-          style={{ margin: "0 20px 8px" }}
-          message="Drag to reorganize · right-click for tools"
-          description="Drag a card onto a manager to make them report to that manager. Right-click any card to change manager, set cubes, or check performance. Card border colour reflects their cubes score."
-        />
-      ) : null}
 
       {isError ? (
         <div style={{ padding: 20 }}>
@@ -452,21 +647,27 @@ export default function HrOrgChartPage() {
         </div>
       ) : (
         <div
+          ref={canvasRef}
           onDragOver={(ev) => {
-            if (dragId) ev.preventDefault();
+            if (dragIdRef.current) ev.preventDefault();
           }}
           onDrop={(ev) => {
-            // Drop on empty canvas → make top-level.
-            if (dragId) {
-              ev.preventDefault();
-              void reparent(dragId, null);
-              setDragId(null);
-            }
+            // Drop on EMPTY canvas → make top-level. Drops that land on a card
+            // stop propagation, so they never reach this handler.
+            const dragId = dragIdRef.current;
+            if (!dragId || ev.defaultPrevented) return;
+            ev.preventDefault();
+            reparent(dragId, null);
+            dragIdRef.current = null;
           }}
-          style={{ overflowX: "auto", padding: "22px 20px 40px" }}
+          style={{ overflow: "auto", padding: "22px 20px 40px" }}
         >
           <style>{ORG_CSS}</style>
-          <div className="org-tree">
+          {/* CSS `zoom` (not `transform: scale`) on purpose: zoom reflows, so the
+              scroll area grows with the tree and you can actually reach a card
+              that's off-screen at 150%. A transform would scale the paint only
+              and leave the scrollable extent at 100%. */}
+          <div className="org-tree" style={{ zoom }}>
             <ul>{roots.map(renderNode)}</ul>
           </div>
         </div>
@@ -504,6 +705,11 @@ export default function HrOrgChartPage() {
    inline-block so text-align:center on the <li> centres them over the subtree. */
 const ORG_CSS = `
 .org-tree { display: inline-block; min-width: 100%; text-align: center; --org-line: #c9ccd6; }
+/* Drop affordance — toggled by a data attribute straight on the node (not React
+   state), so hovering a target during a drag never re-renders the tree. */
+.org-card { transition: outline-color .12s ease, transform .12s ease; outline: 2px dashed transparent; outline-offset: 3px; }
+.org-card[data-drop="1"] { outline-color: #4a4ad0; transform: translateY(-2px); }
+.org-card[data-drop="1"] * { pointer-events: none; }
 .org-tree ul { display: flex; justify-content: center; list-style: none; margin: 0; padding: 30px 0 0; position: relative; }
 .org-tree li { list-style: none; position: relative; padding: 30px 16px 0; text-align: center; }
 /* connectors from each node up to its siblings' horizontal bar */

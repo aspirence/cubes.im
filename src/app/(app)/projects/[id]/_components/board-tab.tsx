@@ -62,6 +62,7 @@ import {
 } from "@/features/tasks/use-task-statuses";
 import { useTasksRealtime } from "@/features/tasks/use-tasks-realtime";
 import { useTaskDrawer } from "@/store/task-drawer-store";
+import { useCelebrateTaskDone } from "@/features/celebrations/use-celebrations";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
 import {
   MemberSelect,
@@ -903,6 +904,7 @@ export function BoardTab({ projectId }: { projectId: string }) {
   const { open } = useTaskDrawer();
 
   const statusesQuery = useTaskStatuses(projectId);
+  const celebrateTaskDone = useCelebrateTaskDone();
   const tasksQuery = useTasks(projectId);
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
@@ -1129,6 +1131,16 @@ export function BoardTab({ projectId }: { projectId: string }) {
       applyTaskOrder(old, updates),
     );
 
+    // Dragging into a done column is a completion — celebrate once the write
+    // lands (the cube award commits in the same transaction).
+    const statusList = statusesQuery.data ?? [];
+    const targetDone = Boolean(
+      statusList.find((st) => st.id === targetColumnId)?.category?.is_done,
+    );
+    const sourceDone = Boolean(
+      statusList.find((st) => st.id === sourceColumnId)?.category?.is_done,
+    );
+
     reorderTasks.mutate(
       { projectId, updates, rollback },
       {
@@ -1136,6 +1148,14 @@ export function BoardTab({ projectId }: { projectId: string }) {
           message.error(
             err instanceof Error ? err.message : "Couldn't move the task.",
           ),
+        onSuccess: () => {
+          if (statusChangedForMoved && targetDone && !sourceDone) {
+            celebrateTaskDone({
+              taskId: movedId,
+              taskName: taskById.get(movedId)?.name,
+            });
+          }
+        },
       },
     );
   };

@@ -6,7 +6,32 @@
  */
 
 export type CardKind = "chart" | "metric" | "tasks" | "activity" | "todo";
-export type ChartType = "donut" | "pie" | "bar" | "hbar" | "line" | "area";
+/**
+ * Every chart renders the SAME shape — one categorical series (`GroupDatum[]`:
+ * a label, a count, a colour per group). So the list below is only forms that
+ * are honest for that shape; anything needing a second dimension (scatter,
+ * grouped/stacked-by-subgroup, heatmap) is deliberately absent.
+ */
+export type ChartType =
+  // part-to-whole
+  | "donut"
+  | "pie"
+  | "rose"
+  | "treemap"
+  | "funnel"
+  | "stack"
+  // comparison
+  | "bar"
+  | "hbar"
+  | "lollipop"
+  | "polar"
+  | "radar"
+  // trend
+  | "line"
+  | "area"
+  // single ratio / accessible twin
+  | "gauge"
+  | "table";
 export type GroupBy =
   | "assignee"
   | "status"
@@ -30,6 +55,13 @@ export type MetricKind =
   | "completed-week"
   | "total";
 export type TaskScope = "team" | "me";
+/**
+ * Completion-window filter — the throughput axis. Where `due` asks "when is it
+ * planned", this asks "when did it actually get done": any value other than
+ * "any" narrows the card to tasks COMPLETED inside that window, which is what
+ * performance/velocity charts group ("completed this week by member").
+ */
+export type CompletedWithin = "any" | "today" | "week" | "month";
 
 export interface CardFilter {
   scope: TaskScope;
@@ -44,6 +76,12 @@ export interface CardFilter {
   due: DueFilter;
   /** false (default) = only open tasks; true = include completed. */
   includeCompleted: boolean;
+  /**
+   * When not "any", the card shows only tasks completed in this window —
+   * `includeCompleted` is moot in that mode (the population is completed tasks
+   * by definition). Optional so pre-existing stored layouts parse unchanged.
+   */
+  completedWithin?: CompletedWithin;
 }
 
 export interface DashboardCard {
@@ -96,13 +134,46 @@ export const CARD_KIND_OPTIONS: { value: CardKind; label: string }[] = [
   { value: "todo", label: "Personal to-dos" },
 ];
 
-export const CHART_TYPE_OPTIONS: { value: ChartType; label: string }[] = [
-  { value: "donut", label: "Donut" },
-  { value: "pie", label: "Pie" },
-  { value: "bar", label: "Bar (vertical)" },
-  { value: "hbar", label: "Bar (horizontal)" },
-  { value: "line", label: "Line" },
-  { value: "area", label: "Area" },
+/** The families the chart picker groups by — ordered as shown in the gallery. */
+export type ChartFamily = "Part to whole" | "Comparison" | "Trend" | "Single value";
+
+export interface ChartTypeOption {
+  value: ChartType;
+  label: string;
+  family: ChartFamily;
+  /** One line on what the form is for — shown under the preview. */
+  hint: string;
+  /** Reads poorly past this many groups; the picker warns rather than blocks. */
+  maxGroups?: number;
+}
+
+export const CHART_TYPE_OPTIONS: ChartTypeOption[] = [
+  // Part to whole
+  { value: "donut", label: "Donut", family: "Part to whole", hint: "Share of the total, with the count in the middle.", maxGroups: 6 },
+  { value: "pie", label: "Pie", family: "Part to whole", hint: "Share of the total. Best at a glance, not for close values.", maxGroups: 6 },
+  { value: "rose", label: "Rose", family: "Part to whole", hint: "Petals scale with the count — good when shares differ a lot.", maxGroups: 8 },
+  { value: "treemap", label: "Treemap", family: "Part to whole", hint: "Nested tiles by size — handles many groups without more colours." },
+  { value: "funnel", label: "Funnel", family: "Part to whole", hint: "Ordered stages, widest first. Pair with a Status grouping." },
+  { value: "stack", label: "Stacked bar", family: "Part to whole", hint: "One 100% bar — the whole split into its parts." },
+  // Comparison
+  { value: "bar", label: "Bar", family: "Comparison", hint: "Compare counts across groups. The safe default." },
+  { value: "hbar", label: "Horizontal bar", family: "Comparison", hint: "Like Bar, but reads long group names cleanly." },
+  { value: "lollipop", label: "Lollipop", family: "Comparison", hint: "A lighter bar — less ink when you have many groups." },
+  { value: "polar", label: "Radial bar", family: "Comparison", hint: "Bars wrapped into a circle. Compact and decorative.", maxGroups: 8 },
+  { value: "radar", label: "Radar", family: "Comparison", hint: "A shape across 3+ groups — shows a profile, not exact counts." },
+  // Trend
+  { value: "line", label: "Line", family: "Trend", hint: "A path across groups. Use when the order means something." },
+  { value: "area", label: "Area", family: "Trend", hint: "Line with a fill — emphasises the volume under it." },
+  // Single value
+  { value: "gauge", label: "Gauge", family: "Single value", hint: "The biggest group's share of the total, as one dial." },
+  { value: "table", label: "Table", family: "Single value", hint: "The numbers themselves — always readable, never colour-only." },
+];
+
+export const CHART_FAMILIES: ChartFamily[] = [
+  "Part to whole",
+  "Comparison",
+  "Trend",
+  "Single value",
 ];
 
 export const GROUP_BY_OPTIONS: { value: GroupBy; label: string }[] = [

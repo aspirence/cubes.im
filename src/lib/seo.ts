@@ -78,10 +78,14 @@ export const organizationLd = {
   "@type": "Organization",
   "@id": `${SITE_URL}/#organization`,
   name: SITE_NAME,
+  legalName: "Aspirence Worldwide Private Limited",
   url: SITE_URL,
   logo: absolute("/brand/cubes.im_logo_big.png"),
   description: SITE_DESCRIPTION,
-  sameAs: ["https://github.com/aspirence/cubes.im"],
+  sameAs: [
+    "https://github.com/aspirence/cubes.im",
+    "https://www.aspirence.com/",
+  ],
 };
 
 export const websiteLd = {

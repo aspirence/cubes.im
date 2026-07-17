@@ -8,26 +8,19 @@ import {
   Card,
   Col,
   Drawer,
-  Empty,
   Form,
   Input,
-  List,
   Popconfirm,
   Progress,
   Row,
-  Segmented,
   Select,
+  Skeleton,
   Space,
-  Spin,
   Tag,
+  Tooltip,
   Typography,
+  theme,
 } from "antd";
-import {
-  DeleteOutlined,
-  PlusOutlined,
-  RocketOutlined,
-  LogoutOutlined,
-} from "@ant-design/icons";
 import dayjs from "dayjs";
 import {
   useHrAccess,
@@ -49,12 +42,21 @@ import {
 } from "../_lib/form";
 import { EmployeeFormFields } from "../employees/_components/employee-form-fields";
 import { HrDocumentsWorkspace } from "../_components/documents-workspace";
+import { initials, statusColor, statusLabel } from "../_lib/labels";
 
 const { Title, Text } = Typography;
 
+function MIcon({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
+  return (
+    <span className="material-symbols-rounded" aria-hidden style={{ fontSize: size, lineHeight: 1, color }}>
+      {name}
+    </span>
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /* Loosely-typed view of the contract row so this page stays TS-sound          */
-/* regardless of the exact shape Agent A's hooks return.                       */
+/* regardless of the exact shape the hooks return.                             */
 /* -------------------------------------------------------------------------- */
 
 type OnboardingKind = "onboarding" | "offboarding";
@@ -71,24 +73,30 @@ interface OnboardingTaskRow {
   completed_at: string | null;
 }
 
-const STATUS_OPTIONS: { label: string; value: TaskStatus }[] = [
-  { label: "Pending", value: "pending" },
-  { label: "In progress", value: "in_progress" },
-  { label: "Done", value: "done" },
-];
-
-const STATUS_COLOR: Record<TaskStatus, string> = {
-  pending: "default",
-  in_progress: "blue",
-  done: "green",
+/** Per-kind identity: glyph + tint drive the card header and progress ring. */
+const KIND_META: Record<
+  OnboardingKind,
+  { title: string; icon: string; tint: string; blurb: string }
+> = {
+  onboarding: {
+    title: "Onboarding",
+    icon: "rocket_launch",
+    tint: "#4a4ad0",
+    blurb: "From offer to productive — everything day one needs.",
+  },
+  offboarding: {
+    title: "Offboarding",
+    icon: "waving_hand",
+    tint: "#d9480f",
+    blurb: "A clean exit — access, assets and handover.",
+  },
 };
 
-function statusTag(status: string) {
-  const color = STATUS_COLOR[status as TaskStatus] ?? "default";
-  const label =
-    STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status;
-  return <Tag color={color}>{label}</Tag>;
-}
+const STATUS_META: Record<TaskStatus, { label: string; dot: string }> = {
+  pending: { label: "Pending", dot: "#9aa0ad" },
+  in_progress: { label: "In progress", dot: "#3d7de0" },
+  done: { label: "Done", dot: "#2f8f5f" },
+};
 
 function friendlyError(err: unknown, fallback: string): string {
   const msg =
@@ -106,20 +114,17 @@ function friendlyError(err: unknown, fallback: string): string {
 function ChecklistSection({
   employeeId,
   kind,
-  title,
-  icon,
   tasks,
   loading,
   canEdit,
 }: {
   employeeId: string;
   kind: OnboardingKind;
-  title: string;
-  icon: React.ReactNode;
   tasks: OnboardingTaskRow[];
   loading: boolean;
   canEdit: boolean;
 }) {
+  const { token } = theme.useToken();
   const { message } = App.useApp();
   const [newTitle, setNewTitle] = useState("");
 
@@ -128,9 +133,21 @@ function ChecklistSection({
   const deleteTask = useDeleteOnboardingTask();
   const seed = useSeedChecklist();
 
+  const meta = KIND_META[kind];
   const done = tasks.filter((t) => t.status === "done").length;
+  const inProgress = tasks.filter((t) => t.status === "in_progress").length;
   const total = tasks.length;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  const statusOptions = (Object.keys(STATUS_META) as TaskStatus[]).map((s) => ({
+    value: s,
+    label: (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <span style={{ width: 8, height: 8, borderRadius: 999, background: STATUS_META[s].dot, flex: "none" }} />
+        {STATUS_META[s].label}
+      </span>
+    ),
+  }));
 
   const handleAdd = async () => {
     const value = newTitle.trim();
@@ -169,122 +186,220 @@ function ChecklistSection({
   };
 
   return (
-    <Card
-      title={
-        <Space>
-          {icon}
-          {title}
-        </Space>
-      }
-      extra={
-        total > 0 ? (
-          <Text type="secondary">
-            {done}/{total} done
-          </Text>
-        ) : null
-      }
+    <div
+      style={{
+        background: token.colorBgContainer,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        borderRadius: 14,
+        overflow: "hidden",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+      }}
     >
-      {total > 0 ? (
-        <Progress
-          percent={pct}
-          size="small"
-          status={pct === 100 ? "success" : "active"}
-          style={{ marginBottom: 12 }}
-        />
-      ) : null}
-
-      {loading ? (
-        <div style={{ display: "flex", justifyContent: "center", padding: 24 }}>
-          <Spin />
-        </div>
-      ) : total === 0 ? (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={`No ${title.toLowerCase()} tasks yet`}
+      {/* Header — tinted identity + progress ring */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "14px 16px",
+          borderBottom: `1px solid ${token.colorSplit}`,
+          background: `color-mix(in srgb, ${meta.tint} 4%, transparent)`,
+        }}
+      >
+        <span
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 11,
+            flex: "none",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: `color-mix(in srgb, ${meta.tint} 12%, transparent)`,
+          }}
         >
-          {canEdit ? (
-            <Button
-              icon={<PlusOutlined />}
-              onClick={handleSeed}
-              loading={seed.isPending}
+          <MIcon name={meta.icon} size={20} color={meta.tint} />
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: token.colorText }}>
+            {meta.title}
+          </div>
+          <div style={{ fontSize: 12, color: token.colorTextTertiary }}>
+            {total > 0 ? (
+              <>
+                {done} of {total} done
+                {inProgress > 0 ? ` · ${inProgress} in progress` : ""}
+              </>
+            ) : (
+              meta.blurb
+            )}
+          </div>
+        </div>
+        {total > 0 ? (
+          <Progress
+            type="circle"
+            size={46}
+            percent={pct}
+            strokeColor={meta.tint}
+            strokeWidth={9}
+            format={(p) => (
+              <span style={{ fontSize: 12, fontWeight: 700, color: token.colorText }}>{p}%</span>
+            )}
+          />
+        ) : null}
+      </div>
+
+      {/* Body */}
+      <div style={{ flex: 1, padding: total === 0 && !loading ? 0 : "6px 8px" }}>
+        {loading ? (
+          <div style={{ padding: 16 }}>
+            <Skeleton active paragraph={{ rows: 4 }} />
+          </div>
+        ) : total === 0 ? (
+          <div style={{ textAlign: "center", padding: "36px 20px 40px" }}>
+            <span
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: 16,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: `color-mix(in srgb, ${meta.tint} 10%, transparent)`,
+              }}
             >
-              Generate default checklist
-            </Button>
-          ) : null}
-        </Empty>
-      ) : (
-        <List<OnboardingTaskRow>
-          dataSource={tasks}
-          renderItem={(t) => (
-            <List.Item
-              actions={
-                canEdit
-                  ? [
-                      <Segmented<TaskStatus>
-                        key="status"
-                        size="small"
-                        value={t.status as TaskStatus}
-                        options={STATUS_OPTIONS}
-                        onChange={(value) => handleStatus(t.id, value)}
-                      />,
-                      <Popconfirm
-                        key="delete"
-                        title="Delete this task?"
-                        okText="Delete"
-                        okButtonProps={{ danger: true }}
-                        cancelText="Keep"
-                        onConfirm={() => handleDelete(t.id)}
-                      >
-                        <Button
-                          type="text"
-                          danger
-                          size="small"
-                          icon={<DeleteOutlined />}
-                        />
-                      </Popconfirm>,
-                    ]
-                  : [statusTag(t.status)]
-              }
-            >
-              <List.Item.Meta
-                title={
-                  <Text
-                    delete={t.status === "done"}
-                    type={t.status === "done" ? "secondary" : undefined}
+              <MIcon name={meta.icon} size={26} color={meta.tint} />
+            </span>
+            <div style={{ marginTop: 12, fontSize: 13.5, fontWeight: 600, color: token.colorText }}>
+              No {meta.title.toLowerCase()} tasks yet
+            </div>
+            <div style={{ margin: "4px auto 14px", fontSize: 12.5, color: token.colorTextTertiary, maxWidth: 260 }}>
+              {meta.blurb}
+            </div>
+            {canEdit ? (
+              <Button
+                icon={<MIcon name="playlist_add_check" size={17} />}
+                onClick={handleSeed}
+                loading={seed.isPending}
+              >
+                Generate default checklist
+              </Button>
+            ) : null}
+          </div>
+        ) : (
+          tasks.map((t) => {
+            const isDone = t.status === "done";
+            const due = t.due_date ? dayjs(t.due_date) : null;
+            const overdue = due ? due.isBefore(dayjs().startOf("day")) && !isDone : false;
+            return (
+              <div key={t.id} className="ob-row">
+                {/* Done toggle — one click completes, another reopens. */}
+                <Tooltip title={isDone ? "Reopen" : "Mark done"}>
+                  <button
+                    type="button"
+                    className={`ob-check${isDone ? " on" : ""}`}
+                    disabled={!canEdit}
+                    onClick={() => handleStatus(t.id, isDone ? "pending" : "done")}
+                    aria-label={isDone ? "Reopen task" : "Mark task done"}
+                    style={{ ["--tint" as string]: meta.tint }}
+                  >
+                    <MIcon name={isDone ? "check_circle" : "radio_button_unchecked"} size={20} />
+                  </button>
+                </Tooltip>
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: 13.5,
+                      fontWeight: 550,
+                      color: isDone ? token.colorTextTertiary : token.colorText,
+                      textDecoration: isDone ? "line-through" : undefined,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={t.title}
                   >
                     {t.title}
-                  </Text>
-                }
-                description={
-                  t.due_date
-                    ? `Due ${dayjs(t.due_date).format("MMM D, YYYY")}`
-                    : null
-                }
-              />
-            </List.Item>
-          )}
-        />
-      )}
+                  </div>
+                  {due ? (
+                    <div
+                      style={{
+                        marginTop: 1,
+                        fontSize: 11.5,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        color: overdue ? token.colorError : token.colorTextTertiary,
+                      }}
+                    >
+                      <MIcon name="event" size={12} />
+                      {due.format("MMM D, YYYY")}
+                      {overdue ? " · overdue" : ""}
+                    </div>
+                  ) : null}
+                </div>
 
+                {canEdit ? (
+                  <>
+                    <Select<TaskStatus>
+                      size="small"
+                      variant="filled"
+                      value={t.status as TaskStatus}
+                      options={statusOptions}
+                      onChange={(v) => handleStatus(t.id, v)}
+                      popupMatchSelectWidth={false}
+                      suffixIcon={null}
+                      style={{ width: 120, flex: "none" }}
+                    />
+                    <Popconfirm
+                      title="Delete this task?"
+                      okText="Delete"
+                      okButtonProps={{ danger: true }}
+                      cancelText="Keep"
+                      onConfirm={() => handleDelete(t.id)}
+                    >
+                      <button type="button" className="ob-del" aria-label="Delete task">
+                        <MIcon name="delete" size={16} />
+                      </button>
+                    </Popconfirm>
+                  </>
+                ) : (
+                  <Tag style={{ margin: 0 }} color={isDone ? "green" : t.status === "in_progress" ? "blue" : undefined}>
+                    {STATUS_META[(t.status as TaskStatus) ?? "pending"]?.label ?? t.status}
+                  </Tag>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Composer */}
       {canEdit && total > 0 ? (
-        <Space.Compact style={{ width: "100%", marginTop: 12 }}>
-          <Input
-            placeholder="Add a task…"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            onPressEnter={handleAdd}
-          />
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={handleAdd}
-            loading={createTask.isPending}
-          >
-            Add
-          </Button>
-        </Space.Compact>
+        <div style={{ padding: "10px 12px 12px", borderTop: `1px solid ${token.colorSplit}` }}>
+          <Space.Compact style={{ width: "100%" }}>
+            <Input
+              placeholder={`Add ${meta.title.toLowerCase()} task…`}
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              onPressEnter={handleAdd}
+              prefix={<MIcon name="add_task" size={16} color={token.colorTextTertiary} />}
+            />
+            <Button
+              type="primary"
+              onClick={handleAdd}
+              loading={createTask.isPending}
+              disabled={!newTitle.trim()}
+            >
+              Add
+            </Button>
+          </Space.Compact>
+        </div>
       ) : null}
-    </Card>
+    </div>
   );
 }
 
@@ -293,6 +408,7 @@ function ChecklistSection({
 /* ========================================================================== */
 
 export default function HrOnboardingPage() {
+  const { token } = theme.useToken();
   const { message } = App.useApp();
   const { isHrAdmin } = useHrAccess();
   const {
@@ -309,6 +425,10 @@ export default function HrOnboardingPage() {
   const [form] = Form.useForm<EmployeeFormValues>();
 
   const employees = useMemo(() => employeesData ?? [], [employeesData]);
+  const selected = useMemo(
+    () => employees.find((e) => e.id === employeeId),
+    [employees, employeeId],
+  );
 
   const employeeOptions = useMemo(
     () =>
@@ -321,7 +441,10 @@ export default function HrOnboardingPage() {
 
   const { data: tasksData, isLoading: tasksLoading } =
     useOnboardingTasks(employeeId);
-  const tasks = (tasksData ?? []) as unknown as OnboardingTaskRow[];
+  const tasks = useMemo(
+    () => (tasksData ?? []) as unknown as OnboardingTaskRow[],
+    [tasksData],
+  );
 
   const onboarding = useMemo(
     () =>
@@ -365,101 +488,171 @@ export default function HrOnboardingPage() {
 
   return (
     <>
+      <style>{OB_CSS(token)}</style>
       <Card>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: 12,
-          marginBottom: 16,
-        }}
-      >
-        <div>
-          <Title level={4} style={{ margin: 0 }}>
-            Onboarding, offboarding &amp; documents
-          </Title>
-          <Text type="secondary">
-            Manage employee checklists, offer letters, contracts, and generated documents from one workspace.
-          </Text>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 12,
+            marginBottom: 16,
+          }}
+        >
+          <div>
+            <Title level={4} style={{ margin: 0 }}>
+              Onboarding, offboarding &amp; documents
+            </Title>
+            <Text type="secondary">
+              Manage employee checklists, offer letters, contracts, and generated documents from one workspace.
+            </Text>
+          </div>
+          <Space wrap>
+            <Select
+              showSearch
+              allowClear
+              placeholder="Select an employee"
+              style={{ minWidth: 260 }}
+              loading={employeesLoading}
+              value={employeeId}
+              onChange={(value) => setEmployeeId(value)}
+              options={employeeOptions}
+              optionFilterProp="label"
+            />
+            {isHrAdmin ? (
+              <Button
+                type="primary"
+                icon={<MIcon name="person_add" size={17} />}
+                onClick={openCreateEmployee}
+              >
+                Add employee
+              </Button>
+            ) : null}
+          </Space>
         </div>
-        <Space wrap>
-          <Select
-            showSearch
-            allowClear
-            placeholder="Select an employee"
-            style={{ minWidth: 260 }}
-            loading={employeesLoading}
-            value={employeeId}
-            onChange={(value) => setEmployeeId(value)}
-            options={employeeOptions}
-            optionFilterProp="label"
+
+        {!isHrAdmin ? (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="Read-only"
+            description="You can view checklists, but only HR admins can edit them."
           />
-          {isHrAdmin ? (
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={openCreateEmployee}
+        ) : null}
+
+        {isError ? (
+          <Alert
+            type="error"
+            showIcon
+            message="Failed to load employees"
+            description={
+              error instanceof Error ? error.message : "Please try again."
+            }
+          />
+        ) : !employeeId ? (
+          <div style={{ textAlign: "center", padding: "44px 20px 48px" }}>
+            <span
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: 18,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: token.colorPrimaryBg,
+              }}
             >
-              Add employee
-            </Button>
-          ) : null}
-        </Space>
-      </div>
+              <MIcon name="badge" size={28} color="#4a4ad0" />
+            </span>
+            <div style={{ marginTop: 14, fontSize: 15, fontWeight: 600, color: token.colorText }}>
+              Pick an employee to get started
+            </div>
+            <div style={{ margin: "4px auto 0", fontSize: 13, color: token.colorTextTertiary, maxWidth: 340 }}>
+              Their onboarding and offboarding checklists, plus letters and
+              documents, all live here.
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 16 }}>
+            {/* Who we're working on — identity strip */}
+            {selected ? (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: `1px solid ${token.colorBorderSecondary}`,
+                  background: token.colorFillQuaternary,
+                  flexWrap: "wrap",
+                }}
+              >
+                <span
+                  style={{
+                    width: 42,
+                    height: 42,
+                    borderRadius: 999,
+                    flex: "none",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 14,
+                    fontWeight: 700,
+                    color: "#4a4ad0",
+                    background: token.colorPrimaryBg,
+                  }}
+                >
+                  {initials(selected.full_name)}
+                </span>
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <div style={{ fontSize: 14.5, fontWeight: 700, color: token.colorText }}>
+                    {selected.full_name}
+                  </div>
+                  <div style={{ fontSize: 12.5, color: token.colorTextTertiary }}>
+                    {[selected.designation?.title, selected.department?.name]
+                      .filter(Boolean)
+                      .join(" · ") || "—"}
+                  </div>
+                </div>
+                {selected.date_of_joining ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, color: token.colorTextSecondary }}>
+                    <MIcon name="calendar_month" size={15} color={token.colorTextTertiary} />
+                    Joined {dayjs(selected.date_of_joining).format("MMM D, YYYY")}
+                  </span>
+                ) : null}
+                {selected.status ? (
+                  <Tag color={statusColor(selected.status)} style={{ margin: 0 }}>
+                    {statusLabel(selected.status)}
+                  </Tag>
+                ) : null}
+              </div>
+            ) : null}
 
-      {!isHrAdmin ? (
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 16 }}
-          message="Read-only"
-          description="You can view checklists, but only HR admins can edit them."
-        />
-      ) : null}
-
-      {isError ? (
-        <Alert
-          type="error"
-          showIcon
-          message="Failed to load employees"
-          description={
-            error instanceof Error ? error.message : "Please try again."
-          }
-        />
-      ) : !employeeId ? (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="Select an employee to view their checklists"
-        />
-      ) : (
-        <div style={{ display: "grid", gap: 16 }}>
-          <Row gutter={[16, 16]}>
-            <Col xs={24} lg={12}>
-              <ChecklistSection
-                employeeId={employeeId}
-                kind="onboarding"
-                title="Onboarding"
-                icon={<RocketOutlined />}
-                tasks={onboarding}
-                loading={tasksLoading}
-                canEdit={isHrAdmin}
-              />
-            </Col>
-            <Col xs={24} lg={12}>
-              <ChecklistSection
-                employeeId={employeeId}
-                kind="offboarding"
-                title="Offboarding"
-                icon={<LogoutOutlined />}
-                tasks={offboarding}
-                loading={tasksLoading}
-                canEdit={isHrAdmin}
-              />
-            </Col>
-          </Row>
-        </div>
-      )}
+            <Row gutter={[16, 16]}>
+              <Col xs={24} lg={12}>
+                <ChecklistSection
+                  employeeId={employeeId}
+                  kind="onboarding"
+                  tasks={onboarding}
+                  loading={tasksLoading}
+                  canEdit={isHrAdmin}
+                />
+              </Col>
+              <Col xs={24} lg={12}>
+                <ChecklistSection
+                  employeeId={employeeId}
+                  kind="offboarding"
+                  tasks={offboarding}
+                  loading={tasksLoading}
+                  canEdit={isHrAdmin}
+                />
+              </Col>
+            </Row>
+          </div>
+        )}
       </Card>
 
       {isHrAdmin ? (
@@ -507,4 +700,22 @@ export default function HrOnboardingPage() {
       </Drawer>
     </>
   );
+}
+
+/** Row/checkbox chrome shared by both checklist cards. */
+function OB_CSS(token: ReturnType<typeof theme.useToken>["token"]): string {
+  return `
+  .ob-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;transition:background .12s;}
+  .ob-row:hover{background:${token.colorFillQuaternary};}
+  .ob-row + .ob-row{margin-top:1px;}
+
+  .ob-check{display:inline-flex;align-items:center;justify-content:center;flex:none;border:none;background:transparent;padding:2px;cursor:pointer;color:${token.colorTextQuaternary};transition:color .12s,transform .12s;}
+  .ob-check:hover:not(:disabled){color:var(--tint);transform:scale(1.08);}
+  .ob-check.on{color:var(--tint);}
+  .ob-check:disabled{cursor:default;}
+
+  .ob-del{display:inline-flex;align-items:center;justify-content:center;flex:none;border:none;background:transparent;padding:4px;border-radius:7px;cursor:pointer;color:${token.colorTextQuaternary};opacity:0;transition:opacity .12s,color .12s,background .12s;}
+  .ob-row:hover .ob-del{opacity:1;}
+  .ob-del:hover{color:${token.colorError};background:${token.colorErrorBg};}
+  `;
 }

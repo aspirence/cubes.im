@@ -42,6 +42,7 @@ import {
   renderLetterDocument,
 } from "@/features/hr/letters";
 import { useHrAccess, useHrEmployees } from "@/features/hr/use-hr";
+import { initials } from "../_lib/labels";
 import {
   useCreateLetterTemplate,
   useDeleteGeneratedDocument,
@@ -56,7 +57,7 @@ import {
   type HrLetterTemplateRow,
 } from "@/features/hr/use-letters";
 
-const { Title, Text, Paragraph } = Typography;
+const { Title, Text } = Typography;
 
 type TemplateFormValues = {
   name: string;
@@ -85,6 +86,31 @@ type HrDocumentsWorkspaceProps = {
   hideEmployeeSelector?: boolean;
   defaultDocumentType?: HrLetterDocumentType;
 };
+
+function MIcon({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
+  return (
+    <span className="material-symbols-rounded" aria-hidden style={{ fontSize: size, lineHeight: 1, color }}>
+      {name}
+    </span>
+  );
+}
+
+/** Glyph + tint per document type — drives template/document identity chips. */
+const DOC_TYPE_META: Record<string, { icon: string; tint: string }> = {
+  offer_letter: { icon: "mail", tint: "#4a4ad0" },
+  appointment_letter: { icon: "badge", tint: "#0b7285" },
+  experience_letter: { icon: "workspace_premium", tint: "#2b8a3e" },
+  relieving_letter: { icon: "waving_hand", tint: "#d9480f" },
+  salary_certificate: { icon: "payments", tint: "#5f3dc4" },
+  nda: { icon: "lock", tint: "#862e9c" },
+  internship_letter: { icon: "school", tint: "#1c7ed6" },
+  warning_letter: { icon: "warning", tint: "#c0453c" },
+  custom: { icon: "description", tint: "#6a6d78" },
+};
+
+function docTypeMeta(type: string | null | undefined) {
+  return DOC_TYPE_META[type ?? "custom"] ?? DOC_TYPE_META.custom;
+}
 
 function errorMessage(error: unknown, fallback: string): string {
   const msg = error instanceof Error ? error.message : String(error ?? "");
@@ -352,6 +378,7 @@ export function HrDocumentsWorkspace({
   defaultDocumentType,
 }: HrDocumentsWorkspaceProps) {
   const { message } = App.useApp();
+  const { token } = theme.useToken();
   const { isHrAdmin, isLoading: accessLoading } = useHrAccess();
   const { data: userOrg } = useUserOrg();
   const { data: employees, isLoading: employeesLoading } = useHrEmployees();
@@ -367,16 +394,19 @@ export function HrDocumentsWorkspace({
   );
   const [preview, setPreview] = useState<PreviewState | null>(null);
 
-  useEffect(() => {
-    if (hideEmployeeSelector) {
-      setLocalEmployeeId(selectedEmployeeId);
-    }
-  }, [hideEmployeeSelector, selectedEmployeeId]);
+  // Keep the local pick in step with the host page's selection while our own
+  // selector is hidden, so un-hiding it later starts from the right employee.
+  // Render-time sync (not an effect): setState-in-effect double-renders.
+  const [syncedSel, setSyncedSel] = useState(selectedEmployeeId);
+  if (hideEmployeeSelector && syncedSel !== selectedEmployeeId) {
+    setSyncedSel(selectedEmployeeId);
+    setLocalEmployeeId(selectedEmployeeId);
+  }
 
   const effectiveEmployeeId = hideEmployeeSelector
     ? selectedEmployeeId
     : localEmployeeId;
-  const employeeList = employees ?? [];
+  const employeeList = useMemo(() => employees ?? [], [employees]);
 
   const selectedEmployee = useMemo(() => {
     const base = employeeList.find(
@@ -562,29 +592,62 @@ export function HrDocumentsWorkspace({
         </div>
 
         {selectedEmployee ? (
-          <Card
-            size="small"
-            style={{ marginBottom: 20, borderRadius: 12 }}
-            title={selectedEmployee.full_name}
-            extra={
-              <Space size={[8, 8]} wrap>
-                <Tag>{selectedEmployee.designation?.title ?? "No designation"}</Tag>
-                <Tag>{selectedEmployee.department?.name ?? "No department"}</Tag>
-                {selectedEmployee.date_of_joining ? (
-                  <Tag>
-                    Joined{" "}
-                    {dayjs(selectedEmployee.date_of_joining).format("MMM D, YYYY")}
-                  </Tag>
-                ) : null}
-              </Space>
-            }
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+              padding: "12px 14px",
+              marginBottom: 20,
+              borderRadius: 12,
+              border: `1px solid ${token.colorBorderSecondary}`,
+              background: token.colorFillQuaternary,
+            }}
           >
-            <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              Generated letters will use this employee&apos;s profile, reporting
-              manager, designation, department, and organization details as merge
-              variables.
-            </Paragraph>
-          </Card>
+            <span
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 999,
+                flex: "none",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 14,
+                fontWeight: 700,
+                color: "#4a4ad0",
+                background: token.colorPrimaryBg,
+              }}
+            >
+              {initials(selectedEmployee.full_name)}
+            </span>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontSize: 14.5, fontWeight: 700, color: token.colorText }}>
+                {selectedEmployee.full_name}
+              </div>
+              <div style={{ fontSize: 12.5, color: token.colorTextTertiary }}>
+                {[selectedEmployee.designation?.title, selectedEmployee.department?.name]
+                  .filter(Boolean)
+                  .join(" · ") || "—"}
+                {" · "}letters merge their profile, manager and org details automatically
+              </div>
+            </div>
+            {selectedEmployee.date_of_joining ? (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  fontSize: 12.5,
+                  color: token.colorTextSecondary,
+                }}
+              >
+                <MIcon name="calendar_month" size={15} color={token.colorTextTertiary} />
+                Joined {dayjs(selectedEmployee.date_of_joining).format("MMM D, YYYY")}
+              </span>
+            ) : null}
+          </div>
         ) : (
           <Alert
             type="info"
@@ -599,6 +662,10 @@ export function HrDocumentsWorkspace({
           />
         )}
 
+        {/* Template library + generated documents only make sense inside an
+            employee context — without one, generation is impossible and the
+            panels would just be dead chrome. */}
+        {effectiveEmployeeId ? (
         <Row gutter={[16, 16]}>
           <Col xs={24} xl={11}>
             <Card
@@ -727,24 +794,62 @@ export function HrDocumentsWorkspace({
                       ]}
                     >
                       <List.Item.Meta
+                        avatar={
+                          <span
+                            style={{
+                              width: 38,
+                              height: 38,
+                              borderRadius: 11,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              background: `color-mix(in srgb, ${docTypeMeta(template.document_type).tint} 11%, transparent)`,
+                            }}
+                          >
+                            <MIcon
+                              name={docTypeMeta(template.document_type).icon}
+                              size={19}
+                              color={docTypeMeta(template.document_type).tint}
+                            />
+                          </span>
+                        }
                         title={
                           <Space size={[8, 8]} wrap>
-                            <span>{template.name}</span>
-                            <Tag color="blue">
+                            <span style={{ fontWeight: 600 }}>{template.name}</span>
+                            <Tag
+                              style={{ margin: 0 }}
+                              color={template.is_default ? "geekblue" : undefined}
+                            >
                               {formatHrDocumentType(template.document_type)}
                             </Tag>
-                            {!template.is_active ? <Tag>Inactive</Tag> : null}
+                            {!template.is_active ? <Tag style={{ margin: 0 }}>Inactive</Tag> : null}
                           </Space>
                         }
                         description={
                           <div>
-                            <div style={{ marginBottom: 6 }}>
+                            <div style={{ marginBottom: 6, fontSize: 12.5 }}>
                               {template.title_template}
                             </div>
-                            <Text type="secondary">
-                              {template.body_template.slice(0, 180)}
-                              {template.body_template.length > 180 ? "..." : ""}
-                            </Text>
+                            {/* The template body reads as a document — set it on
+                                paper, not as a grey blob of UI text. */}
+                            <div
+                              style={{
+                                padding: "8px 11px",
+                                borderRadius: 9,
+                                background: token.colorFillQuaternary,
+                                border: `1px solid ${token.colorSplit}`,
+                                fontSize: 12,
+                                lineHeight: 1.55,
+                                color: token.colorTextTertiary,
+                                display: "-webkit-box",
+                                WebkitLineClamp: 3,
+                                WebkitBoxOrient: "vertical",
+                                overflow: "hidden",
+                              }}
+                            >
+                              {template.body_template.slice(0, 260)}
+                              {template.body_template.length > 260 ? "…" : ""}
+                            </div>
                           </div>
                         }
                       />
@@ -831,26 +936,55 @@ export function HrDocumentsWorkspace({
                     ]}
                   >
                     <List.Item.Meta
-                      avatar={<FileTextOutlined style={{ fontSize: 18 }} />}
+                      avatar={
+                        <span
+                          style={{
+                            width: 38,
+                            height: 38,
+                            borderRadius: 11,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            background: `color-mix(in srgb, ${docTypeMeta(document.document_type).tint} 11%, transparent)`,
+                          }}
+                        >
+                          <MIcon
+                            name={docTypeMeta(document.document_type).icon}
+                            size={19}
+                            color={docTypeMeta(document.document_type).tint}
+                          />
+                        </span>
+                      }
                       title={
                         <Space size={[8, 8]} wrap>
-                          <span>{document.title}</span>
-                          <Tag color="blue">
+                          <span style={{ fontWeight: 600 }}>{document.title}</span>
+                          <Tag style={{ margin: 0 }} color="geekblue">
                             {formatHrDocumentType(document.document_type)}
                           </Tag>
-                          <Tag>{document.employee?.full_name ?? "Employee"}</Tag>
+                          {document.status === "generated" ? (
+                            <Tag style={{ margin: 0 }} color="green">
+                              Ready
+                            </Tag>
+                          ) : (
+                            <Tag style={{ margin: 0 }}>{document.status}</Tag>
+                          )}
                         </Space>
                       }
                       description={
-                        <Space split={<Divider type="vertical" />} size={0} wrap>
-                          <Text type="secondary">
-                            Generated{" "}
+                        <Space size={[6, 4]} wrap style={{ fontSize: 12.5 }}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: token.colorTextSecondary }}>
+                            <MIcon name="person" size={14} color={token.colorTextTertiary} />
+                            {document.employee?.full_name ?? "Employee"}
+                          </span>
+                          <Divider type="vertical" style={{ margin: 0 }} />
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: token.colorTextTertiary }}>
+                            <MIcon name="schedule" size={14} color={token.colorTextQuaternary} />
                             {dayjs(document.created_at).format("MMM D, YYYY h:mm A")}
-                          </Text>
-                          <Text type="secondary">
-                            Template {document.template_name}
-                          </Text>
-                          <Text type="secondary">Status {document.status}</Text>
+                          </span>
+                          <Divider type="vertical" style={{ margin: 0 }} />
+                          <span style={{ color: token.colorTextTertiary }}>
+                            from {document.template_name}
+                          </span>
                         </Space>
                       }
                     />
@@ -860,6 +994,7 @@ export function HrDocumentsWorkspace({
             </Card>
           </Col>
         </Row>
+        ) : null}
       </Card>
 
       <TemplateEditor

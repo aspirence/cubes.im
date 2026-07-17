@@ -47,6 +47,7 @@ import { ProjectsSidebar } from "./projects/_components/projects-sidebar";
 import { AppCenterSidebar } from "./apps/_components/app-center-sidebar";
 import { ChatSidebar } from "./chat/_components/chat-sidebar";
 import { CreateTaskModal } from "@/features/tasks/create-task-modal";
+import { CelebrationOverlay } from "@/features/celebrations/celebration-overlay";
 
 /** Material Symbols Rounded glyph. */
 function MIcon({ name, size = 20 }: { name: string; size?: number }) {
@@ -1218,6 +1219,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           open={createTaskOpen}
           onClose={() => setCreateTaskOpen(false)}
         />
+
+        {/* Success celebrations — single global mount; any screen enqueues. */}
+        <CelebrationOverlay />
 
         {/* Section sub-nav (mobile): horizontal pills above content */}
         {sectionNav && !sectionNav.custom && isMobile ? (

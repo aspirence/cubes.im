@@ -1,12 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   App,
   Avatar,
   Empty,
   Input,
-  Segmented,
   Skeleton,
   Space,
   theme,
@@ -32,6 +31,8 @@ import {
   type FilterField,
   type FilterValues,
 } from "@/components/filters/filter-control";
+import { GroupControl } from "@/components/filters/group-control";
+import { useViewToolbarSlot } from "./view-toolbar-slot";
 
 type GroupBy = "status" | "priority" | "assignee";
 
@@ -556,10 +557,13 @@ export function TaskListTab({ projectId }: { projectId: string }) {
 
   const createTask = useCreateTask();
 
-  const allTasks = tasksQuery.data ?? [];
-  const statuses = statusesQuery.data ?? [];
-  const priorities = prioritiesQuery.data ?? [];
-  const labels = labelsQuery.data ?? [];
+  // Memoised so they keep a stable identity across renders: these feed the
+  // `filterFields` memo, which in turn feeds the effect that publishes this
+  // view's toolbar — a fresh `[]` each render would republish on every render.
+  const allTasks = useMemo(() => tasksQuery.data ?? [], [tasksQuery.data]);
+  const statuses = useMemo(() => statusesQuery.data ?? [], [statusesQuery.data]);
+  const priorities = useMemo(() => prioritiesQuery.data ?? [], [prioritiesQuery.data]);
+  const labels = useMemo(() => labelsQuery.data ?? [], [labelsQuery.data]);
 
   const members = useMemo(
     () =>
@@ -570,6 +574,7 @@ export function TaskListTab({ projectId }: { projectId: string }) {
   );
 
   const [groupBy, setGroupBy] = useState<GroupBy>("status");
+  const setToolbar = useViewToolbarSlot((s) => s.setNode);
   const [filters, setFilters] = useState<FilterValues>({});
 
   const filterFields = useMemo<FilterField[]>(
@@ -609,6 +614,33 @@ export function TaskListTab({ projectId }: { projectId: string }) {
     ],
     [statuses, priorities, labels, members],
   );
+
+  // Publish this view's controls onto the project tab bar. Re-runs whenever the
+  // controls' inputs change so the rendered node stays bound to current state;
+  // clearing on unmount is what empties the slot when another tab takes over.
+  useEffect(() => {
+    setToolbar(
+      <Space size={8}>
+        <GroupControl
+          value={groupBy}
+          onChange={(value) => setGroupBy(value as GroupBy)}
+          size="small"
+          options={[
+            { value: "status", label: "Status", icon: "adjust" },
+            { value: "priority", label: "Priority", icon: "flag" },
+            { value: "assignee", label: "Assignee", icon: "person" },
+          ]}
+        />
+        <FilterControl
+          fields={filterFields}
+          value={filters}
+          onChange={setFilters}
+          buttonSize="small"
+        />
+      </Space>,
+    );
+    return () => setToolbar(null);
+  }, [groupBy, filters, filterFields, setToolbar]);
 
   /* ----- client-side filtering (multi-value, AND across fields) ----- */
   const tasks = useMemo(() => {
@@ -767,34 +799,9 @@ export function TaskListTab({ projectId }: { projectId: string }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* Toolbar: group-by + count */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        <Space size={10} wrap>
-          <span style={{ fontSize: 13, color: T.textSecondary }}>Group by</span>
-          <Segmented<GroupBy>
-            value={groupBy}
-            onChange={(value) => setGroupBy(value)}
-            options={[
-              { label: "Status", value: "status" },
-              { label: "Priority", value: "priority" },
-              { label: "Assignee", value: "assignee" },
-            ]}
-          />
-          <FilterControl
-            fields={filterFields}
-            value={filters}
-            onChange={setFilters}
-            buttonSize="small"
-          />
-        </Space>
+      {/* Group-by + Filter live on the project tab bar (see ViewToolbarSlot);
+          only the count stays with the list. */}
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <span style={{ fontSize: 13, color: T.textSecondary }}>
           <span style={{ fontFamily: T.mono }}>
             {tasks.length === allTasks.length

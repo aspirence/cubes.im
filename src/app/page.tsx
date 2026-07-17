@@ -256,7 +256,7 @@ export default function Landing() {
         </Reveal>
         <div className="mfoot-word" aria-hidden>Cubes</div>
         <div className="mfoot-bar">
-          <span>© 2026 Cubes. All rights reserved.</span>
+          <span>© 2026 Cubes · Aspirence Worldwide Private Limited. All rights reserved.</span>
           <nav className="mfoot-legal">
             <a href="/manifesto">Manifesto</a>
             <a href="/terms">Terms of Service</a>
@@ -306,7 +306,7 @@ const CSS = `
 .btn.glass:hover{background:rgba(255,255,255,.24);}
 
 /* hero */
-.hero{position:relative;z-index:1;min-height:calc(100vh - 68px);overflow:hidden;}
+.hero{position:relative;z-index:1;min-height:calc(100vh - 68px);overflow:hidden;user-select:none;-webkit-user-select:none;}
 .hero-lines{position:absolute;inset:0;z-index:0;background:repeating-linear-gradient(90deg, rgba(20,26,46,.05) 0 1px, transparent 1px 122px);-webkit-mask:linear-gradient(180deg,#000 55%,transparent 96%);mask:linear-gradient(180deg,#000 55%,transparent 96%);}
 .hero-in{position:relative;z-index:2;max-width:1160px;margin:0 auto;padding:96px 28px 0;text-align:left;}
 .h1{font-size:clamp(38px,5.4vw,72px);line-height:1.0;font-weight:800;letter-spacing:-.045em;margin:0;overflow-wrap:break-word;}
@@ -416,7 +416,7 @@ const CSS = `
 /* cta */
 /* mega footer */
 .mfoot{position:relative;z-index:1;padding:110px 22px 26px;text-align:center;overflow:hidden;}
-.mfoot-h{font-size:clamp(26px,3.9vw,46px);font-weight:800;letter-spacing:-.03em;line-height:1.22;margin:0 0 34px;}
+.mfoot-h{font-size:clamp(26px,3.9vw,46px);font-weight:800;letter-spacing:-.03em;line-height:1.22;margin:0 0 34px;user-select:none;-webkit-user-select:none;}
 .mf-l1{color:#c9cfdd;}
 .mf-l2{color:#adb5c7;}
 .mf-l3{color:#9aa2b6;}

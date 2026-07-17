@@ -6,7 +6,6 @@ import {
   App as AntdApp,
   Avatar,
   Button,
-  Input,
   Popover,
   Select,
   Skeleton,
@@ -29,6 +28,15 @@ import {
   useTeamMembers,
   useIsTeamAdmin,
 } from "@/features/team-members/use-team-members";
+import {
+  TeamMentionInput,
+  type MentionEntity,
+  type MentionMember,
+} from "@/features/team-members/team-mention-input";
+import { useNotifyMentions } from "@/features/notifications/use-mention-notify";
+import { useTeams, useActiveTeam } from "@/features/teams/use-teams";
+import { useAllTeamTasks } from "@/features/tasks/use-all-tasks";
+import { useProjects } from "@/features/projects/use-projects";
 
 function MIcon({ name, size = 18, color }: { name: string; size?: number; color?: string }) {
   return (
@@ -144,6 +152,56 @@ export default function ChatThreadPage() {
   const title =
     channel?.kind === "dm" ? (partner?.name ?? "Direct message") : (channel?.name ?? "Channel");
 
+  // Everything `@` can tag from the composer: people, teams, tasks, projects.
+  const { data: allTeams } = useTeams();
+  const { data: activeTeam } = useActiveTeam();
+  const { data: teamTasks } = useAllTeamTasks();
+  const { data: allProjects } = useProjects();
+  const notifyMentions = useNotifyMentions();
+
+  const mentionMembers = useMemo<MentionMember[]>(
+    () =>
+      (teamMembers ?? [])
+        .filter((m) => m.user)
+        .map((m) => ({
+          id: m.user!.id,
+          name: m.user!.name,
+          avatarUrl: m.user!.avatar_url,
+          email: m.user!.email,
+        })),
+    [teamMembers],
+  );
+  const mentionEntities = useMemo<MentionEntity[]>(
+    () => [
+      ...(allTeams ?? []).map((t) => ({
+        id: t.id,
+        label: t.name,
+        kind: "team" as const,
+        meta: "Team — notifies its members",
+      })),
+      ...(allProjects ?? []).map((pr) => ({
+        id: pr.id,
+        label: pr.name,
+        kind: "project" as const,
+      })),
+      ...(teamTasks ?? [])
+        .filter((t) => !t.done)
+        .slice(0, 200)
+        .map((t) => ({
+          id: t.id,
+          label: t.name,
+          kind: "task" as const,
+          meta: t.project?.name,
+        })),
+    ],
+    [allTeams, allProjects, teamTasks],
+  );
+
+  const myName = useMemo(
+    () => (teamMembers ?? []).find((m) => m.user?.id === user?.id)?.user?.name ?? "Someone",
+    [teamMembers, user?.id],
+  );
+
   const submit = () => {
     const text = draft.trim();
     if (!text || send.isPending) return;
@@ -152,6 +210,18 @@ export default function ChatThreadPage() {
       onError: (err) => {
         setDraft(text);
         message.error(err instanceof Error ? err.message : "Couldn't send the message.");
+      },
+      onSuccess: () => {
+        // Fire-and-forget: mentioned people/teams get an inbox notification;
+        // failures must never read as a failed send.
+        void notifyMentions({
+          text,
+          members: mentionMembers,
+          entities: mentionEntities,
+          message: `${myName} mentioned you in ${channel?.kind === "dm" ? "a direct message" : `#${title}`}`,
+          url: `/chat/${channelId}`,
+          teamId: activeTeam?.id,
+        });
       },
     });
   };
@@ -444,16 +514,18 @@ export default function ChatThreadPage() {
             padding: "4px 6px 4px 4px",
           }}
         >
-          <Input.TextArea
+          <TeamMentionInput
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={setDraft}
+            members={mentionMembers}
+            entities={mentionEntities}
             onPressEnter={(e) => {
               if (!e.shiftKey) {
                 e.preventDefault();
                 submit();
               }
             }}
-            placeholder={`Message ${channel?.kind === "dm" ? title : `#${title}`}`}
+            placeholder={`Message ${channel?.kind === "dm" ? title : `#${title}`}  (@ to tag)`}
             autoSize={{ minRows: 1, maxRows: 8 }}
             maxLength={4000}
             variant="borderless"

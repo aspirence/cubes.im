@@ -10,7 +10,12 @@ export default function PrivacyPage() {
       <h2>1. What this covers</h2>
       <p>
         This policy explains what we collect and how we use it when you use Cubes
-        Cloud (the hosted service at cubes.im) and our websites. If you{" "}
+        Cloud (the hosted service at cubes.im) and our websites. Cubes Cloud is
+        operated by{" "}
+        <a href="https://www.aspirence.com/" target="_blank" rel="noreferrer">
+          Aspirence Worldwide Private Limited
+        </a>{" "}
+        (CIN: U62010UP2024PTC208995), the data controller for the hosted service. If you{" "}
         <a href={GITHUB_URL} target="_blank" rel="noreferrer">self-host Cubes</a>,
         your data lives on your own infrastructure and this policy does not apply to
         that deployment — your organization is the data controller there.
@@ -99,7 +104,7 @@ export default function PrivacyPage() {
         We follow industry practice: encrypted transport and storage, row-level
         security on every table, scoped API keys, and least-privilege access for our
         team. No system is perfectly secure — report vulnerabilities to{" "}
-        <a href="mailto:security@cubes.im">security@cubes.im</a> and we will respond
+        <a href="mailto:hello.cubesim@gmail.com">hello.cubesim@gmail.com</a> and we will respond
         quickly.
       </p>
 
@@ -109,7 +114,7 @@ export default function PrivacyPage() {
         access, correct, export, restrict, or delete your personal data. You can
         exercise most of these directly in Settings (profile editing, data export,
         account deletion) or by emailing{" "}
-        <a href="mailto:privacy@cubes.im">privacy@cubes.im</a>. If you are a member
+        <a href="mailto:hello.cubesim@gmail.com">hello.cubesim@gmail.com</a>. If you are a member
         of someone else&rsquo;s workspace, your workspace owner controls that
         workspace&rsquo;s data — direct requests to them first.
       </p>
@@ -129,9 +134,11 @@ export default function PrivacyPage() {
 
       <h2>12. Contact</h2>
       <p>
-        Privacy questions: <a href="mailto:privacy@cubes.im">privacy@cubes.im</a>.
-        General support: <a href="mailto:support@cubes.im">support@cubes.im</a>. See
-        also our <Link href="/terms">Terms of Service</Link>.
+        Privacy questions: <a href="mailto:hello.cubesim@gmail.com">hello.cubesim@gmail.com</a>.
+        General support: <a href="mailto:hello.cubesim@gmail.com">hello.cubesim@gmail.com</a>.
+        Data controller: Aspirence Worldwide Private Limited (CIN:
+        U62010UP2024PTC208995). See also our{" "}
+        <Link href="/terms">Terms of Service</Link>.
       </p>
     </LegalPage>
   );

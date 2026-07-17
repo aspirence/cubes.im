@@ -27,6 +27,10 @@ module.exports = {
       },
     },
   },
-  plugins: [require("@tailwindcss/forms")],
+  // No @tailwindcss/forms: its base styles restyle every native input —
+  // including the bare inputs AntD renders inside Select/Mentions — painting
+  // a blue border + focus ring that fights the design system everywhere.
+  // All form styling belongs to AntD (or a component's own CSS).
+  plugins: [],
 };
 

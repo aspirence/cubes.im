@@ -45,15 +45,17 @@ export default function RefundsPage() {
 
       <h2>4. How to request one</h2>
       <p>
-        Email <a href="mailto:billing@cubes.im">billing@cubes.im</a> from the email
+        Email <a href="mailto:hello.cubesim@gmail.com">hello.cubesim@gmail.com</a> from the email
         on the workspace owner&rsquo;s account with your workspace name. Refunds are
         issued to the original payment method within 5–10 business days of approval.
       </p>
 
       <h2>5. Questions</h2>
       <p>
-        Anything unclear? <a href="mailto:support@cubes.im">support@cubes.im</a> — a
-        human reads it. See also the <Link href="/terms">Terms of Service</Link>.
+        Anything unclear? <a href="mailto:hello.cubesim@gmail.com">hello.cubesim@gmail.com</a> — a
+        human reads it. Payments are processed by Aspirence Worldwide Private
+        Limited (CIN: U62010UP2024PTC208995). See also the{" "}
+        <Link href="/terms">Terms of Service</Link>.
       </p>
     </LegalPage>
   );

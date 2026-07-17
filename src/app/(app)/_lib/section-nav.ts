@@ -127,6 +127,7 @@ export const SECTION_NAVS: SectionNav[] = [
       { key: "/admin-center/billing", label: "Billing", icon: "credit_card" },
       { type: "divider" },
       { key: "/admin-center/platform", label: "Platform", icon: "public", superAdminOnly: true },
+      { key: "/admin-center/email", label: "Email", icon: "mail", superAdminOnly: true },
       { key: "/admin-center/pricing", label: "Pricing", icon: "sell", superAdminOnly: true },
       { key: "/admin-center/early-access", label: "Early access", icon: "bolt", superAdminOnly: true },
     ],

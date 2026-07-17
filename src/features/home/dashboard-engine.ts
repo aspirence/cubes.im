@@ -23,21 +23,53 @@ function weekBounds() {
   return { start, end: start.add(1, "week") };
 }
 
-export const PALETTE = [
-  "#5a5ad6",
-  "#e0a83e",
-  "#3a9d6e",
-  "#8b6fd6",
-  "#2f9c9c",
-  "#d96a8f",
-  "#e0663f",
-  "#8a8d98",
+/**
+ * Identity colours for groups that have no colour of their own (assignees, and
+ * status/project fallbacks). Order is load-bearing, not cosmetic: it is chosen
+ * so that ADJACENT slots stay apart for colour-blind readers.
+ *
+ * Each mode is its own selected set validated against that mode's surface — a
+ * dark palette is not a flipped light one. Both sets pass the full gate
+ * (lightness band, chroma floor, CVD separation, normal-vision floor):
+ *   light on #ffffff — worst adjacent CVD ΔE 9.1, normal-vision ΔE 19.6
+ *   dark  on #14171f — worst adjacent CVD ΔE 8.4, normal-vision ΔE 19.3
+ * The previous single 8-hue list failed both: two slots read as gray, and
+ * orange↔magenta sat at ΔE 10 — indistinguishable even with full colour vision.
+ * If you change a hue here, re-run the palette validator on the new ordering.
+ */
+export const PALETTE_LIGHT = [
+  "#5a5ad6", // indigo (brand)
+  "#008300", // green
+  "#e87ba4", // magenta
+  "#eda100", // yellow
+  "#1baf7a", // aqua
+  "#eb6834", // orange
+  "#4a3aa7", // violet
+  "#e34948", // red
 ];
 
-function colorForKey(key: string): string {
+export const PALETTE_DARK = [
+  "#7b7bea",
+  "#008300",
+  "#d55181",
+  "#c98500",
+  "#199e70",
+  "#d95926",
+  "#9085e9",
+  "#e66767",
+];
+
+/** Default (light) palette — kept as the historical export name. */
+export const PALETTE = PALETTE_LIGHT;
+
+export function paletteFor(dark: boolean): string[] {
+  return dark ? PALETTE_DARK : PALETTE_LIGHT;
+}
+
+function colorForKey(key: string, palette: string[]): string {
   let hash = 0;
   for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
-  return PALETTE[hash % PALETTE.length];
+  return palette[hash % palette.length];
 }
 
 const isOpen = (t: TeamTaskWithProject) => !t.done;
@@ -114,14 +146,44 @@ export function scopeTasks(
   });
 }
 
+/** True when the task was completed inside the requested window (viewer-local). */
+function completedWithin(
+  t: TeamTaskWithProject,
+  window: NonNullable<CardFilter["completedWithin"]>,
+): boolean {
+  if (!t.done || !t.completed_at) return false;
+  const c = dayjs(t.completed_at);
+  const today = startOfToday();
+  switch (window) {
+    case "today":
+      return c.isSame(today, "day");
+    case "week": {
+      const { start, end } = weekBounds();
+      return !c.isBefore(start) && c.isBefore(end);
+    }
+    case "month":
+      return c.isSame(today, "month");
+    default:
+      return true;
+  }
+}
+
 /** Population + completion + due filters — the set a chart/list card renders. */
 export function visibleTasks(
   tasks: TeamTaskWithProject[],
   filter: CardFilter,
   myTeamMemberId: string | undefined,
 ): TeamTaskWithProject[] {
+  const doneWindow = filter.completedWithin ?? "any";
   return scopeTasks(tasks, filter, myTeamMemberId).filter((t) => {
-    if (!filter.includeCompleted && !isOpen(t)) return false;
+    if (doneWindow !== "any") {
+      // Throughput mode: the population is "what got DONE in the window".
+      // `includeCompleted` is moot here, and the due filter still composes on
+      // top (e.g. "completed this week that was overdue").
+      if (!completedWithin(t, doneWindow)) return false;
+    } else if (!filter.includeCompleted && !isOpen(t)) {
+      return false;
+    }
     if (!matchesDue(t, filter.due)) return false;
     return true;
   });
@@ -177,6 +239,7 @@ export function groupTasks(
   tasks: TeamTaskWithProject[],
   groupBy: GroupBy,
   assigneeAllow?: Set<string>,
+  palette: string[] = PALETTE_LIGHT,
 ): GroupDatum[] {
   const acc = new Map<string, GroupDatum>();
   const bump = (key: string, label: string, color: string) => {
@@ -198,13 +261,13 @@ export function groupTasks(
         }
         for (const a of counted) {
           const name = a.team_member?.user?.name ?? "Member";
-          bump(a.team_member_id, name, colorForKey(a.team_member_id));
+          bump(a.team_member_id, name, colorForKey(a.team_member_id, palette));
         }
         break;
       }
       case "status": {
         const name = t.status?.name ?? "No status";
-        const color = t.status?.category?.color_code ?? colorForKey(name);
+        const color = t.status?.category?.color_code ?? colorForKey(name, palette);
         bump(name, name, color);
         break;
       }
@@ -219,7 +282,7 @@ export function groupTasks(
       }
       case "project": {
         const name = t.project?.name ?? "Project";
-        bump(t.project_id, name, t.project?.color_code ?? colorForKey(name));
+        bump(t.project_id, name, t.project?.color_code ?? colorForKey(name, palette));
         break;
       }
       case "due-bucket": {
@@ -247,6 +310,42 @@ export function groupTasks(
     );
   }
   return rows.sort((a, b) => b.value - a.value);
+}
+
+/**
+ * The tasks behind one chart group — the drill-down twin of `groupTasks`, so
+ * clicking a mark shows exactly the rows that mark counted. The keying here
+ * MUST mirror `groupTasks` (including the `assigneeAllow` leak guard), or a
+ * drill-down would disagree with the number it came from.
+ */
+export function tasksInGroup(
+  tasks: TeamTaskWithProject[],
+  groupBy: GroupBy,
+  key: string,
+  assigneeAllow?: Set<string>,
+): TeamTaskWithProject[] {
+  const restrict = assigneeAllow && assigneeAllow.size > 0 ? assigneeAllow : null;
+  return tasks.filter((t) => {
+    switch (groupBy) {
+      case "assignee": {
+        const counted = restrict
+          ? t.assignees.filter((a) => restrict.has(a.team_member_id))
+          : t.assignees;
+        if (key === "__none") return !restrict && counted.length === 0;
+        return counted.some((a) => a.team_member_id === key);
+      }
+      case "status":
+        return (t.status?.name ?? "No status") === key;
+      case "priority":
+        return (t.priority?.name ?? "None") === key;
+      case "project":
+        return t.project_id === key;
+      case "due-bucket":
+        return dueBucket(t) === key;
+      default:
+        return false;
+    }
+  });
 }
 
 /** Computes a single metric over the scoped population (its own completion/due). */

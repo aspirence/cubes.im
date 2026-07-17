@@ -24,6 +24,17 @@ import {
   type CubeLeaderRow,
 } from "@/features/cubes/use-cubes";
 import { useIsTeamAdmin } from "@/features/team-members/use-team-members";
+import {
+  useCelebrationRules,
+  useSetCelebrationRule,
+  type CelebrationTemplate,
+} from "@/features/celebrations/use-celebrations";
+import { useCelebrationStore } from "@/store/celebration-store";
+import {
+  useNotificationSettings,
+  useUpdateNotificationSettings,
+} from "@/features/settings/use-notification-settings";
+import { Select } from "antd";
 
 const { Title, Text } = Typography;
 
@@ -55,6 +66,67 @@ export default function CubesSettingsPage() {
   const { data: board, isLoading: boardLoading } = useCubeLeaderboard();
   const setRule = useSetCubeRule();
   const award = useAwardCubesManual();
+  const { data: celebrationRules, isLoading: celebrationsLoading } = useCelebrationRules();
+  const setCelebrationRule = useSetCelebrationRule();
+  const enqueueCelebration = useCelebrationStore((st) => st.enqueue);
+  const { data: notifSettings } = useNotificationSettings();
+  const updateNotifSettings = useUpdateNotificationSettings();
+
+  // Local edits for the celebrations card (admins) — same buffer pattern as
+  // the point rules above.
+  const [celebrationEdits, setCelebrationEdits] = useState<
+    Record<string, { enabled: boolean; template: CelebrationTemplate }>
+  >({});
+  const celebrationView = useMemo(
+    () =>
+      (celebrationRules ?? []).map((r) => ({
+        ...r,
+        enabled: celebrationEdits[r.event_key]?.enabled ?? r.enabled,
+        template: celebrationEdits[r.event_key]?.template ?? r.template,
+      })),
+    [celebrationRules, celebrationEdits],
+  );
+  const celebrationsDirty = Object.keys(celebrationEdits).length > 0;
+
+  const patchCelebration = (
+    key: string,
+    patch: Partial<{ enabled: boolean; template: CelebrationTemplate }>,
+  ) => {
+    setCelebrationEdits((prev) => {
+      const rule = celebrationRules?.find((r) => r.event_key === key);
+      const base = prev[key] ?? {
+        enabled: rule?.enabled ?? true,
+        template: rule?.template ?? ("burst" as CelebrationTemplate),
+      };
+      return { ...prev, [key]: { ...base, ...patch } };
+    });
+  };
+
+  const saveCelebrations = async () => {
+    try {
+      for (const [eventKey, v] of Object.entries(celebrationEdits)) {
+        await setCelebrationRule.mutateAsync({
+          eventKey,
+          enabled: v.enabled,
+          template: v.template,
+        });
+      }
+      setCelebrationEdits({});
+      message.success("Celebrations updated.");
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Couldn't save celebrations.");
+    }
+  };
+
+  const previewTemplate = (template: CelebrationTemplate) => {
+    enqueueCelebration({
+      kind: "task_done",
+      taskId: "preview",
+      taskName: "Design the launch banner",
+      at: Date.now(),
+      preview: template,
+    });
+  };
 
   // Local edits for the rules table (admins).
   const [edits, setEdits] = useState<Record<string, { points: number; enabled: boolean }>>({});
@@ -285,6 +357,146 @@ export default function CubesSettingsPage() {
                 />
               </div>
             ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Celebrations */}
+      <Card
+        title="Celebrations"
+        extra={
+          isAdmin ? (
+            <Button
+              type="primary"
+              size="small"
+              disabled={!celebrationsDirty}
+              loading={setCelebrationRule.isPending}
+              onClick={() => void saveCelebrations()}
+            >
+              Save changes
+            </Button>
+          ) : null
+        }
+        style={{ marginTop: 16 }}
+      >
+        <Text type="secondary" style={{ display: "block", marginBottom: 14 }}>
+          Success dialogs with confetti. Pick which events celebrate and how
+          they look — points come from the rules above. Everyone can mute
+          celebrations for themselves below.
+        </Text>
+        {celebrationsLoading ? (
+          <Skeleton active paragraph={{ rows: 3 }} />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {celebrationView.map((r) => {
+              const pointsRule = (rules ?? []).find((cr) => cr.event_key === r.event_key);
+              return (
+                <div
+                  key={r.event_key}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: `1px solid ${token.colorBorderSecondary}`,
+                    background: token.colorBgContainer,
+                    opacity: r.enabled ? 1 : 0.55,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 160 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: token.colorText }}>{r.label}</div>
+                    <div style={{ fontSize: 12, color: token.colorTextTertiary, fontFamily: "var(--font-geist-mono)" }}>
+                      {r.event_key}
+                    </div>
+                  </div>
+                  <Tag style={{ margin: 0 }}>
+                    {pointsRule
+                      ? `${pointsRule.points > 0 ? "+" : ""}${pointsRule.points} cubes`
+                      : "no cubes (v1)"}
+                  </Tag>
+                  <Select<CelebrationTemplate>
+                    size="small"
+                    value={r.template}
+                    disabled={!isAdmin}
+                    onChange={(v) => patchCelebration(r.event_key, { template: v })}
+                    style={{ width: 132 }}
+                    popupMatchSelectWidth={false}
+                    options={[
+                      { value: "burst" as const, label: "Burst" },
+                      { value: "glow" as const, label: "Glow" },
+                      { value: "stats" as const, label: "Stats" },
+                    ]}
+                    optionRender={(opt) => (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        {/* Pure-CSS mini thumbnails per template */}
+                        {opt.value === "glow" ? (
+                          <span style={{ width: 30, height: 18, borderRadius: 4, background: "linear-gradient(135deg,#4a4ad0,#7b5cf0 55%,#f0883e)", flex: "none" }} />
+                        ) : opt.value === "stats" ? (
+                          <span style={{ width: 30, height: 18, borderRadius: 4, border: `1px solid ${token.colorBorder}`, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1, padding: 2, flex: "none" }}>
+                            {[0, 1, 2, 3].map((i) => (
+                              <span key={i} style={{ background: token.colorFillSecondary, borderRadius: 1 }} />
+                            ))}
+                          </span>
+                        ) : (
+                          <span style={{ width: 30, height: 18, borderRadius: 4, border: `1px solid ${token.colorBorder}`, position: "relative", flex: "none" }}>
+                            <span style={{ position: "absolute", left: 5, top: 5, width: 4, height: 4, borderRadius: 99, background: "#4a4ad0" }} />
+                            <span style={{ position: "absolute", right: 6, top: 3, width: 3, height: 3, borderRadius: 99, background: "#f5b301" }} />
+                            <span style={{ position: "absolute", left: 13, bottom: 3, width: 3, height: 3, borderRadius: 99, background: "#2bb36e" }} />
+                          </span>
+                        )}
+                        {opt.label}
+                      </span>
+                    )}
+                  />
+                  <Button size="small" onClick={() => previewTemplate(r.template)}>
+                    Preview
+                  </Button>
+                  <Switch
+                    checked={r.enabled}
+                    disabled={!isAdmin}
+                    onChange={(v) => patchCelebration(r.event_key, { enabled: v })}
+                  />
+                </div>
+              );
+            })}
+
+            {/* Personal mute — every member controls their own. */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                padding: "10px 12px",
+                borderRadius: 10,
+                background: token.colorFillQuaternary,
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: token.colorText }}>
+                  Mute celebrations for me
+                </div>
+                <div style={{ fontSize: 12, color: token.colorTextTertiary }}>
+                  Only affects you — team settings stay as configured.
+                </div>
+              </div>
+              <Switch
+                checked={Boolean(notifSettings?.celebrations_muted)}
+                loading={updateNotifSettings.isPending}
+                onChange={(v) => {
+                  updateNotifSettings.mutate(
+                    { celebrations_muted: v },
+                    {
+                      onError: (err) =>
+                        message.error(
+                          err instanceof Error ? err.message : "Couldn't update preference.",
+                        ),
+                    },
+                  );
+                }}
+              />
+            </div>
           </div>
         )}
       </Card>
