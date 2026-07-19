@@ -51,6 +51,7 @@ interface OverviewFormValues {
   use_manual_progress: boolean;
   use_weighted_progress: boolean;
   use_time_progress: boolean;
+  limited_task_creation: string;
 }
 
 /** Colored-dot option labels for a status/health lookup list. */
@@ -119,6 +120,7 @@ export function ProjectOverviewTab({ project }: { project: ProjectWithRelations 
       use_manual_progress: project.use_manual_progress,
       use_weighted_progress: project.use_weighted_progress,
       use_time_progress: project.use_time_progress,
+      limited_task_creation: project.limited_task_creation ?? "inherit",
     }),
     [project],
   );
@@ -136,6 +138,7 @@ export function ProjectOverviewTab({ project }: { project: ProjectWithRelations 
     const byId = new Map((statuses ?? []).map((s) => [s.id, s]));
     const today = dayjs().startOf("day");
     let done = 0;
+    let review = 0;
     let doing = 0;
     let todo = 0;
     let overdue = 0;
@@ -145,12 +148,14 @@ export function ProjectOverviewTab({ project }: { project: ProjectWithRelations 
       const cat = t.status_id ? byId.get(t.status_id)?.category : null;
       if (t.done || cat?.is_done) done += 1;
       else if (cat?.is_doing) doing += 1;
+      // Flagless category = the Done ("in review") stage.
+      else if (cat && !cat.is_todo) review += 1;
       else todo += 1;
       if (!t.done && t.end_date && dayjs(t.end_date).isBefore(today)) overdue += 1;
     }
     const total = list.length;
     const pct = total ? Math.round((done / total) * 100) : 0;
-    return { total, done, doing, todo, overdue, pct, perStatus };
+    return { total, done, review, doing, todo, overdue, pct, perStatus };
   }, [tasks, statuses]);
 
   const daysLeft = useMemo(() => {
@@ -173,6 +178,7 @@ export function ProjectOverviewTab({ project }: { project: ProjectWithRelations 
         use_manual_progress: values.use_manual_progress,
         use_weighted_progress: values.use_weighted_progress,
         use_time_progress: values.use_time_progress,
+        limited_task_creation: values.limited_task_creation,
       });
       message.success("Project updated.");
     } catch (err) {
@@ -193,11 +199,12 @@ export function ProjectOverviewTab({ project }: { project: ProjectWithRelations 
     { label: "Total tasks", value: stats.total, icon: "task_alt", tone: token.colorPrimary },
     { label: "Completed", value: stats.done, icon: "check_circle", tone: "#2f8f5f" },
     { label: "In progress", value: stats.doing, icon: "autorenew", tone: "#3d7de0" },
+    { label: "In review", value: stats.review, icon: "rate_review", tone: "#75c997" },
     { label: "Overdue", value: stats.overdue, icon: "warning", tone: "#c0453c" },
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 1100 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* Stat tiles */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
         {tiles.map((s) => (
@@ -237,12 +244,14 @@ export function ProjectOverviewTab({ project }: { project: ProjectWithRelations 
             <>
               <div style={{ display: "flex", height: 12, borderRadius: 999, overflow: "hidden", background: token.colorFillSecondary }}>
                 <div style={{ width: `${(stats.done / stats.total) * 100}%`, background: "#2f8f5f" }} />
+                <div style={{ width: `${(stats.review / stats.total) * 100}%`, background: "#75c997" }} />
                 <div style={{ width: `${(stats.doing / stats.total) * 100}%`, background: "#3d7de0" }} />
                 <div style={{ width: `${(stats.todo / stats.total) * 100}%`, background: token.colorFillTertiary }} />
               </div>
               <div style={{ display: "flex", gap: 16, marginTop: 12, flexWrap: "wrap" }}>
                 {[
                   { c: "#2f8f5f", l: "Done", n: stats.done },
+                  { c: "#75c997", l: "In review", n: stats.review },
                   { c: "#3d7de0", l: "In progress", n: stats.doing },
                   { c: token.colorFillTertiary, l: "To do", n: stats.todo },
                 ].map((x) => (
@@ -388,6 +397,20 @@ export function ProjectOverviewTab({ project }: { project: ProjectWithRelations 
                     <Switch checkedChildren="Time-based" unCheckedChildren="Time-based" />
                   </Form.Item>
                 </div>
+                <Form.Item
+                  label="Limited members can create tasks"
+                  name="limited_task_creation"
+                  style={{ marginTop: 16, maxWidth: 360 }}
+                  extra="Overrides the workspace-level 'Create tasks' permission for this project."
+                >
+                  <Select
+                    options={[
+                      { value: "inherit", label: "Inherit workspace setting" },
+                      { value: "allow", label: "Allow" },
+                      { value: "deny", label: "Don't allow" },
+                    ]}
+                  />
+                </Form.Item>
                 <div style={{ marginTop: 16 }}>
                   <Button type="primary" onClick={handleSave} loading={saving}>
                     Save changes

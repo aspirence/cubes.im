@@ -106,6 +106,31 @@ export function ChooseModeStep({
 }: {
   onChoose: (mode: SetupMode) => void;
 }) {
+  const router = useRouter();
+  const { message } = AntdApp.useApp();
+  // Invitations addressed to this email are surfaced RIGHT HERE — an invited
+  // person should join in one click, not wander through "request access".
+  const { data: myInvites } = useMyPendingInvitations();
+  const acceptInvite = useAcceptInvitation();
+  const pending = myInvites ?? [];
+
+  async function onAcceptFromChooser(id: string) {
+    if (acceptInvite.isPending) return; // double-click guard
+    try {
+      await acceptInvite.mutateAsync(id);
+      message.success("You're in!");
+      router.replace("/home");
+    } catch (e) {
+      // "not found" almost always means an earlier click already consumed the
+      // invitation (membership exists) — proceed instead of scaring the user.
+      if (e instanceof Error && /not found/i.test(e.message)) {
+        router.replace("/home");
+        return;
+      }
+      message.error("Couldn't accept that invitation — it may have expired.");
+    }
+  }
+
   const OPTIONS: { key: SetupMode; icon: string; title: string; desc: string }[] = [
     {
       key: "create",
@@ -117,7 +142,9 @@ export function ChooseModeStep({
       key: "join",
       icon: "groups",
       title: "Join workspace",
-      desc: "Your company already uses Cubes — request access with your work email.",
+      desc: pending.length
+        ? "You already have an invitation waiting — join in one click."
+        : "Your company already uses Cubes — request access with your work email.",
     },
   ];
   return (
@@ -160,14 +187,111 @@ export function ChooseModeStep({
             >
               {opt.icon}
             </span>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 600, fontSize: 14.5, color: "#17171c" }}>{opt.title}</div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontWeight: 600, fontSize: 14.5, color: "#17171c" }}>{opt.title}</span>
+                {opt.key === "join" && pending.length > 0 ? (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: "#1f8a4c",
+                      background: "#e6f6ec",
+                      borderRadius: 999,
+                      padding: "2px 8px",
+                    }}
+                  >
+                    {pending.length} invitation{pending.length > 1 ? "s" : ""}
+                  </span>
+                ) : null}
+              </div>
               <div style={{ fontSize: 13, color: "#6a6d78", marginTop: 4, lineHeight: 1.6 }}>{opt.desc}</div>
+
+              {opt.key === "join" && pending.length > 0 ? (
+                <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {pending.map((inv) => {
+                    const teamName = inv.team_name || "A workspace";
+                    const monogram = teamName
+                      .split(/\s+/)
+                      .slice(0, 2)
+                      .map((w) => w[0])
+                      .join("")
+                      .toUpperCase();
+                    return (
+                      <div
+                        key={inv.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 12,
+                          background: "#fff",
+                          border: "1px solid #e8e9f0",
+                          borderRadius: 12,
+                          padding: "10px 12px",
+                          boxShadow: "0 1px 4px rgba(17,19,25,.05)",
+                        }}
+                      >
+                        <span
+                          aria-hidden
+                          style={{
+                            width: 36,
+                            height: 36,
+                            borderRadius: 10,
+                            background: "linear-gradient(135deg,#4a4ad0,#7a5cf0)",
+                            color: "#fff",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontWeight: 700,
+                            fontSize: 13,
+                            flex: "none",
+                          }}
+                        >
+                          {monogram}
+                        </span>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div
+                            style={{
+                              fontSize: 13.5,
+                              fontWeight: 650,
+                              color: "#17171c",
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {teamName}
+                          </div>
+                          <div style={{ fontSize: 11.5, color: "#6a6d78", marginTop: 1 }}>
+                            You&apos;re invited · joining as {inv.member_type || "member"}
+                          </div>
+                        </div>
+                        <Button
+                          type="primary"
+                          style={{
+                            background: "#4a4ad0",
+                            borderColor: "#4a4ad0",
+                            fontWeight: 600,
+                            borderRadius: 9,
+                          }}
+                          loading={acceptInvite.isPending && acceptInvite.variables === inv.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void onAcceptFromChooser(inv.id);
+                          }}
+                        >
+                          Join {teamName.split(/\s+/)[0]}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
             </div>
             <span
               className="material-symbols-rounded"
               aria-hidden
-              style={{ fontSize: 22, color: "#c1c5d0", marginLeft: "auto" }}
+              style={{ fontSize: 22, color: "#c1c5d0", marginLeft: "auto", flex: "none" }}
             >
               chevron_right
             </span>
@@ -209,11 +333,16 @@ export function JoinStep({ onCreateInstead }: { onCreateInstead: () => void }) {
   }
 
   async function onAccept(id: string) {
+    if (acceptInvite.isPending) return; // double-click guard
     try {
       await acceptInvite.mutateAsync(id);
       message.success("You're in!");
       router.replace("/home");
-    } catch {
+    } catch (e) {
+      if (e instanceof Error && /not found/i.test(e.message)) {
+        router.replace("/home");
+        return;
+      }
       message.error("Couldn't accept that invitation — it may have expired.");
     }
   }
@@ -319,7 +448,7 @@ export function JoinStep({ onCreateInstead }: { onCreateInstead: () => void }) {
                   mail
                 </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>{inv.teams?.name ?? "A workspace"}</div>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{inv.team_name || "A workspace"}</div>
                   <div style={{ fontSize: 12.5, color: "#6a6d78" }}>Invitation to {inv.email}</div>
                 </div>
                 <Button size="small" loading={acceptInvite.isPending} onClick={() => onAccept(inv.id)}>

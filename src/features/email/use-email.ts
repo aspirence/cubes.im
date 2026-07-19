@@ -295,6 +295,257 @@ export function useTestResend() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Platform sender (super-admin) — Cubes' own Resend identity                 */
+/* -------------------------------------------------------------------------- */
+
+/** The single global sender row. Same has_key contract as ResendConnection. */
+export interface PlatformSender {
+  id: string;
+  from_email: string;
+  from_name: string | null;
+  reply_to: string | null;
+  enabled: boolean;
+  has_key: boolean;
+  last_test_at: string | null;
+  last_test_ok: boolean | null;
+  last_test_error: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+const platformSenderKey = ["platform-email-sender"] as const;
+const platformLogKey = ["platform-email-log"] as const;
+
+/** The platform sender row, or null before first configuration. RLS: super admins. */
+export function usePlatformSender() {
+  const supabase = useMemo(() => createClient(), []);
+
+  return useQuery({
+    queryKey: platformSenderKey,
+    queryFn: async (): Promise<PlatformSender | null> => {
+      const { data, error } = await loose(supabase)
+        .from("platform_email_sender")
+        .select("*")
+        .eq("id", "default")
+        .maybeSingle();
+      if (error) throw error;
+      return (data as PlatformSender | null) ?? null;
+    },
+  });
+}
+
+export interface SavePlatformSenderInput {
+  from_email: string;
+  from_name?: string | null;
+  reply_to?: string | null;
+  enabled: boolean;
+}
+
+/**
+ * Upserts the platform sender. Column-by-column for the same reason as
+ * useSaveResendConnection: `has_key` belongs to the secret route alone.
+ */
+export function useSavePlatformSender() {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: async (input: SavePlatformSenderInput): Promise<void> => {
+      const { error } = await loose(supabase)
+        .from("platform_email_sender")
+        .upsert(
+          {
+            id: "default",
+            from_email: input.from_email.trim().toLowerCase(),
+            from_name: input.from_name?.trim() || null,
+            reply_to: input.reply_to?.trim().toLowerCase() || null,
+            enabled: input.enabled,
+            updated_by: user?.id ?? null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" },
+        );
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: platformSenderKey });
+    },
+  });
+}
+
+/** Stores the platform Resend key (write-only; service-role route). */
+export function useSavePlatformKey() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: { apiKey: string }): Promise<void> => {
+      const res = await fetch("/api/email/platform/secret", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ apiKey: input.apiKey }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Couldn't save the API key.");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: platformSenderKey });
+    },
+  });
+}
+
+/** Deletes the platform key; platform sending stops immediately. */
+export function useDeletePlatformKey() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (): Promise<void> => {
+      const res = await fetch("/api/email/platform/secret", { method: "DELETE" });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Couldn't remove the API key.");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: platformSenderKey });
+    },
+  });
+}
+
+/** Sends a real platform test email (runs in the send-email edge function). */
+export function useTestPlatformSender() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: {
+      to: string;
+    }): Promise<{ ok: boolean; reason?: string }> => {
+      const res = await fetch("/api/email/platform/test", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ to: input.to }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        reason?: string;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(json.error ?? "The test couldn't run.");
+      return { ok: Boolean(json.ok), reason: json.reason };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: platformSenderKey });
+      queryClient.invalidateQueries({ queryKey: platformLogKey });
+    },
+  });
+}
+
+/** Platform-scope deliveries (team_id NULL). RLS: platform admins only. */
+export function usePlatformEmailLog() {
+  const supabase = useMemo(() => createClient(), []);
+
+  return useQuery({
+    queryKey: platformLogKey,
+    queryFn: async (): Promise<EmailLogEntry[]> => {
+      const { data, error } = await loose(supabase)
+        .from("email_log")
+        .select("*")
+        .is("team_id", null)
+        .order("created_at", { ascending: false })
+        .limit(LOG_PAGE);
+      if (error) throw error;
+      return (data ?? []) as EmailLogEntry[];
+    },
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Template overrides (super-admin)                                           */
+/* -------------------------------------------------------------------------- */
+
+/** A stored subject/body override; absence means the code default applies. */
+export interface EmailTemplateOverride {
+  event_key: string;
+  subject: string;
+  body_html: string;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+const templateKey = (eventKey: string | undefined) =>
+  ["platform-email-template", eventKey] as const;
+
+/** The stored override for a scenario, or null (= code default). */
+export function useEmailTemplate(eventKey: string | undefined) {
+  const supabase = useMemo(() => createClient(), []);
+
+  return useQuery({
+    queryKey: templateKey(eventKey),
+    enabled: Boolean(eventKey),
+    queryFn: async (): Promise<EmailTemplateOverride | null> => {
+      const { data, error } = await loose(supabase)
+        .from("platform_email_templates")
+        .select("*")
+        .eq("event_key", eventKey as string)
+        .maybeSingle();
+      if (error) throw error;
+      return (data as EmailTemplateOverride | null) ?? null;
+    },
+  });
+}
+
+/** Saves (upserts) a scenario's template override. */
+export function useSaveEmailTemplate() {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: async (input: {
+      eventKey: string;
+      subject: string;
+      bodyHtml: string;
+    }): Promise<void> => {
+      const { error } = await loose(supabase)
+        .from("platform_email_templates")
+        .upsert(
+          {
+            event_key: input.eventKey,
+            subject: input.subject.trim(),
+            body_html: input.bodyHtml,
+            updated_by: user?.id ?? null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "event_key" },
+        );
+      if (error) throw error;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: templateKey(variables.eventKey) });
+    },
+  });
+}
+
+/** Deletes the override — the scenario falls back to the code default. */
+export function useResetEmailTemplate() {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: { eventKey: string }): Promise<void> => {
+      const { error } = await loose(supabase)
+        .from("platform_email_templates")
+        .delete()
+        .eq("event_key", input.eventKey);
+      if (error) throw error;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: templateKey(variables.eventKey) });
+    },
+  });
+}
+
+/* -------------------------------------------------------------------------- */
 /* Delivery history                                                           */
 /* -------------------------------------------------------------------------- */
 

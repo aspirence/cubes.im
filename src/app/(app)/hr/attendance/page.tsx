@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
+  Alert,
   App,
   Badge,
   Button,
@@ -51,6 +53,7 @@ import {
 } from "@/features/hr/use-attendance";
 import ShiftsTab from "./_components/shifts-tab";
 import HolidaysTab from "./_components/holidays-tab";
+import WebhooksTab from "./_components/webhooks-tab";
 
 const { Text, Title } = Typography;
 
@@ -743,6 +746,11 @@ function useIsManager(employeeId: string | undefined): boolean {
 export default function HrAttendancePage() {
   const { isHrAdmin, isLoading: accessLoading } = useHrAccess();
   const { data: myEmployee, isLoading: employeeLoading } = useMyEmployee();
+  const searchParams = useSearchParams();
+  // Deep link target (?tab=webhooks from the App Center).
+  const [activeTab, setActiveTab] = useState(
+    () => searchParams.get("tab") ?? "mine",
+  );
 
   const employee = (myEmployee ?? null) as { id?: string } | null;
   const isManager = useIsManager(employee?.id);
@@ -758,7 +766,10 @@ export default function HrAttendancePage() {
     );
   }
 
-  if (!employee?.id) {
+  // Non-admins need an employee record for anything here. HR admins without
+  // one (e.g. the org owner doing initial setup) still get the admin surfaces
+  // — shifts, holidays, webhooks — just not personal attendance.
+  if (!employee?.id && !isHrAdmin) {
     return (
       <Card>
         <Result
@@ -770,21 +781,30 @@ export default function HrAttendancePage() {
     );
   }
 
+  const hasEmployee = Boolean(employee?.id);
   const items = [
-    {
-      key: "mine",
-      label: "My Attendance",
-      children: <MyAttendanceTab />,
-    },
-    ...(canSeeTeam
+    ...(hasEmployee
       ? [
-          { key: "team", label: "Team", children: <TeamTab /> },
-          { key: "approvals", label: "Approvals", children: <ApprovalsTab /> },
+          {
+            key: "mine",
+            label: "My Attendance",
+            children: <MyAttendanceTab />,
+          },
+          ...(canSeeTeam
+            ? [
+                { key: "team", label: "Team", children: <TeamTab /> },
+                { key: "approvals", label: "Approvals", children: <ApprovalsTab /> },
+              ]
+            : []),
         ]
       : []),
     { key: "shifts", label: "Shifts", children: <ShiftsTab /> },
     { key: "holidays", label: "Holidays", children: <HolidaysTab /> },
+    ...(isHrAdmin
+      ? [{ key: "webhooks", label: "Webhooks", children: <WebhooksTab /> }]
+      : []),
   ];
+  const fallbackTab = items[0]?.key ?? "mine";
 
   return (
     <Card>
@@ -794,8 +814,17 @@ export default function HrAttendancePage() {
       <Text type="secondary">
         Clock in and out, monthly calendars, shifts and holidays.
       </Text>
+      {!hasEmployee ? (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginTop: 12 }}
+          message="Your account isn't linked to an employee record, so personal attendance is unavailable — you can still manage shifts, holidays and webhooks."
+        />
+      ) : null}
       <Tabs
-        defaultActiveKey="mine"
+        activeKey={items.some((i) => i.key === activeTab) ? activeTab : fallbackTab}
+        onChange={setActiveTab}
         items={items}
         destroyOnHidden
         style={{ marginTop: 8 }}

@@ -9,6 +9,7 @@ import {
   type ProjectWithRelations,
 } from "@/features/projects/use-projects";
 import { AiTaskButton } from "./ai-task-button";
+import { useCanCreateTasks } from "@/features/team-members/use-team-members";
 
 /** A small material glyph. */
 function MIcon({ name, size = 14 }: { name: string; size?: number }) {
@@ -92,6 +93,7 @@ export function ProjectWorkspaceHeader({
 
   const updateProject = useUpdateProject();
   const toggleFavorite = useToggleFavorite();
+  const canCreateTasks = useCanCreateTasks(project.id);
 
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(project.name);
@@ -249,10 +251,12 @@ export function ProjectWorkspaceHeader({
         </div>
       ) : null}
 
-      {/* AI task, right-aligned. */}
-      <div style={{ marginLeft: "auto" }}>
-        <AiTaskButton projectId={project.id} />
-      </div>
+      {/* AI task, right-aligned — hidden when the caller can't author tasks. */}
+      {canCreateTasks ? (
+        <div style={{ marginLeft: "auto" }}>
+          <AiTaskButton projectId={project.id} />
+        </div>
+      ) : null}
 
       <style>{`
         .wl-proj-name:hover .wl-proj-edit { opacity: 1; }

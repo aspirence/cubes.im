@@ -45,6 +45,20 @@ export interface AppDescriptor {
 
 export const APP_CATALOG: AppDescriptor[] = [
   {
+    key: "team_pulse",
+    name: "Team Pulse",
+    tagline: "Live view of who's working on what — with focus rules",
+    description:
+      "One screen for the whole team: who's working on which task right now (with a live timer), what's queued next for each person, and who has nothing lined up. Activating it also enables focus rules — limited members keep one task In Progress at a time, and the timer starts/stops automatically as tasks move through the Active stage.",
+    icon: "monitor_heart",
+    color: "#d97706",
+    category: "Operations",
+    coreAccess: ["tasks", "members", "time"],
+    route: "/apps/team-pulse",
+    status: "available",
+    featured: true,
+  },
+  {
     key: "hr",
     name: "HR",
     tagline: "People operations, attendance, leave, and payroll in one place",

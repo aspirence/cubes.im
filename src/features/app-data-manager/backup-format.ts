@@ -15,7 +15,10 @@
 export const BACKUP_FORMAT = "cubes-backup" as const;
 export const BACKUP_VERSION = 1 as const;
 
-export type StatusBucket = "todo" | "doing" | "done";
+/** Stage bucket: "review" is the flagless Done stage (finished, pending
+ *  acceptance); "done" stays the counts-as-complete Closed stage so v1 files
+ *  keep their meaning. */
+export type StatusBucket = "todo" | "doing" | "review" | "done";
 
 export interface BackupTaskV1 {
   /** Local id, unique within the file (the exporter uses the source task id). */
@@ -177,7 +180,10 @@ export function validateBackup(raw: unknown): Result {
     for (const [j, s] of p.statuses.entries()) {
       if (!isObj(s) || typeof s.name !== "string" || s.name.trim() === "")
         return fail(`projects[${i}].statuses[${j}] needs a non-empty "name".`);
-      const bucket = s.bucket === "doing" || s.bucket === "done" ? s.bucket : "todo";
+      const bucket =
+        s.bucket === "doing" || s.bucket === "review" || s.bucket === "done"
+          ? s.bucket
+          : "todo";
       const lid = typeof s.lid === "string" ? s.lid : null;
       if (lid !== null) {
         if (statusLids.has(lid))

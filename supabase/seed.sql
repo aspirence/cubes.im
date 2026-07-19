@@ -174,19 +174,23 @@ where not exists (
 -- them. All inserts are guarded (WHERE NOT EXISTS) so re-seeding is safe.
 
 -- -----------------------------------------------------------------------------
--- sys_task_status_categories  (legacy: sys_insert_task_status_categories())
---   The three system categories: To Do (is_todo) / Doing (is_doing) / Done
---   (is_done). Legacy `index` column is `sort_order` here.
+-- sys_task_status_categories  (post-20261085: the FOUR fixed stages)
+--   Not started (is_todo) / Active (is_doing) / Done (flagless) / Closed
+--   (is_done). Guarded by FLAG COMBINATION, not name — each stage's
+--   is_todo/is_doing/is_done triple is unique, so re-seeding after a rename
+--   never duplicates a stage.
 -- -----------------------------------------------------------------------------
 insert into public.sys_task_status_categories (name, color_code, sort_order, is_todo, is_doing, is_done)
 select v.name, v.color_code, v.sort_order, v.is_todo, v.is_doing, v.is_done
 from (values
-    ('To Do', '#a9a9a9', 0, true,  false, false),
-    ('Doing', '#70a6f3', 1, false, true,  false),
-    ('Done',  '#75c997', 2, false, false, true)
+    ('Not started', '#a9a9a9', 0, true,  false, false),
+    ('Active',      '#70a6f3', 1, false, true,  false),
+    ('Done',        '#75c997', 2, false, false, false),
+    ('Closed',      '#16a34a', 3, false, false, true)
 ) as v(name, color_code, sort_order, is_todo, is_doing, is_done)
 where not exists (
-    select 1 from public.sys_task_status_categories c where c.name = v.name
+    select 1 from public.sys_task_status_categories c
+    where c.is_todo = v.is_todo and c.is_doing = v.is_doing and c.is_done = v.is_done
 );
 
 -- -----------------------------------------------------------------------------

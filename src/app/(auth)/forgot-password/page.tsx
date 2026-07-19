@@ -72,7 +72,7 @@ export default function ForgotPasswordPage() {
             { type: "email", message: "Please enter a valid email." },
           ]}
         >
-          <Input placeholder="you@example.com" type="email" autoComplete="email" />
+          <Input placeholder="name@cubes.im" type="email" autoComplete="email" />
         </Form.Item>
 
         <Button type="primary" htmlType="submit" block loading={submitting}>

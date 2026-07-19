@@ -57,7 +57,7 @@ export default function LoginPage() {
         >
           <Input
             size="large"
-            placeholder="you@example.com"
+            placeholder="name@cubes.im"
             type="email"
             autoComplete="email"
           />

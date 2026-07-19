@@ -63,7 +63,7 @@ import {
 import { useTasksRealtime } from "@/features/tasks/use-tasks-realtime";
 import { useTaskDrawer } from "@/store/task-drawer-store";
 import { useCelebrateTaskDone } from "@/features/celebrations/use-celebrations";
-import { useTeamMembers } from "@/features/team-members/use-team-members";
+import { useTeamMembers, useCanCreateTasks, useIsTeamAdmin } from "@/features/team-members/use-team-members";
 import {
   MemberSelect,
   type MemberOption,
@@ -71,6 +71,8 @@ import {
 import { useTeamLabels } from "@/features/settings/use-labels";
 import { useSetTaskLabels } from "@/features/tasks/use-task-details";
 import { TaskIdLabel } from "@/features/tasks/task-id-label";
+import { TaskTimerButton } from "@/features/tasks/timer-widget";
+import { StatusManagerModal } from "@/features/tasks/status-manager-modal";
 import { useUIStore } from "@/store/ui-store";
 
 /** What the column quick-composer collects for a new task. */
@@ -249,10 +251,12 @@ interface TaskCardProps {
   statusAccent?: string;
   /** Render as a static (non-sortable) overlay copy when true. */
   overlay?: boolean;
+  /** True when the card's column is an ACTIVE-stage status — shows the timer. */
+  activeStage?: boolean;
 }
 
 /** The inner visual of a card, shared by the sortable card and drag overlay. */
-function TaskCardBody({ task, onOpen, statusName, statusAccent, overlay }: TaskCardProps) {
+function TaskCardBody({ task, onOpen, statusName, statusAccent, overlay, activeStage }: TaskCardProps) {
   const { token } = theme.useToken();
   const priority = task.priority;
   const assignees = task.assignees ?? [];
@@ -391,6 +395,11 @@ function TaskCardBody({ task, onOpen, statusName, statusAccent, overlay }: TaskC
             color: token.colorTextTertiary,
           }}
         >
+          {activeStage && !overlay && !task.done ? (
+            <span onPointerDown={(e) => e.stopPropagation()} style={{ display: "inline-flex" }}>
+              <TaskTimerButton taskId={task.id} size={24} />
+            </span>
+          ) : null}
           {task.task_no != null ? (
             <span style={{ display: "inline-flex", alignItems: "center", opacity: 0.85 }}>
               <TaskIdLabel projectId={task.project_id} taskNo={task.task_no} />
@@ -426,11 +435,13 @@ function SortableTaskCard({
   onOpen,
   statusName,
   statusAccent,
+  activeStage,
 }: {
   task: BoardTask;
   onOpen: (id: string) => void;
   statusName: string;
   statusAccent: string;
+  activeStage?: boolean;
 }) {
   const {
     attributes,
@@ -457,6 +468,7 @@ function SortableTaskCard({
         onOpen={onOpen}
         statusName={statusName}
         statusAccent={statusAccent}
+        activeStage={activeStage}
       />
     </div>
   );
@@ -472,6 +484,9 @@ interface ColumnProps {
   priorityOptions: { value: string; label: string }[];
   labelOptions: { value: string; label: string }[];
   onRenameStatus: () => void;
+  onManageStatuses: () => void;
+  /** Effective create-permission — hides all add-task affordances when false. */
+  canAdd: boolean;
 }
 
 /** A single board column for one task_status. */
@@ -485,7 +500,10 @@ function BoardColumn({
   priorityOptions,
   labelOptions,
   onRenameStatus,
+  onManageStatuses,
+  canAdd,
 }: ColumnProps) {
+  const isTeamAdmin = useIsTeamAdmin();
   const { token } = theme.useToken();
   const dark = useUIStore((s) => s.themeMode === "dark");
   const colBg = token.colorFillQuaternary;
@@ -549,23 +567,43 @@ function BoardColumn({
         ),
         onClick: () => setCollapsed(true),
       },
-      {
-        key: "rename",
-        label: "Rename status…",
-        icon: (
-          <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
-            edit
-          </span>
-        ),
-        onClick: onRenameStatus,
-      },
-      { type: "divider" },
-      {
-        key: "add",
-        label: "Add task",
-        icon: <PlusOutlined style={{ fontSize: 13 }} />,
-        onClick: () => setComposerOpen(true),
-      },
+      // Status editing is workspace-admin surface — members/limited only get
+      // the view controls.
+      ...(isTeamAdmin
+        ? [
+            {
+              key: "rename",
+              label: "Rename status…",
+              icon: (
+                <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
+                  edit
+                </span>
+              ),
+              onClick: onRenameStatus,
+            },
+            {
+              key: "manage",
+              label: "Edit statuses…",
+              icon: (
+                <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
+                  tune
+                </span>
+              ),
+              onClick: onManageStatuses,
+            },
+          ]
+        : []),
+      ...(canAdd
+        ? [
+            { type: "divider" as const },
+            {
+              key: "add",
+              label: "Add task",
+              icon: <PlusOutlined style={{ fontSize: 13 }} />,
+              onClick: () => setComposerOpen(true),
+            },
+          ]
+        : []),
     ],
   };
 
@@ -712,18 +750,20 @@ function BoardColumn({
             }
           />
         </Dropdown>
-        <Button
-          type="text"
-          size="small"
-          className="wl-board-col-tools"
-          aria-label={`Add task to ${status.name}`}
-          icon={<PlusOutlined style={{ fontSize: 12, color: muted }} />}
-          onClick={() => setComposerOpen(true)}
-        />
+        {canAdd ? (
+          <Button
+            type="text"
+            size="small"
+            className="wl-board-col-tools"
+            aria-label={`Add task to ${status.name}`}
+            icon={<PlusOutlined style={{ fontSize: 12, color: muted }} />}
+            onClick={() => setComposerOpen(true)}
+          />
+        ) : null}
       </div>
 
       {/* Quick composer (top of column) */}
-      {composerOpen ? (
+      {composerOpen && canAdd ? (
         <div
           style={{
             margin: "0 10px 8px",
@@ -837,6 +877,7 @@ function BoardColumn({
                 onOpen={onOpen}
                 statusName={status.name}
                 statusAccent={accent}
+                activeStage={Boolean(status.category?.is_doing)}
               />
             ))}
           </SortableContext>
@@ -894,6 +935,7 @@ function BoardColumn({
 }
 
 export function BoardTab({ projectId }: { projectId: string }) {
+  const canCreate = useCanCreateTasks(projectId);
   const { message } = App.useApp();
   const queryClient = useQueryClient();
 
@@ -916,6 +958,7 @@ export function BoardTab({ projectId }: { projectId: string }) {
   const { data: labelsRaw } = useTeamLabels();
   // Rename-status modal target (from a column's ⋯ menu).
   const [renamingStatus, setRenamingStatus] = useState<BoardStatus | null>(null);
+  const [statusManagerOpen, setStatusManagerOpen] = useState(false);
   const [statusDraft, setStatusDraft] = useState("");
 
   const memberOptions = useMemo<MemberOption[]>(
@@ -1249,6 +1292,7 @@ export function BoardTab({ projectId }: { projectId: string }) {
             onOpen={open}
             onAddTask={handleAddTask}
             adding={createTask.isPending}
+            canAdd={canCreate}
             memberOptions={memberOptions}
             priorityOptions={priorityOptions}
             labelOptions={labelOptions}
@@ -1256,6 +1300,7 @@ export function BoardTab({ projectId }: { projectId: string }) {
               setRenamingStatus(status);
               setStatusDraft(status.name);
             }}
+            onManageStatuses={() => setStatusManagerOpen(true)}
           />
         ))}
       </div>
@@ -1269,6 +1314,12 @@ export function BoardTab({ projectId }: { projectId: string }) {
         .wl-board-scroll { scrollbar-width: none; -ms-overflow-style: none; }
         .wl-board-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
       `}</style>
+
+      <StatusManagerModal
+        projectId={projectId}
+        open={statusManagerOpen}
+        onClose={() => setStatusManagerOpen(false)}
+      />
 
       <DragOverlay>
         {activeTask ? (

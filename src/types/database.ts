@@ -473,6 +473,156 @@ export type Database = {
           },
         ]
       }
+      attendance_webhook_events: {
+        Row: {
+          direction: string | null
+          employee_id: string | null
+          employee_key: string | null
+          error: string | null
+          id: string
+          org_id: string
+          outcome: string
+          payload: Json | null
+          received_at: string
+          webhook_id: string
+        }
+        Insert: {
+          direction?: string | null
+          employee_id?: string | null
+          employee_key?: string | null
+          error?: string | null
+          id?: string
+          org_id: string
+          outcome: string
+          payload?: Json | null
+          received_at?: string
+          webhook_id: string
+        }
+        Update: {
+          direction?: string | null
+          employee_id?: string | null
+          employee_key?: string | null
+          error?: string | null
+          id?: string
+          org_id?: string
+          outcome?: string
+          payload?: Json | null
+          received_at?: string
+          webhook_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_webhook_events_employee_id_fk"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "hr_employees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_webhook_events_org_id_fk"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_webhook_events_webhook_id_fk"
+            columns: ["webhook_id"]
+            isOneToOne: false
+            referencedRelation: "attendance_webhooks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      attendance_webhook_secrets: {
+        Row: {
+          signing_secret: string | null
+          updated_at: string
+          webhook_id: string
+        }
+        Insert: {
+          signing_secret?: string | null
+          updated_at?: string
+          webhook_id: string
+        }
+        Update: {
+          signing_secret?: string | null
+          updated_at?: string
+          webhook_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_webhook_secrets_webhook_id_fk"
+            columns: ["webhook_id"]
+            isOneToOne: true
+            referencedRelation: "attendance_webhooks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      attendance_webhooks: {
+        Row: {
+          config: Json
+          created_at: string
+          created_by: string | null
+          enabled: boolean
+          id: string
+          last_error: string | null
+          last_received_at: string | null
+          name: string
+          org_id: string
+          received_count: number
+          token_hash: string
+          token_prefix: string
+          updated_at: string
+        }
+        Insert: {
+          config?: Json
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          id?: string
+          last_error?: string | null
+          last_received_at?: string | null
+          name: string
+          org_id: string
+          received_count?: number
+          token_hash: string
+          token_prefix: string
+          updated_at?: string
+        }
+        Update: {
+          config?: Json
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          id?: string
+          last_error?: string | null
+          last_received_at?: string | null
+          name?: string
+          org_id?: string
+          received_count?: number
+          token_hash?: string
+          token_prefix?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_webhooks_created_by_fk"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_webhooks_org_id_fk"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       automation_runs: {
         Row: {
           automation_id: string
@@ -3890,6 +4040,7 @@ export type Database = {
           hours_per_day: number | null
           id: string
           key: string
+          limited_task_creation: string
           name: string
           notes: string | null
           owner_id: string | null
@@ -3917,6 +4068,7 @@ export type Database = {
           hours_per_day?: number | null
           id?: string
           key: string
+          limited_task_creation?: string
           name: string
           notes?: string | null
           owner_id?: string | null
@@ -3944,6 +4096,7 @@ export type Database = {
           hours_per_day?: number | null
           id?: string
           key?: string
+          limited_task_creation?: string
           name?: string
           notes?: string | null
           owner_id?: string | null
@@ -5102,6 +5255,7 @@ export type Database = {
           created_at: string
           id: string
           job_title_id: string | null
+          member_type: string | null
           role_id: string
           team_id: string
           updated_at: string
@@ -5112,6 +5266,7 @@ export type Database = {
           created_at?: string
           id?: string
           job_title_id?: string | null
+          member_type?: string | null
           role_id: string
           team_id: string
           updated_at?: string
@@ -5122,6 +5277,7 @@ export type Database = {
           created_at?: string
           id?: string
           job_title_id?: string | null
+          member_type?: string | null
           role_id?: string
           team_id?: string
           updated_at?: string
@@ -5426,6 +5582,25 @@ export type Database = {
         Args: { p_project_id: string; p_template_id: string }
         Returns: number
       }
+      attendance_webhook_punch: {
+        Args: {
+          _employee_id: string
+          _at: string
+          _direction: string
+          _tz?: string
+        }
+        Returns: string
+      }
+      attendance_webhook_touch: {
+        Args: {
+          _webhook_id: string
+          _events: number
+          _error?: string | null
+        }
+        Returns: undefined
+      }
+      can_create_tasks: { Args: { _project_id: string }; Returns: boolean }
+      can_share_project: { Args: { _project_id: string }; Returns: boolean }
       can_manage_employee: { Args: { _employee_id: string }; Returns: boolean }
       can_view_employee: { Args: { _employee_id: string }; Returns: boolean }
       cancel_leave: { Args: { p_request_id: string }; Returns: undefined }
@@ -5553,6 +5728,7 @@ export type Database = {
       is_hr_admin: { Args: { _org_id: string }; Returns: boolean }
       is_org_admin: { Args: { _org_id: string }; Returns: boolean }
       is_org_member: { Args: { _org_id: string }; Returns: boolean }
+      is_platform_admin: { Args: never; Returns: boolean }
       advance_workflow_run: { Args: { p_run_id: string }; Returns: undefined }
       start_workflow_run: {
         Args: { p_workflow_id: string; p_trigger_snapshot?: Json }
@@ -5579,6 +5755,59 @@ export type Database = {
         Returns: string
       }
       materialize_recurring_tasks: { Args: never; Returns: number }
+      my_pending_invitations: {
+        Args: never
+        Returns: {
+          id: string
+          team_id: string
+          email: string
+          name: string
+          member_type: string
+          created_at: string
+          team_name: string
+        }[]
+      }
+      my_running_timer: {
+        Args: never
+        Returns: {
+          timer_id: string
+          task_id: string
+          task_name: string
+          project_id: string
+          project_name: string
+          started_at: string
+        }[]
+      }
+      team_pulse: {
+        Args: { p_team_id: string }
+        Returns: {
+          team_member_id: string
+          user_id: string
+          name: string
+          avatar_url: string | null
+          member_type: string | null
+          running_task_id: string | null
+          running_task_name: string | null
+          running_project_id: string | null
+          running_project_name: string | null
+          running_started_at: string | null
+          active_task_id: string | null
+          active_task_name: string | null
+          active_status_name: string | null
+          active_project_name: string | null
+          active_count: number
+          next_task_id: string | null
+          next_task_name: string | null
+          next_project_name: string | null
+          next_due: string | null
+          todo_count: number
+          today_seconds: number
+        }[]
+      }
+      team_pulse_setting: {
+        Args: { p_team_id: string; p_key: string }
+        Returns: boolean
+      }
       provision_my_account: { Args: never; Returns: string }
       provision_user_account: { Args: { p_user_id: string }; Returns: string }
       report_members: {
@@ -5650,6 +5879,14 @@ export type Database = {
         Returns: string
       }
       team_id_of_project: { Args: { _project_id: string }; Returns: string }
+      user_accessible_projects: {
+        Args: { _user_id: string; _team_id: string }
+        Returns: string[]
+      }
+      user_can_access_project: {
+        Args: { _user_id: string; _project_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       language_type: "en" | "es" | "pt" | "alb" | "de" | "zh_cn" | "ko"

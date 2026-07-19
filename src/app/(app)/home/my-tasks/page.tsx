@@ -24,6 +24,7 @@ import {
 } from "@/features/home/use-home";
 import { useUpdateTask } from "@/features/tasks/use-tasks";
 import { useTaskPriorities } from "@/features/tasks/use-task-statuses";
+import { TaskTimerButton } from "@/features/tasks/timer-widget";
 import { useTaskDrawer } from "@/store/task-drawer-store";
 import { TaskDrawer } from "@/app/(app)/projects/[id]/_components/task-drawer";
 import {
@@ -310,7 +311,9 @@ export default function MyTasksPage() {
   const renderRow = (t: MyTask) => {
     const meta = edits?.[t.task_id];
     const statuses: MyTaskStatusOption[] = statusMap?.[t.project_id] ?? [];
-    const current = statuses.find((s) => s.id === meta?.status_id);
+    const current =
+      statuses.find((s) => s.id === meta?.status_id) ??
+      statuses.find((s) => s.name === t.status_name);
     const doneStatus = statuses.find((s) => s.isDone);
     const busy = busyId === t.task_id;
     const prio = meta?.priority_id ? priorityById.get(meta.priority_id) : undefined;
@@ -426,6 +429,8 @@ export default function MyTasksPage() {
               )
             }
           />
+
+          {current?.isDoing ? <TaskTimerButton taskId={t.task_id} size={24} /> : null}
 
           {daysLate > 0 ? (
             <Tooltip title={`${daysLate} day${daysLate === 1 ? "" : "s"} overdue`}>

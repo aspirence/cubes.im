@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   App as AntdApp,
@@ -64,6 +64,7 @@ import { ShareSpaceModal } from "./share-space-modal";
 import { useNotifications } from "@/features/notifications/use-notifications";
 import { useMyTasks } from "@/features/home/use-home";
 import { ChatNavSections } from "@/app/(app)/chat/_components/chat-sidebar";
+import { TimerWidget } from "@/features/tasks/timer-widget";
 
 /* -------------------------------------------------------------------------- */
 /* Design tokens (canonical handoff).                                         */
@@ -408,6 +409,7 @@ function SpaceNode({
   expanded,
   onToggle,
   forceExpanded = false,
+  activeChain,
   projectsByFolder,
   renderProject,
   spaceMenu,
@@ -418,13 +420,32 @@ function SpaceNode({
   onToggle: () => void;
   /** Search mode: show every (pruned) space open, ignoring the accordion. */
   forceExpanded?: boolean;
+  /** Folder-id path (below this node) to the ACTIVE project's space — used to
+   *  auto-open the chain on a fresh load so the open project stays revealed. */
+  activeChain?: string[];
   projectsByFolder: Map<string, ProjectWithRelations[]>;
   renderProject: (p: ProjectWithRelations, indent: number) => React.ReactNode;
   spaceMenu: (folder: ProjectFolder, depth: number) => MenuProps["items"];
 }) {
   const T = useSidebarTokens();
   // Accordion among this node's children: at most one expanded at a time.
-  const [expandedChildId, setExpandedChildId] = useState<string | null>(null);
+  // Resolution order: the user's explicit toggle this session → the active
+  // project's chain (refresh reveal) → the last persisted choice.
+  const childPersistKey = `cubes.sidebar.space-child:${node.folder.id}`;
+  const [userExpandedChildId, setUserExpandedChildId] = useState<
+    string | null | undefined
+  >(undefined);
+  const persistedChildId =
+    typeof window !== "undefined" ? window.localStorage.getItem(childPersistKey) : null;
+  const expandedChildId =
+    userExpandedChildId !== undefined
+      ? userExpandedChildId
+      : (activeChain?.[0] ?? persistedChildId);
+  useEffect(() => {
+    if (userExpandedChildId === undefined) return;
+    if (userExpandedChildId) window.localStorage.setItem(childPersistKey, userExpandedChildId);
+    else window.localStorage.removeItem(childPersistKey);
+  }, [userExpandedChildId, childPersistKey]);
   const [menuOpen, setMenuOpen] = useState(false);
   const projects = projectsByFolder.get(node.folder.id) ?? [];
   const childFolders = node.children;
@@ -527,11 +548,16 @@ function SpaceNode({
                 depth={depth + 1}
                 expanded={expandedChildId === child.folder.id}
                 onToggle={() =>
-                  setExpandedChildId((id) =>
-                    id === child.folder.id ? null : child.folder.id,
+                  setUserExpandedChildId(
+                    expandedChildId === child.folder.id ? null : child.folder.id,
                   )
                 }
                 forceExpanded={forceExpanded}
+                activeChain={
+                  activeChain && activeChain[0] === child.folder.id
+                    ? activeChain.slice(1)
+                    : undefined
+                }
                 projectsByFolder={projectsByFolder}
                 renderProject={renderProject}
                 spaceMenu={spaceMenu}
@@ -1441,17 +1467,25 @@ function CountPill({ count, tone }: { count: number; tone: "red" | "grey" }) {
   return (
     <span
       style={{
-        minWidth: 18,
-        height: 16,
+        minWidth: 17,
+        height: 17,
         padding: "0 5px",
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        borderRadius: 9,
-        fontSize: 10.5,
-        fontWeight: 600,
+        borderRadius: 999,
+        fontSize: 10,
+        fontWeight: 700,
+        lineHeight: 1,
+        fontVariantNumeric: "tabular-nums",
         color: tone === "red" ? "#fff" : T.textSecondary,
-        background: tone === "red" ? "#e5484d" : T.soft,
+        background:
+          tone === "red"
+            ? "linear-gradient(180deg,#f05252,#e5484d)"
+            : T.soft,
+        boxShadow:
+          tone === "red" ? "0 1px 3px rgba(229,72,77,.35)" : "none",
+        flex: "none",
       }}
     >
       {count > 99 ? "99+" : count}
@@ -1548,7 +1582,13 @@ export function ProjectsSidebar() {
     parentId: string | null;
   } | null>(null);
   // Accordion among top-level spaces: at most one expanded at a time.
-  const [expandedSpaceId, setExpandedSpaceId] = useState<string | null>(null);
+  // Resolution order: the user's explicit toggle this session → the space
+  // containing the OPEN project (so a refresh keeps it revealed) → the last
+  // persisted choice. Persisting only on explicit toggles means the active-
+  // project reveal never overwrites what the user chose to keep open.
+  const [userExpandedSpaceId, setUserExpandedSpaceId] = useState<
+    string | null | undefined
+  >(undefined);
   const [query, setQuery] = useState("");
   const [renameProjectId, setRenameProjectId] = useState<string | null>(null);
   const [editProjectId, setEditProjectId] = useState<string | null>(null);
@@ -1575,6 +1615,37 @@ export function ProjectsSidebar() {
   }, [pathname]);
 
   const allTasksActive = pathname.startsWith("/projects/all-tasks");
+
+  // Folder-id path from a top-level space down to the active project's space.
+  const activeSpaceChain = useMemo(() => {
+    if (!activeProjectId) return null;
+    const folderId = projects.find((p) => p.id === activeProjectId)?.folder_id;
+    if (!folderId) return null;
+    const byId = new Map(folders.map((f) => [f.id, f]));
+    const chain: string[] = [];
+    let cur = byId.get(folderId);
+    let guard = 0;
+    while (cur && guard++ < 10) {
+      chain.unshift(cur.id);
+      cur = cur.parent_folder_id ? byId.get(cur.parent_folder_id) : undefined;
+    }
+    return chain.length > 0 ? chain : null;
+  }, [activeProjectId, projects, folders]);
+
+  const SPACE_PERSIST_KEY = "cubes.sidebar.expanded-space";
+  const persistedSpaceId =
+    typeof window !== "undefined"
+      ? window.localStorage.getItem(SPACE_PERSIST_KEY)
+      : null;
+  const expandedSpaceId =
+    userExpandedSpaceId !== undefined
+      ? userExpandedSpaceId
+      : (activeSpaceChain?.[0] ?? persistedSpaceId);
+  useEffect(() => {
+    if (userExpandedSpaceId === undefined) return;
+    if (userExpandedSpaceId) window.localStorage.setItem(SPACE_PERSIST_KEY, userExpandedSpaceId);
+    else window.localStorage.removeItem(SPACE_PERSIST_KEY);
+  }, [userExpandedSpaceId]);
 
   const favorites = useMemo(
     () => projects.filter((p) => p.is_favorite),
@@ -2212,11 +2283,16 @@ export function ProjectsSidebar() {
                 depth={0}
                 expanded={expandedSpaceId === node.folder.id}
                 onToggle={() =>
-                  setExpandedSpaceId((id) =>
-                    id === node.folder.id ? null : node.folder.id,
+                  setUserExpandedSpaceId(
+                    expandedSpaceId === node.folder.id ? null : node.folder.id,
                   )
                 }
                 forceExpanded={searching}
+                activeChain={
+                  activeSpaceChain && activeSpaceChain[0] === node.folder.id
+                    ? activeSpaceChain.slice(1)
+                    : undefined
+                }
                 projectsByFolder={visibleByFolder}
                 renderProject={renderProject}
                 spaceMenu={buildSpaceMenu}
@@ -2236,6 +2312,9 @@ export function ProjectsSidebar() {
         {/* Chat — channels + DMs inline below Spaces (ClickUp-style). */}
         {!searching ? <ChatNavSections /> : null}
       </div>
+
+      {/* Running task timer — pinned under the tree, ClickUp-style. */}
+      <TimerWidget />
 
       <NewSpaceModal
         open={spaceModal !== null}

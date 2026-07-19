@@ -27,6 +27,7 @@ import { useActiveTeam } from "@/features/teams/use-teams";
 import { useAuth } from "@/features/auth/use-auth";
 import {
   useInvitations,
+  useResendInvitationEmail,
   useInviteMember,
   useCancelInvitation,
   type EmailInvitation,
@@ -70,6 +71,7 @@ export default function PeoplePage() {
   const transferOwnership = useTransferOwnership();
   const inviteMember = useInviteMember();
   const cancelInvitation = useCancelInvitation();
+  const resendInvitation = useResendInvitationEmail();
 
   const [query, setQuery] = useState("");
   const [tier, setTier] = useState<string>("all");
@@ -321,6 +323,25 @@ export default function PeoplePage() {
                     {meta.label}
                   </span>
                   <Tag color="gold" style={{ margin: 0 }}>Pending</Tag>
+                  <Tooltip title="Resend invitation email">
+                    <Button
+                      type="text"
+                      size="small"
+                      loading={resendInvitation.isPending && resendInvitation.variables === inv.id}
+                      aria-label="Resend invitation email"
+                      icon={<MIcon name="forward_to_inbox" size={16} />}
+                      onClick={() => {
+                        resendInvitation.mutate(inv.id, {
+                          onSuccess: (result) => {
+                            if (result.ok) message.success(`Invitation email sent to ${inv.email}.`);
+                            else message.warning(result.reason ?? "The email didn't go through.");
+                          },
+                          onError: (e) =>
+                            message.error(e instanceof Error ? e.message : "Couldn't send the email."),
+                        });
+                      }}
+                    />
+                  </Tooltip>
                   <Tooltip title="Cancel invitation">
                     <Button
                       type="text"

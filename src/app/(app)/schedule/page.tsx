@@ -1,22 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import {
-  Alert,
-  App as AntdApp,
-  Avatar,
-  Button,
-  DatePicker,
-  Form,
-  InputNumber,
-  Modal,
-  Popover,
-  Result,
-  Segmented,
-  Select,
-  Skeleton,
-  theme,
-} from "antd";
+import { Button, Result, Skeleton } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import { useRouter } from "next/navigation";
@@ -28,345 +13,39 @@ import {
   useTeamMembers,
   useIsTeamAdmin,
 } from "@/features/team-members/use-team-members";
-import { MemberSingleSelect } from "@/features/team-members/member-select";
 import { useAuth } from "@/features/auth/use-auth";
-import { useProjects } from "@/features/projects/use-projects";
 import {
   useTeamAllocations,
-  useCreateAllocation,
   type AllocationWithRelations,
 } from "@/features/schedule/use-allocations";
 import {
   useTeamAvailability,
   buildAvailabilityIndex,
-  formatLeaveDays,
 } from "@/features/schedule/use-availability";
 import { useScheduleTasks } from "@/features/schedule/use-schedule-tasks";
 
-/* ------------------------------------------------------------------ tokens */
-
-function useT() {
-  const { token } = theme.useToken();
-  return useMemo(
-    () => ({
-      accent: "#4a4ad0",
-      accentBar: "#5a5ad6",
-      accentSoft: token.colorPrimaryBg,
-      canvas: token.colorBgLayout,
-      panel: token.colorBgContainer,
-      hairline: token.colorBorderSecondary,
-      divider: token.colorSplit,
-      chipBg: token.colorFillTertiary,
-      rowHover: token.colorFillQuaternary,
-      eventBg: token.colorFillQuaternary,
-      textPrimary: token.colorText,
-      textSecondary: token.colorTextSecondary,
-      textTertiary: token.colorTextTertiary,
-      textFaint: token.colorTextQuaternary,
-      warnFg: token.colorWarningText,
-      warnBg: token.colorWarningBg,
-    }),
-    [token],
-  );
-}
-
-const MONO = "var(--font-geist-mono)";
-
-/** Solid category palette (white text), matching the handoff. */
-const CATEGORY_COLORS = [
-  "#5a5ad6",
-  "#e0a83e",
-  "#3a9d6e",
-  "#8b6fd6",
-  "#2f9c9c",
-  "#d96a8f",
-  "#e0663f",
-  "#8a8d98",
-];
-
-function colorForKey(key: string): string {
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) {
-    hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
-  }
-  return CATEGORY_COLORS[hash % CATEGORY_COLORS.length];
-}
+import {
+  ChipPill,
+  DayOverflow,
+  MIcon,
+  MONO,
+  colorForKey,
+  formatHours,
+  useScheduleTokens,
+  type DayChip,
+} from "./_components/schedule-ui";
+import { AddAllocationModal } from "./_components/add-allocation-modal";
+import {
+  ScheduleHeader,
+  type ScheduleView,
+} from "./_components/schedule-header";
+import { SummaryStrip, type SummaryTile } from "./_components/summary-strip";
 
 /** An allocation row joined to its project + member, per the shared hook. */
 type AllocationRow = AllocationWithRelations;
 
-/* -------------------------------------------------------------- add modal */
-
-interface AllocationFormValues {
-  team_member_id: string;
-  project_id: string;
-  range: [Dayjs, Dayjs];
-  hours_per_day: number;
-}
-
-function AddAllocationModal({
-  open,
-  onClose,
-}: {
-  open: boolean;
-  onClose: () => void;
-}) {
-  const { message } = AntdApp.useApp();
-  const [form] = Form.useForm<AllocationFormValues>();
-
-  const { data: members } = useTeamMembers();
-  const { data: projects } = useProjects();
-  const createAllocation = useCreateAllocation();
-
-  // Warn (without blocking) when the picked member has approved HR leave
-  // inside the picked period.
-  const watchedMemberId = Form.useWatch("team_member_id", form);
-  const watchedRange = Form.useWatch("range", form);
-  const rangeFrom = watchedRange?.[0]?.format("YYYY-MM-DD");
-  const rangeTo = watchedRange?.[1]?.format("YYYY-MM-DD");
-  const { data: rangeAvailabilityRaw } = useTeamAvailability(
-    rangeFrom,
-    rangeTo,
-  );
-  const leaveConflictDays = useMemo(() => {
-    if (!watchedMemberId) return [];
-    const idx = buildAvailabilityIndex(rangeAvailabilityRaw);
-    const days = idx.leaveByMember.get(watchedMemberId);
-    return days ? [...days.keys()] : [];
-  }, [rangeAvailabilityRaw, watchedMemberId]);
-
-  const memberOptions = (members ?? [])
-    .filter((m) => m.user)
-    .map((m) => ({
-      value: m.id,
-      label: m.user?.name ?? m.user?.email ?? "Unknown",
-      avatarUrl: m.user?.avatar_url,
-      email: m.user?.email,
-    }));
-
-  const watchedMemberName =
-    memberOptions.find((o) => o.value === watchedMemberId)?.label ??
-    "This member";
-
-  const projectOptions = (projects ?? []).map((p) => ({
-    value: p.id,
-    label: p.name,
-  }));
-
-  const handleOk = async () => {
-    let values: AllocationFormValues;
-    try {
-      values = await form.validateFields();
-    } catch {
-      return;
-    }
-
-    const [from, to] = values.range;
-    createAllocation.mutate(
-      {
-        teamMemberId: values.team_member_id,
-        projectId: values.project_id,
-        allocatedFrom: from.format("YYYY-MM-DD"),
-        allocatedTo: to.format("YYYY-MM-DD"),
-        secondsPerDay: Math.round((values.hours_per_day ?? 8) * 3600),
-      },
-      {
-        onSuccess: () => {
-          message.success("Allocation added");
-          form.resetFields();
-          onClose();
-        },
-        onError: (err) => {
-          message.error(
-            err instanceof Error ? err.message : "Failed to add allocation",
-          );
-        },
-      },
-    );
-  };
-
-  return (
-    <Modal
-      title="Add allocation"
-      open={open}
-      onOk={handleOk}
-      onCancel={onClose}
-      confirmLoading={createAllocation.isPending}
-      okText="Add"
-      destroyOnHidden
-    >
-      <Form
-        form={form}
-        layout="vertical"
-        initialValues={{ hours_per_day: 8 }}
-        preserve={false}
-      >
-        <Form.Item
-          name="team_member_id"
-          label="Team member"
-          rules={[{ required: true, message: "Select a team member" }]}
-        >
-          <MemberSingleSelect options={memberOptions} placeholder="Select member" allowClear={false} />
-        </Form.Item>
-        <Form.Item
-          name="project_id"
-          label="Project"
-          rules={[{ required: true, message: "Select a project" }]}
-        >
-          <Select
-            options={projectOptions}
-            placeholder="Select project"
-            showSearch
-            optionFilterProp="label"
-          />
-        </Form.Item>
-        <Form.Item
-          name="range"
-          label="Allocated period"
-          rules={[{ required: true, message: "Pick a date range" }]}
-        >
-          <DatePicker.RangePicker style={{ width: "100%" }} />
-        </Form.Item>
-        <Form.Item name="hours_per_day" label="Hours per day">
-          <InputNumber min={0} max={24} step={0.5} style={{ width: "100%" }} />
-        </Form.Item>
-        {leaveConflictDays.length > 0 && (
-          <Alert
-            type="warning"
-            showIcon
-            style={{ marginTop: 4 }}
-            message={`${watchedMemberName} is on approved leave ${formatLeaveDays(
-              leaveConflictDays,
-            )} — ${leaveConflictDays.length} working day${
-              leaveConflictDays.length === 1 ? "" : "s"
-            } of this allocation.`}
-          />
-        )}
-      </Form>
-    </Modal>
-  );
-}
-
-/* ------------------------------------------------------ calendar helpers */
-
-function NavButton({
-  children,
-  onClick,
-  ariaLabel,
-  active,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  ariaLabel?: string;
-  /** Highlighted state (e.g. the Yesterday/Today/Tomorrow jump that matches). */
-  active?: boolean;
-}) {
-  const T = useT();
-  const [hover, setHover] = useState(false);
-  return (
-    <button
-      type="button"
-      aria-label={ariaLabel}
-      onClick={onClick}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        height: 32,
-        minWidth: 32,
-        padding: "0 10px",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 4,
-        border: `1px solid ${active ? T.accent : T.hairline}`,
-        borderRadius: 8,
-        background: active ? T.accentSoft : hover ? T.rowHover : T.panel,
-        color: active ? T.accent : T.textPrimary,
-        fontSize: 13,
-        fontWeight: active ? 600 : 400,
-        cursor: "pointer",
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-/** One pill inside a day cell. */
-interface DayChip {
-  key: string;
-  kind: "task" | "allocation" | "leave" | "holiday";
-  label: string;
-  sub?: string;
-  color?: string;
-  href?: string;
-}
-
-function ChipPill({
-  chip,
-  onOpen,
-}: {
-  chip: DayChip;
-  onOpen: (href: string) => void;
-}) {
-  const T = useT();
-  const clickable = Boolean(chip.href);
-  const tone =
-    chip.kind === "leave" || chip.kind === "holiday"
-      ? { bg: T.warnBg, fg: T.warnFg, bar: T.warnFg }
-      : { bg: T.eventBg, fg: T.textPrimary, bar: chip.color ?? T.accentBar };
-  return (
-    <div
-      role={clickable ? "button" : undefined}
-      onClick={
-        clickable
-          ? (e) => {
-              e.stopPropagation();
-              onOpen(chip.href as string);
-            }
-          : undefined
-      }
-      title={chip.sub ? `${chip.label} — ${chip.sub}` : chip.label}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "2px 6px",
-        borderRadius: 5,
-        background: tone.bg,
-        borderLeft: `3px solid ${tone.bar}`,
-        fontSize: 11.5,
-        lineHeight: "16px",
-        color: tone.fg,
-        cursor: clickable ? "pointer" : "default",
-        overflow: "hidden",
-        whiteSpace: "nowrap",
-      }}
-    >
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-        {chip.label}
-      </span>
-      {chip.sub ? (
-        <span style={{ color: T.textTertiary, flex: "none" }}>{chip.sub}</span>
-      ) : null}
-    </div>
-  );
-}
-
-function memberInitials(name: string): string {
-  return name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-}
-
-/* ------------------------------------------------------------------ page */
-
 export default function SchedulePage() {
-  const T = useT();
+  const T = useScheduleTokens();
   const router = useRouter();
   const { user } = useAuth();
   const isAdmin = useIsTeamAdmin();
@@ -383,7 +62,7 @@ export default function SchedulePage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [anchor, setAnchor] = useState<Dayjs>(() => dayjs());
   // Calendar scope: focused day, single week row, or full month grid.
-  const [view, setView] = useState<"day" | "week" | "month">("month");
+  const [view, setView] = useState<ScheduleView>("month");
   // Create-task-on-a-day (calendar hover "+").
   const [createOpen, setCreateOpen] = useState(false);
   const [createDate, setCreateDate] = useState<Dayjs | null>(null);
@@ -459,13 +138,23 @@ export default function SchedulePage() {
     }
     return map;
   }, [members]);
+  const avatarUrlByTm = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const m of members ?? []) map.set(m.id, m.user?.avatar_url ?? null);
+    return map;
+  }, [members]);
 
   // Per-day chips: holiday + leave + allocations + due tasks, member-filtered.
+  // Each chip carries person/project/hours context for the hover detail card.
   const chipsByDay = useMemo(() => {
     const map = new Map<string, DayChip[]>();
     const push = (iso: string, chip: DayChip) => {
       map.set(iso, [...(map.get(iso) ?? []), chip]);
     };
+    const personFor = (tmId: string) => ({
+      name: memberNameById.get(tmId) ?? "Member",
+      avatarUrl: avatarUrlByTm.get(tmId) ?? null,
+    });
 
     for (const day of gridDays) {
       const iso = day.format("YYYY-MM-DD");
@@ -475,6 +164,7 @@ export default function SchedulePage() {
           key: `hol-${iso}`,
           kind: "holiday",
           label: holidayName,
+          dateIso: iso,
         });
       }
       for (const [tmId, dayMap] of availability.leaveByMember) {
@@ -484,13 +174,23 @@ export default function SchedulePage() {
         push(iso, {
           key: `leave-${tmId}-${iso}`,
           kind: "leave",
-          label: `${memberNameById.get(tmId) ?? "Member"} · ${label}`,
+          label,
+          person: personFor(tmId),
+          dateIso: iso,
         });
       }
     }
 
     for (const a of allocations) {
       if (!matchesFilter(a.team_member_id)) continue;
+      const person = a.team_member?.user
+        ? {
+            name: a.team_member.user.name ?? a.team_member.user.email,
+            avatarUrl: a.team_member.user.avatar_url,
+          }
+        : personFor(a.team_member_id);
+      const color = a.project?.color_code ?? colorForKey(a.project_id);
+      const hours = (a.seconds_per_day ?? 0) / 3600;
       const from = dayjs(a.allocated_from);
       const to = dayjs(a.allocated_to);
       for (
@@ -500,19 +200,16 @@ export default function SchedulePage() {
         d = d.add(1, "day")
       ) {
         const iso = d.format("YYYY-MM-DD");
-        const hours = (a.seconds_per_day ?? 0) / 3600;
         push(iso, {
           key: `alloc-${a.id}-${iso}`,
           kind: "allocation",
           label: a.project?.name ?? "Project",
-          sub:
-            effectiveFilter === "all"
-              ? memberNameById.get(a.team_member_id)
-              : hours > 0
-                ? `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`
-                : undefined,
-          color: a.project?.color_code ?? colorForKey(a.project_id),
+          sub: hours > 0 ? formatHours(hours) : undefined,
+          color,
           href: `/projects/${a.project_id}`,
+          person,
+          hours,
+          dateIso: iso,
         });
       }
     }
@@ -525,12 +222,25 @@ export default function SchedulePage() {
         continue;
       }
       const iso = dayjs(t.end_date).format("YYYY-MM-DD");
+      // On a specific member's calendar, attribute the task to THAT member —
+      // assignees[] is an unordered embed, so [0] can be a different person.
+      const displayAssignee =
+        effectiveFilter !== "all"
+          ? effectiveFilter
+          : t.assignees[0]?.team_member_id;
       push(iso, {
         key: `task-${t.id}`,
         kind: "task",
         label: t.name,
         color: t.project?.color_code ?? colorForKey(t.project_id),
         href: `/projects/${t.project_id}?task=${t.id}`,
+        person: displayAssignee ? personFor(displayAssignee) : null,
+        projectName: t.project?.name,
+        dateIso: iso,
+        detail:
+          t.assignees.length > 1
+            ? `${t.assignees.length} assignees`
+            : undefined,
       });
     }
     return map;
@@ -544,49 +254,159 @@ export default function SchedulePage() {
     allocations,
     dueTasks,
     memberNameById,
+    avatarUrlByTm,
+    effectiveFilter,
+  ]);
+
+  // Days the summary tiles aggregate over: the anchor month (month view — the
+  // grid's leading/trailing filler days don't count) or the visible week.
+  const scopeDays = useMemo(
+    () =>
+      view === "month"
+        ? gridDays.filter((d) => d.month() === anchor.month())
+        : gridDays,
+    [gridDays, view, anchor],
+  );
+
+  // Compact stat tiles, computed from already-fetched data. Adapts to the
+  // member filter: team-wide coverage stats for Everyone, personal ones else.
+  const summaryTiles = useMemo<SummaryTile[]>(() => {
+    if (view === "day") return [];
+    const scopeIso = new Set(scopeDays.map((d) => d.format("YYYY-MM-DD")));
+
+    let totalHours = 0;
+    const hoursByDay = new Map<string, number>();
+    const people = new Set<string>();
+    const projects = new Set<string>();
+    for (const a of allocations) {
+      if (!matchesFilter(a.team_member_id)) continue;
+      const hours = (a.seconds_per_day ?? 0) / 3600;
+      const from = dayjs(a.allocated_from);
+      const to = dayjs(a.allocated_to);
+      for (
+        let d = from.isBefore(gridStart) ? gridStart : from;
+        (d.isBefore(to) || d.isSame(to, "day")) &&
+        (d.isBefore(gridEnd) || d.isSame(gridEnd, "day"));
+        d = d.add(1, "day")
+      ) {
+        const iso = d.format("YYYY-MM-DD");
+        if (!scopeIso.has(iso)) continue;
+        totalHours += hours;
+        hoursByDay.set(iso, (hoursByDay.get(iso) ?? 0) + hours);
+        people.add(a.team_member_id);
+        projects.add(a.project_id);
+      }
+    }
+
+    let leaveDays = 0;
+    for (const [tmId, dayMap] of availability.leaveByMember) {
+      if (!matchesFilter(tmId)) continue;
+      for (const iso of dayMap.keys()) if (scopeIso.has(iso)) leaveDays++;
+    }
+    let tasksDue = 0;
+    for (const t of dueTasks ?? []) {
+      if (
+        effectiveFilter !== "all" &&
+        !t.assignees.some((x) => x.team_member_id === effectiveFilter)
+      ) {
+        continue;
+      }
+      if (scopeIso.has(dayjs(t.end_date).format("YYYY-MM-DD"))) tasksDue++;
+    }
+    let busiestIso: string | null = null;
+    for (const [iso, h] of hoursByDay) {
+      if (busiestIso === null || h > (hoursByDay.get(busiestIso) ?? 0)) {
+        busiestIso = iso;
+      }
+    }
+
+    const teamSize = (members ?? []).filter((m) => m.user).length;
+    const scopeName = view === "month" ? "this month" : "this week";
+    const tiles: SummaryTile[] = [
+      {
+        key: "hours",
+        icon: "schedule",
+        label: `Allocated ${scopeName}`,
+        value: formatHours(totalHours),
+      },
+      effectiveFilter === "all"
+        ? {
+            key: "people",
+            icon: "group",
+            label: "People scheduled",
+            value: String(people.size),
+            suffix: teamSize ? `of ${teamSize}` : undefined,
+          }
+        : {
+            key: "projects",
+            icon: "folder",
+            label: "Projects",
+            value: String(projects.size),
+          },
+      {
+        key: "busiest",
+        icon: "local_fire_department",
+        label: "Busiest day",
+        value: busiestIso ? dayjs(busiestIso).format("MMM D") : "—",
+        suffix: busiestIso
+          ? formatHours(hoursByDay.get(busiestIso) ?? 0)
+          : undefined,
+      },
+      effectiveFilter === "all"
+        ? {
+            key: "bench",
+            icon: "person_off",
+            label: "Unallocated people",
+            value: String(Math.max(teamSize - people.size, 0)),
+          }
+        : {
+            key: "leave",
+            icon: "event_busy",
+            label: "Days on leave",
+            value: String(leaveDays),
+          },
+      {
+        key: "tasks",
+        icon: "task_alt",
+        label: "Tasks due",
+        value: String(tasksDue),
+      },
+    ];
+    return tiles;
+    // matchesFilter closes over effectiveFilter (already a dep).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    view,
+    scopeDays,
+    allocations,
+    availability,
+    dueTasks,
+    members,
+    gridStart,
+    gridEnd,
     effectiveFilter,
   ]);
 
   const memberFilterOptions = useMemo(
     () => [
-      { value: "all", label: "Everyone" },
+      { value: "all", label: "Everyone", avatarUrl: null },
       ...(members ?? [])
         .filter((m) => m.user)
-        .map((m) => ({ value: m.id, label: m.user!.name })),
+        .map((m) => ({
+          value: m.id,
+          label: m.user!.name,
+          avatarUrl: m.user!.avatar_url,
+        })),
     ],
     [members],
   );
-  const avatarUrlByTm = useMemo(() => {
-    const map = new Map<string, string | null>();
-    for (const m of members ?? []) map.set(m.id, m.user?.avatar_url ?? null);
-    return map;
-  }, [members]);
 
-  const renderMemberOption = (value: string, label: string) => (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-      {value === "all" ? (
-        <Avatar size={20} style={{ fontSize: 10, flex: "none" }}>
-          ∗
-        </Avatar>
-      ) : (
-        <Avatar
-          size={20}
-          src={avatarUrlByTm.get(value) ?? undefined}
-          style={{ fontSize: 10, flex: "none" }}
-        >
-          {memberInitials(label)}
-        </Avatar>
-      )}
-      <span>{label}</span>
-    </span>
-  );
-
-  const rangeLabel =
-    view === "month"
-      ? anchor.format("MMMM YYYY")
-      : view === "week"
-        ? `${gridStart.format("MMM D")} – ${gridEnd.format("MMM D, YYYY")}`
-        : anchor.format("dddd, MMMM D, YYYY");
+  const scopeLabel =
+    effectiveFilter === "all"
+      ? activeTeam?.name
+        ? `Calendar across ${activeTeam.name}`
+        : "Team calendar"
+      : `${memberNameById.get(effectiveFilter) ?? "Member"}'s calendar`;
   // "Today" / "Yesterday" / "Tomorrow" when the anchor is one of them.
   const relativeLabel = anchor.isSame(today, "day")
     ? "Today"
@@ -596,143 +416,12 @@ export default function SchedulePage() {
         ? "Tomorrow"
         : null;
 
-  /* ---------------------------------------------------------- header */
-
-  const header = (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "flex-end",
-        justifyContent: "space-between",
-        gap: 16,
-        flexWrap: "wrap",
-      }}
-    >
-      <div>
-        <h1
-          style={{
-            margin: 0,
-            fontSize: 21,
-            fontWeight: 600,
-            letterSpacing: "-0.4px",
-            color: T.textPrimary,
-            lineHeight: 1.2,
-          }}
-        >
-          Schedule
-        </h1>
-        <div
-          style={{
-            marginTop: 4,
-            fontSize: 13,
-            color: T.textSecondary,
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          <span style={{ fontFamily: MONO }}>{rangeLabel}</span>
-          <span style={{ color: T.textTertiary }}>·</span>
-          <span>
-            {effectiveFilter === "all"
-              ? activeTeam?.name
-                ? `Calendar across ${activeTeam.name}`
-                : "Team calendar"
-              : `${memberNameById.get(effectiveFilter) ?? "Member"}'s calendar`}
-          </span>
-        </div>
-      </div>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", rowGap: 8 }}>
-        {/* Whose-calendar picker is admin-only; members see just their own. */}
-        {isAdmin ? (
-          <>
-            <Select
-              value={effectiveFilter}
-              onChange={(v) => setMemberFilter(v)}
-              options={memberFilterOptions}
-              showSearch
-              optionFilterProp="label"
-              style={{ minWidth: 180 }}
-              optionRender={(o) =>
-                renderMemberOption(o.value as string, String(o.label))
-              }
-              labelRender={(p) =>
-                renderMemberOption(p.value as string, String(p.label))
-              }
-              aria-label="Whose calendar"
-            />
-            <div style={{ width: 1, height: 22, background: T.hairline }} />
-          </>
-        ) : null}
-        <Segmented
-          value={view}
-          onChange={(v) => setView(v as "day" | "week" | "month")}
-          options={[
-            { label: "Day", value: "day" },
-            { label: "Week", value: "week" },
-            { label: "Month", value: "month" },
-          ]}
-          aria-label="Calendar view"
-        />
-        <div style={{ width: 1, height: 22, background: T.hairline }} />
-        <NavButton
-          ariaLabel={`Previous ${view}`}
-          onClick={() => setAnchor((a) => a.subtract(1, view))}
-        >
-          <span className="material-symbols-rounded" style={{ fontSize: 18 }}>
-            chevron_left
-          </span>
-        </NavButton>
-        {view === "day" ? (
-          <>
-            <NavButton
-              active={relativeLabel === "Yesterday"}
-              onClick={() => setAnchor(dayjs().subtract(1, "day"))}
-            >
-              Yesterday
-            </NavButton>
-            <NavButton
-              active={relativeLabel === "Today"}
-              onClick={() => setAnchor(dayjs())}
-            >
-              Today
-            </NavButton>
-            <NavButton
-              active={relativeLabel === "Tomorrow"}
-              onClick={() => setAnchor(dayjs().add(1, "day"))}
-            >
-              Tomorrow
-            </NavButton>
-          </>
-        ) : (
-          <NavButton onClick={() => setAnchor(dayjs())}>Today</NavButton>
-        )}
-        <NavButton
-          ariaLabel={`Next ${view}`}
-          onClick={() => setAnchor((a) => a.add(1, view))}
-        >
-          <span className="material-symbols-rounded" style={{ fontSize: 18 }}>
-            chevron_right
-          </span>
-        </NavButton>
-        {/* Allocating capacity to people is a management action — admin-only. */}
-        {isAdmin ? (
-          <>
-            <div style={{ width: 1, height: 22, background: T.hairline }} />
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => setModalOpen(true)}
-              style={{ height: 32, borderRadius: 8 }}
-            >
-              Add allocation
-            </Button>
-          </>
-        ) : null}
-      </div>
-    </div>
+  // Whether anything at all is scheduled in the visible range.
+  const gridHasChips = useMemo(
+    () => [...chipsByDay.values()].some((list) => list.length > 0),
+    [chipsByDay],
   );
+  const showAvatars = effectiveFilter === "all";
 
   /* ------------------------------------------------------------ body */
 
@@ -852,10 +541,18 @@ export default function SchedulePage() {
               }}
             >
               <span
-                className="material-symbols-rounded"
-                style={{ fontSize: 28, color: T.textFaint }}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 44,
+                  height: 44,
+                  borderRadius: 12,
+                  background: T.accentSoft,
+                  color: T.accent,
+                }}
               >
-                event_available
+                <MIcon name="event_available" size={26} />
               </span>
               <div
                 style={{
@@ -886,6 +583,7 @@ export default function SchedulePage() {
               <ChipPill
                 key={chip.key}
                 chip={chip}
+                showAvatar={showAvatars}
                 onOpen={(href) => router.push(href)}
               />
             ))
@@ -900,6 +598,10 @@ export default function SchedulePage() {
         .format(view === "week" ? "ddd D" : "ddd")
         .toUpperCase(),
     );
+    // Which grid column "today" falls in (accent the weekday label) — only
+    // when today is actually inside the visible range.
+    const todayIdx = gridDays.findIndex((d) => d.isSame(today, "day"));
+    const todayCol = todayIdx >= 0 ? todayIdx % 7 : -1;
     body = (
       <div
         style={{
@@ -917,21 +619,30 @@ export default function SchedulePage() {
             borderBottom: `1px solid ${T.divider}`,
           }}
         >
-          {weekdayLabels.map((w) => (
-            <div
-              key={w}
-              style={{
-                padding: "8px 10px",
-                fontSize: 11.5,
-                fontWeight: 600,
-                letterSpacing: "0.5px",
-                color: T.textTertiary,
-                textAlign: "right",
-              }}
-            >
-              {w}
-            </div>
-          ))}
+          {weekdayLabels.map((w, i) => {
+            const wd = gridStart.add(i, "day").day();
+            const isWeekendCol = wd === 0 || wd === 6;
+            return (
+              <div
+                key={w}
+                style={{
+                  padding: "8px 10px",
+                  fontSize: 11.5,
+                  fontWeight: i === todayCol ? 700 : 600,
+                  letterSpacing: "0.5px",
+                  color:
+                    i === todayCol
+                      ? T.accent
+                      : isWeekendCol
+                        ? T.textFaint
+                        : T.textTertiary,
+                  textAlign: "right",
+                }}
+              >
+                {w}
+              </div>
+            );
+          })}
         </div>
         {/* month grid */}
         <div
@@ -945,6 +656,7 @@ export default function SchedulePage() {
             const inMonth =
               view === "week" || day.month() === anchor.month();
             const isToday = day.isSame(today, "day");
+            const isWeekend = day.day() === 0 || day.day() === 6;
             const chips = chipsByDay.get(iso) ?? [];
             const visible = chips.slice(0, MAX_VISIBLE);
             const overflow = chips.length - visible.length;
@@ -958,7 +670,15 @@ export default function SchedulePage() {
                   borderRight: (i + 1) % 7 === 0 ? "none" : `1px solid ${T.divider}`,
                   borderBottom:
                     i >= gridDays.length - 7 ? "none" : `1px solid ${T.divider}`,
-                  background: inMonth ? T.panel : T.canvas,
+                  background: isToday
+                    ? T.accentSoft
+                    : inMonth
+                      ? isWeekend
+                        ? T.weekendBg
+                        : T.panel
+                      : T.canvas,
+                  // Today gets a primary ring on top of the tint.
+                  boxShadow: isToday ? `inset 0 0 0 1.5px ${T.accent}` : undefined,
                   display: "flex",
                   flexDirection: "column",
                   gap: 4,
@@ -1026,47 +746,18 @@ export default function SchedulePage() {
                   <ChipPill
                     key={chip.key}
                     chip={chip}
+                    showAvatar={showAvatars}
                     onOpen={(href) => router.push(href)}
                   />
                 ))}
                 {overflow > 0 ? (
-                  <Popover
-                    trigger="click"
-                    placement="bottom"
-                    content={
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 4,
-                          maxWidth: 280,
-                        }}
-                      >
-                        {chips.map((chip) => (
-                          <ChipPill
-                            key={chip.key}
-                            chip={chip}
-                            onOpen={(href) => router.push(href)}
-                          />
-                        ))}
-                      </div>
-                    }
-                  >
-                    <button
-                      type="button"
-                      style={{
-                        border: "none",
-                        background: "transparent",
-                        color: T.textSecondary,
-                        fontSize: 11.5,
-                        textAlign: "left",
-                        padding: "0 6px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      +{overflow} more
-                    </button>
-                  </Popover>
+                  <DayOverflow
+                    day={day}
+                    chips={chips}
+                    hiddenCount={overflow}
+                    groupByPerson={showAvatars}
+                    onOpen={(href) => router.push(href)}
+                  />
                 ) : null}
               </div>
             );
@@ -1084,7 +775,92 @@ export default function SchedulePage() {
         gap: 16,
       }}
     >
-      {header}
+      <ScheduleHeader
+        view={view}
+        onViewChange={setView}
+        anchor={anchor}
+        onAnchorChange={setAnchor}
+        scopeLabel={scopeLabel}
+        isAdmin={isAdmin}
+        filterValue={effectiveFilter}
+        filterOptions={memberFilterOptions}
+        onFilterChange={setMemberFilter}
+        onAddAllocation={() => setModalOpen(true)}
+      />
+      {/* Summary tiles when there's data; a call-to-action banner when not. */}
+      {view !== "day" && !teamLoading && !isLoading && !isError ? (
+        gridHasChips ? (
+          <SummaryStrip tiles={summaryTiles} />
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+              padding: "13px 16px",
+              background: T.panel,
+              border: `1px dashed ${T.hairline}`,
+              borderRadius: 12,
+            }}
+          >
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 34,
+                height: 34,
+                borderRadius: 10,
+                background: T.accentSoft,
+                color: T.accent,
+                flex: "none",
+              }}
+            >
+              <MIcon name="event_upcoming" size={20} />
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{ fontSize: 13, fontWeight: 600, color: T.textPrimary }}
+              >
+                Nothing scheduled this {view}
+              </div>
+              <div style={{ fontSize: 12, color: T.textTertiary }}>
+                Allocations, tasks due and approved leave will appear here.
+              </div>
+            </div>
+            <div
+              style={{
+                marginLeft: "auto",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <Button
+                icon={<PlusOutlined />}
+                style={{ height: 30, borderRadius: 8 }}
+                onClick={() => {
+                  setCreateDate(anchor);
+                  setCreateOpen(true);
+                }}
+              >
+                Add task
+              </Button>
+              {isAdmin ? (
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  style={{ height: 30, borderRadius: 8 }}
+                  onClick={() => setModalOpen(true)}
+                >
+                  Add allocation
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        )
+      ) : null}
       {body}
       <AddAllocationModal open={modalOpen} onClose={() => setModalOpen(false)} />
       <CreateTaskModal
@@ -1098,9 +874,12 @@ export default function SchedulePage() {
         }}
       />
       <style>{`
-        .wl-cal-cell:hover { background: ${T.rowHover} !important; }
+        .wl-cal-cell:hover { background: ${T.cellHover} !important; }
         .wl-cal-cell:hover .wl-cal-add { opacity: 1; }
         .wl-cal-add:hover { filter: brightness(0.96); }
+        .wl-cal-chip { transition: box-shadow .12s ease; }
+        .wl-cal-chip:hover { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14); }
+        .wl-cal-more:hover { background: ${T.chipBgHover} !important; }
       `}</style>
     </div>
   );

@@ -39,7 +39,7 @@ export default function PermissionsSettingsPage() {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 860 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div>
         <Title level={4} style={{ margin: 0 }}>Permissions</Title>
         <Text type="secondary">
@@ -53,7 +53,7 @@ export default function PermissionsSettingsPage() {
         <div style={{ display: "flex", flexWrap: "wrap", gap: 18, fontSize: 12.5, color: token.colorTextSecondary }}>
           <span><b style={{ color: token.colorText }}>Owner / Admin</b> — everything</span>
           <span><b style={{ color: token.colorText }}>Member</b> — full internal, tuned below</span>
-          <span><b style={{ color: token.colorText }}>Limited</b> — only projects they&apos;re added to</span>
+          <span><b style={{ color: token.colorText }}>Limited</b> — sees team projects &amp; spaces, but only tasks assigned to them</span>
           <span><b style={{ color: token.colorText }}>Guest</b> — client portal only</span>
         </div>
       </Card>

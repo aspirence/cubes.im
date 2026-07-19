@@ -24,7 +24,7 @@ import {
 } from "@/features/tasks/use-task-statuses";
 import { useTasksRealtime } from "@/features/tasks/use-tasks-realtime";
 import { useTeamLabels } from "@/features/settings/use-labels";
-import { useTeamMembers } from "@/features/team-members/use-team-members";
+import { useTeamMembers, useCanCreateTasks } from "@/features/team-members/use-team-members";
 import { TaskIdLabel } from "@/features/tasks/task-id-label";
 import {
   FilterControl,
@@ -383,6 +383,8 @@ interface TaskGroupSectionProps {
   onOpen: (taskId: string) => void;
   onAddTask: (name: string, statusId: string | undefined) => Promise<void>;
   addDisabled: boolean;
+  /** Effective create-permission — hides the ghost row entirely when false. */
+  canAdd: boolean;
   t: ListTokens;
 }
 
@@ -391,6 +393,7 @@ function TaskGroupSection({
   onOpen,
   onAddTask,
   addDisabled,
+  canAdd,
   t: T,
 }: TaskGroupSectionProps) {
   const [collapsed, setCollapsed] = useState(false);
@@ -497,7 +500,9 @@ function TaskGroupSection({
             />
           ))}
 
-          {/* Add-task ghost row */}
+          {/* Add-task ghost row — hidden entirely when the caller can't author
+              tasks here (limited members without the capability/override). */}
+          {canAdd ? (
           <div
             onMouseEnter={() => setAddHover(true)}
             onMouseLeave={() => setAddHover(false)}
@@ -526,6 +531,7 @@ function TaskGroupSection({
               }}
             />
           </div>
+          ) : null}
         </>
       )}
     </div>
@@ -548,6 +554,7 @@ export function TaskListTab({ projectId }: { projectId: string }) {
 
   // Live updates: re-fetch tasks when the project's tasks change.
   useTasksRealtime(projectId);
+  const canCreate = useCanCreateTasks(projectId);
 
   const tasksQuery = useTasks(projectId);
   const statusesQuery = useTaskStatuses(projectId);
@@ -846,6 +853,7 @@ export function TaskListTab({ projectId }: { projectId: string }) {
                 onOpen={open}
                 onAddTask={handleAddTask}
                 addDisabled={createTask.isPending}
+                canAdd={canCreate}
                 t={T}
               />
             ))}

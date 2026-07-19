@@ -64,7 +64,7 @@ export default function PricingAdminPage() {
   const hint: React.CSSProperties = { fontSize: 12, color: token.colorTextTertiary };
 
   return (
-    <div style={{ maxWidth: 900, display: "grid", gap: 16 }}>
+    <div style={{ display: "grid", gap: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
         <div>
           <Title level={4} style={{ margin: 0 }}>Pricing</Title>

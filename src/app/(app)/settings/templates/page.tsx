@@ -9,6 +9,7 @@ import {
   Empty,
   Form,
   Input,
+  InputNumber,
   Modal,
   Popconfirm,
   Select,
@@ -36,6 +37,7 @@ import {
   useDeleteProjectTemplate,
   useCreateProjectFromTemplate,
 } from "@/features/templates/use-templates";
+import { RichDescription } from "@/features/tasks/rich-description";
 import { ProjectTemplateBuilderModal } from "@/features/templates/project-template-builder-modal";
 import {
   useStatusTemplates,
@@ -119,11 +121,31 @@ export default function TemplatesSettingsPage() {
 /* Task templates                                                             */
 /* -------------------------------------------------------------------------- */
 
+/** Form-controlled wrapper: AntD Form injects value/onChange. */
+function TemplateDescriptionEditor({
+  value,
+  onChange,
+}: {
+  value?: string;
+  onChange?: (next: string) => void;
+}) {
+  return (
+    <RichDescription
+      value={value ?? ""}
+      onChange={(next) => onChange?.(next)}
+      onCommit={() => {}}
+      minRows={3}
+      maxRows={10}
+    />
+  );
+}
+
 interface TaskTemplateFormValues {
   name: string;
   description?: string;
   priority?: string;
   deliverableType?: string;
+  dueOffsetDays?: number | null;
   steps: TemplateStep[];
   tasks: TemplateTask[];
 }
@@ -146,6 +168,9 @@ function TaskTemplatesSection() {
         description: editing?.description ?? "",
         priority: editing?.priority ?? undefined,
         deliverableType: editing?.deliverable_type ?? undefined,
+        dueOffsetDays:
+          (editing as unknown as { due_offset_days?: number | null } | null)
+            ?.due_offset_days ?? undefined,
         steps: editing ? readTemplateSteps(editing.steps) : [{ name: "" }],
         tasks: editing ? readTemplateTasks(editing.tasks) : [],
       });
@@ -194,6 +219,7 @@ function TaskTemplatesSection() {
       description: (values.description ?? "").trim() || undefined,
       priority: values.priority || undefined,
       deliverableType: values.deliverableType ?? null,
+        dueOffsetDays: values.dueOffsetDays ?? null,
       steps,
       tasks,
     };
@@ -322,12 +348,13 @@ function TaskTemplatesSection() {
           >
             <Input placeholder="e.g. Bug report" autoFocus />
           </Form.Item>
-          <Form.Item label="Task description (prefills the new task)" name="description">
-            <Input.TextArea
-              placeholder="Optional — prefills the created task's description"
-              rows={2}
-              maxLength={2000}
-            />
+          <Form.Item
+            label="Task description (prefills the new task)"
+            name="description"
+            valuePropName="value"
+            getValueFromEvent={(v: string) => v}
+          >
+            <TemplateDescriptionEditor />
           </Form.Item>
           <Form.Item label="Default priority" name="priority">
             <Select
@@ -340,17 +367,24 @@ function TaskTemplatesSection() {
           <Form.Item
             label="Deliverable"
             name="deliverableType"
-            tooltip="Tasks created from this template get this deliverable — e.g. a Video review deliverable."
+            tooltip="Status update: completing the task's status IS the deliverable. Video review: the submission is a video (upload or URL) that goes through the Video Review app — the review decision moves the task to Done / back to Doing automatically."
           >
             <Select
               allowClear
               placeholder="None"
-              style={{ maxWidth: 200 }}
+              style={{ maxWidth: 260 }}
               options={[
-                { value: "video", label: "🎬 Video review" },
-                { value: "text", label: "📝 Text" },
+                { value: "status", label: "✅ Status update — nothing extra to submit" },
+                { value: "video", label: "🎬 Video review — synced with the task" },
               ]}
             />
+          </Form.Item>
+          <Form.Item
+            label="Due in (days)"
+            name="dueOffsetDays"
+            tooltip="Tasks created from this template get a due date this many days out."
+          >
+            <InputNumber min={0} max={365} placeholder="e.g. 7" style={{ maxWidth: 200 }} />
           </Form.Item>
 
           <Divider style={{ margin: "8px 0 12px" }}>Subtask steps</Divider>
@@ -659,15 +693,17 @@ function ProjectTemplatesSection() {
 /* -------------------------------------------------------------------------- */
 
 const STATUS_TPL_CATEGORY_OPTIONS = [
-  { value: "todo", label: "To do" },
-  { value: "doing", label: "Doing" },
+  { value: "not_started", label: "Not started" },
+  { value: "active", label: "Active" },
   { value: "done", label: "Done" },
+  { value: "closed", label: "Closed" },
 ];
 
 const STATUS_TPL_CATEGORY_COLOR: Record<string, string | undefined> = {
-  todo: undefined,
-  doing: "processing",
+  not_started: undefined,
+  active: "processing",
   done: "success",
+  closed: "green",
 };
 
 interface StatusTemplateFormValues {
@@ -694,7 +730,7 @@ function StatusTemplatesSection() {
         name: editing?.name ?? "",
         statuses: editing
           ? readStatusTemplateStatuses(editing.statuses)
-          : [{ name: "", category: "todo" }],
+          : [{ name: "", category: "not_started" }],
       });
     }
   }, [modalOpen, editing, form]);
@@ -727,7 +763,7 @@ function StatusTemplatesSection() {
     const statuses = (values.statuses ?? [])
       .map((s) => ({
         name: (s.name ?? "").trim(),
-        category: s.category ?? "todo",
+        category: s.category ?? "not_started",
       }))
       .filter((s) => s.name.length > 0);
     if (statuses.length === 0) {
@@ -940,7 +976,7 @@ function StatusTemplatesSection() {
                 ))}
                 <Button
                   type="dashed"
-                  onClick={() => add({ name: "", category: "todo" })}
+                  onClick={() => add({ name: "", category: "not_started" })}
                   icon={<PlusOutlined />}
                   block
                 >

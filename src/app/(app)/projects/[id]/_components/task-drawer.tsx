@@ -67,6 +67,8 @@ import {
   useClearTaskPhase,
 } from "@/features/tasks/use-task-phase";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
+import { MemberSelect } from "@/features/team-members/member-select";
+import { TaskTimerButton } from "@/features/tasks/timer-widget";
 import {
   TeamMentionInput,
   extractMentionUserIds,
@@ -254,6 +256,8 @@ function statusTone(status: TaskStatusWithCategory | undefined): {
   const cat = status?.category;
   if (cat?.is_done) return { tone: "green", glyph: "check_circle" };
   if (cat?.is_doing) return { tone: "amber", glyph: "change_circle" };
+  // Flagless category = the Done ("in review") stage.
+  if (cat && !cat.is_todo) return { tone: "indigo", glyph: "rate_review" };
   return { tone: "slate", glyph: "radio_button_unchecked" };
 }
 
@@ -585,7 +589,6 @@ function TaskDrawerContent({
   // avoids a setState-in-effect and stays correct across drawer re-targets.
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [submissionText, setSubmissionText] = useState("");
   const [newSubtask, setNewSubtask] = useState("");
   // AI subtask suggestions: null = none requested; keyed selection by index.
   const aiBreakdown = useAiBreakdown();
@@ -609,7 +612,6 @@ function TaskDrawerContent({
     setSeededFrom(seedKey);
     setName(task.name ?? "");
     setDescription(task.description ?? "");
-    setSubmissionText(task.submission_content ?? "");
   }
 
   // AI suggestions belong to one task — drop them when the drawer re-targets
@@ -634,6 +636,8 @@ function TaskDrawerContent({
         return {
           value: m.team_member_id,
           label: onLeave ? `${name} · On leave` : name,
+          email: user?.email ?? null,
+          avatarUrl: user?.avatar_url ?? null,
         };
       }),
     [membersRaw, availability],
@@ -727,6 +731,22 @@ function TaskDrawerContent({
     const next = description.length ? description : null;
     if ((next ?? "") === (task.description ?? "")) return;
     await patch({ description: next });
+    // Notify only NEWLY-mentioned people (a re-save must not re-ping everyone).
+    const before = new Set(
+      extractMentionUserIds(task.description ?? "", mentionMembers),
+    );
+    const added = extractMentionUserIds(next ?? "", mentionMembers).filter(
+      (id) => !before.has(id),
+    );
+    if (added.length > 0) {
+      void notifyMentions({
+        text: next ?? "",
+        members: mentionMembers.filter((m) => added.includes(m.id)),
+        message: `You were mentioned in the task "${task.name}"`,
+        url: `/projects/${task.project_id}?task=${task.id}`,
+        teamId: drawerActiveTeam?.id,
+      }).catch(() => {});
+    }
   };
 
   const handleStatusChange = async (statusId: string) => {
@@ -740,11 +760,6 @@ function TaskDrawerContent({
     }
   };
 
-  const commitSubmission = async () => {
-    const next = submissionText.length ? submissionText : null;
-    if ((next ?? "") === (task.submission_content ?? "")) return;
-    await patch({ submission_content: next });
-  };
 
   const handlePriorityChange = (priorityId: string | null) =>
     patch({ priority_id: priorityId });
@@ -1118,6 +1133,10 @@ function TaskDrawerContent({
             }}
           >
           <MetaRow icon="radio_button_checked" label="Status">
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {currentStatus?.category?.is_doing ? (
+              <TaskTimerButton taskId={task.id} size={28} />
+            ) : null}
             <Select
               value={task.status_id ?? undefined}
               onChange={handleStatusChange}
@@ -1146,6 +1165,7 @@ function TaskDrawerContent({
                 };
               })}
             />
+            </div>
           </MetaRow>
 
           <MetaRow icon="flag" label="Priority">
@@ -1181,55 +1201,14 @@ function TaskDrawerContent({
 
           <MetaRow icon="group" label="Assignees" wide>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {assignees.length > 0 ? (
-                  <Avatar.Group
-                    max={{
-                      count: 4,
-                      style: { backgroundColor: "#8a8d98", fontSize: 11 },
-                    }}
-                    size={22}
-                  >
-                    {assignees.map((a) => {
-                      const user = a.team_member?.user;
-                      const nm = user?.name ?? "Member";
-                      return (
-                        <Tooltip key={a.team_member_id} title={nm}>
-                          <SolidAvatar
-                            name={nm}
-                            avatarUrl={user?.avatar_url}
-                            seed={a.team_member_id}
-                          />
-                        </Tooltip>
-                      );
-                    })}
-                  </Avatar.Group>
-                ) : null}
-                <Select
-                  mode="multiple"
-                  value={assigneeValue}
-                  onChange={handleAssigneesChange}
-                  placeholder="Assign"
-                  variant="borderless"
-                  style={{ flex: 1, minWidth: 0 }}
-                  optionFilterProp="label"
-                  loading={setAssignees.isPending}
-                  options={memberOptions}
-                  maxTagCount={0}
-                  maxTagPlaceholder={() =>
-                    assignees.length > 0 ? "Edit" : "Assign"
-                  }
-                  suffixIcon={
-                    <span
-                      className="material-symbols-rounded"
-                      aria-hidden
-                      style={{ fontSize: 16, color: DT.textTertiary }}
-                    >
-                      person_add
-                    </span>
-                  }
-                />
-              </div>
+              <MemberSelect
+                variant="avatar"
+                popupInParent
+                value={assigneeValue}
+                onChange={handleAssigneesChange}
+                options={memberOptions}
+                placeholder="Assign"
+              />
               {assigneeLeaveWarnings.map((w) => (
                 <Tooltip
                   key={w.key}
@@ -1342,20 +1321,20 @@ function TaskDrawerContent({
               style={{ width: "100%" }}
               options={[
                 {
+                  value: "status",
+                  label: (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <span className="material-symbols-rounded" style={{ fontSize: 15 }}>check_circle</span>
+                      Status update
+                    </span>
+                  ),
+                },
+                {
                   value: "video",
                   label: (
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                       <span className="material-symbols-rounded" style={{ fontSize: 15 }}>movie</span>
                       Video review
-                    </span>
-                  ),
-                },
-                {
-                  value: "text",
-                  label: (
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                      <span className="material-symbols-rounded" style={{ fontSize: 15 }}>notes</span>
-                      Text
                     </span>
                   ),
                 },
@@ -1374,10 +1353,11 @@ function TaskDrawerContent({
             onCommit={commitDescription}
             minRows={isPage ? 6 : 3}
             maxRows={isPage ? 24 : 12}
+            mentionMembers={mentionMembers}
           />
 
           {/* Submission (deliverable-dependent) ------------------------- */}
-          {task.deliverable_type ? (
+          {task.deliverable_type === "video" ? (
             <>
               <SectionDivider />
               <div
@@ -1496,24 +1476,7 @@ function TaskDrawerContent({
                     </button>
                   ))}
                 </div>
-              ) : (
-                <div className="td-desc">
-                  <style>{`
-                    .td-desc{border:1px solid ${DT.hairline};border-radius:12px;background:${DT.panel};padding:12px 14px;transition:border-color .14s,box-shadow .14s;}
-                    .td-desc:focus-within{border-color:${DT.textTertiary};}
-                    .td-desc .ant-input{background:transparent !important;font-size:14px;line-height:1.65;color:${DT.textPrimary};}
-                  `}</style>
-                  <Input.TextArea
-                    value={submissionText}
-                    onChange={(e) => setSubmissionText(e.target.value)}
-                    onBlur={commitSubmission}
-                    placeholder="Write the deliverable here… (saved when you click away)"
-                    autoSize={{ minRows: 4, maxRows: 16 }}
-                    variant="borderless"
-                    style={{ padding: 0 }}
-                  />
-                </div>
-              )}
+              ) : null}
             </>
           ) : null}
 
@@ -1614,81 +1577,8 @@ function TaskDrawerContent({
             </div>
           </div>
 
-          {/* Standalone video-review linking — hidden when the task's
-              deliverable IS a video review (that lives in Submission above). */}
-          {task.deliverable_type !== "video" ? (
-            <>
-              <SectionDivider />
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 10,
-                  marginBottom: 4,
-                }}
-              >
-                <SectionHeading
-                  count={linkedReviews.length > 0 ? linkedReviews.length : undefined}
-                >
-                  Linked Video Reviews
-                </SectionHeading>
-                <div style={{ display: "flex", gap: 6 }}>
-                  {linkedReviews[0] ? (
-                    <Button
-                      size="small"
-                      onClick={() =>
-                        (window.location.href = `/apps/video-review/${linkedReviews[0].id}`)
-                      }
-                    >
-                      Open latest
-                    </Button>
-                  ) : null}
-                  <Button
-                    size="small"
-                    type="primary"
-                    icon={<span className="material-symbols-rounded" style={{ fontSize: 15 }}>add</span>}
-                    onClick={() => setReviewModalOpen(true)}
-                    style={{ background: DT.accent }}
-                  >
-                    New review
-                  </Button>
-                </div>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {linkedReviews.length > 0 ? (
-                  linkedReviews.map((review) => (
-                    <button
-                      key={review.id}
-                      type="button"
-                      onClick={() =>
-                        (window.location.href = `/apps/video-review/${review.id}`)
-                      }
-                      style={{
-                        border: `1px solid ${DT.hairline}`,
-                        borderRadius: 10,
-                        background: DT.panel,
-                        padding: "12px 14px",
-                        textAlign: "left",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <div style={{ fontWeight: 600, color: DT.textPrimary }}>
-                        {review.title}
-                      </div>
-                      <div style={{ fontSize: 12, color: DT.textTertiary, marginTop: 4 }}>
-                        {review.project?.name ?? "No project"} · {VIDEO_STATUS_META[review.status]?.label ?? review.status}
-                      </div>
-                    </button>
-                  ))
-                ) : (
-                  <Text type="secondary" style={{ fontSize: 13 }}>
-                    No reviews linked to this task yet.
-                  </Text>
-                )}
-              </div>
-            </>
-          ) : null}
+          {/* No standalone video-review section: review linking exists ONLY
+              when the deliverable is a video, inside Submission above. */}
 
           <SectionDivider />
 

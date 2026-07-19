@@ -39,8 +39,75 @@ const clampLimit = (v: unknown, dflt: number, max: number): number => {
 const str = (v: unknown): string | undefined =>
   typeof v === "string" && v.trim() !== "" ? v.trim() : undefined;
 
+/**
+ * The caller's visibility scope. The MCP path runs on the SERVICE-ROLE client
+ * (RLS bypassed), so the access model must be re-applied by hand: accessible
+ * project ids via user_accessible_projects (owner / explicit member / admin /
+ * team-visible + space rules), plus the limited-member "assigned tasks only"
+ * rule.
+ */
+interface AccessScope {
+  projectIds: string[];
+  limited: boolean;
+  teamMemberId: string | null;
+}
+
+async function accessScope(ctx: McpContext): Promise<AccessScope> {
+  const [idsRes, tmRes] = await Promise.all([
+    ctx.admin.rpc("user_accessible_projects", {
+      _user_id: ctx.userId,
+      _team_id: ctx.teamId,
+    }),
+    ctx.admin
+      .from("team_members")
+      .select("id, member_type")
+      .eq("team_id", ctx.teamId)
+      .eq("user_id", ctx.userId)
+      .maybeSingle(),
+  ]);
+  if (idsRes.error) throw idsRes.error;
+  if (tmRes.error) throw tmRes.error;
+  return {
+    projectIds: (idsRes.data ?? []) as string[],
+    limited: tmRes.data?.member_type === "limited",
+    teamMemberId: tmRes.data?.id ?? null,
+  };
+}
+
+/** Task ids assigned to the caller — the limited-member visibility universe. */
+async function assignedTaskIds(
+  ctx: McpContext,
+  teamMemberId: string,
+): Promise<string[]> {
+  const { data, error } = await ctx.admin
+    .from("tasks_assignees")
+    .select("task_id")
+    .eq("team_member_id", teamMemberId)
+    .limit(2000);
+  if (error) throw error;
+  return (data ?? []).map((r) => r.task_id);
+}
+
 /** Resolves a project reference (uuid or name, case-insensitive) in the team. */
 async function resolveProject(
+  ctx: McpContext,
+  ref: string,
+): Promise<{ id: string; name: string }> {
+  const project = await resolveProjectUnchecked(ctx, ref);
+  // Same "not found" wording whether the project doesn't exist or is private
+  // to the caller — existence of hidden projects is never disclosed.
+  const { data: allowed, error } = await ctx.admin.rpc("user_can_access_project", {
+    _user_id: ctx.userId,
+    _project_id: project.id,
+  });
+  if (error) throw error;
+  if (!allowed) {
+    throw new McpToolError(`No project matching "${ref}" in this workspace. Use list_projects first.`);
+  }
+  return project;
+}
+
+async function resolveProjectUnchecked(
   ctx: McpContext,
   ref: string,
 ): Promise<{ id: string; name: string }> {
@@ -91,6 +158,39 @@ async function assertTaskInTeam(ctx: McpContext, taskId: string) {
   const team = (data?.projects as { team_id: string; name: string } | null)?.team_id;
   if (!data || team !== ctx.teamId)
     throw new McpToolError(`No task with id "${taskId}" in this workspace.`);
+
+  // Re-apply the visibility model (service role bypasses RLS): the caller must
+  // reach the project, and a limited member only their assigned tasks. The
+  // error text matches "not found" so hidden tasks are never disclosed.
+  const [{ data: allowed, error: accessErr }, { data: tm, error: tmErr }] =
+    await Promise.all([
+      ctx.admin.rpc("user_can_access_project", {
+        _user_id: ctx.userId,
+        _project_id: data.project_id,
+      }),
+      ctx.admin
+        .from("team_members")
+        .select("id, member_type")
+        .eq("team_id", ctx.teamId)
+        .eq("user_id", ctx.userId)
+        .maybeSingle(),
+    ]);
+  if (accessErr) throw accessErr;
+  if (tmErr) throw tmErr;
+  let visible = Boolean(allowed);
+  if (visible && tm?.member_type === "limited") {
+    const { data: assigned, error: assignedErr } = await ctx.admin
+      .from("tasks_assignees")
+      .select("task_id")
+      .eq("task_id", taskId)
+      .eq("team_member_id", tm.id)
+      .maybeSingle();
+    if (assignedErr) throw assignedErr;
+    visible = Boolean(assigned);
+  }
+  if (!visible)
+    throw new McpToolError(`No task with id "${taskId}" in this workspace.`);
+
   return {
     id: data.id,
     name: data.name,
@@ -121,8 +221,12 @@ async function projectStatuses(ctx: McpContext, projectId: string): Promise<Stat
 }
 
 function bucketOf(s: StatusRow): "todo" | "doing" | "done" {
-  if (s.sys_task_status_categories?.is_done) return "done";
-  if (s.sys_task_status_categories?.is_doing) return "doing";
+  const c = s.sys_task_status_categories;
+  if (c?.is_done) return "done";
+  if (c?.is_doing) return "doing";
+  // Flagless category = the Done ("in review") stage — finished work, so it
+  // must never surface as "todo" to an agent.
+  if (c && !c.is_todo) return "done";
   return "todo";
 }
 
@@ -403,10 +507,15 @@ export async function callTool(
 ): Promise<unknown> {
   switch (name) {
     case "list_projects": {
+      const scope = await accessScope(ctx);
+      if (scope.projectIds.length === 0) {
+        return { workspace_scoped: true, projects: [] };
+      }
       const { data, error } = await ctx.admin
         .from("projects")
         .select("id, name, color_code, notes, start_date, end_date")
         .eq("team_id", ctx.teamId)
+        .in("id", scope.projectIds)
         .order("created_at", { ascending: true })
         .limit(200);
       if (error) throw error;
@@ -424,18 +533,22 @@ export async function callTool(
 
     case "list_tasks": {
       const limit = clampLimit(args.limit, 50, 200);
+      const scope = await accessScope(ctx);
       let projectIds: string[];
       if (str(args.project)) {
         projectIds = [(await resolveProject(ctx, str(args.project)!)).id];
       } else {
-        const { data, error } = await ctx.admin
-          .from("projects")
-          .select("id")
-          .eq("team_id", ctx.teamId);
-        if (error) throw error;
-        projectIds = (data ?? []).map((p) => p.id);
+        projectIds = scope.projectIds;
       }
       if (projectIds.length === 0) return { tasks: [] };
+
+      // Limited members see only tasks assigned to them.
+      let limitedTaskIds: string[] | null = null;
+      if (scope.limited) {
+        if (!scope.teamMemberId) return { tasks: [] };
+        limitedTaskIds = await assignedTaskIds(ctx, scope.teamMemberId);
+        if (limitedTaskIds.length === 0) return { tasks: [] };
+      }
 
       const bucket = str(args.bucket);
       // Push the bucket into the query as a status_id filter, so `limit` counts
@@ -466,6 +579,7 @@ export async function callTool(
         .limit(limit);
       if (!wantDone) q = q.eq("done", false);
       if (bucketStatusIds) q = q.in("status_id", bucketStatusIds);
+      if (limitedTaskIds) q = q.in("id", limitedTaskIds);
 
       const today = new Date().toISOString().slice(0, 10);
       if (args.due === "overdue") q = q.lt("end_date", today).eq("done", false);

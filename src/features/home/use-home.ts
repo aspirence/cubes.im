@@ -96,6 +96,8 @@ export interface MyTaskStatusOption {
   sort_order: number | null;
   color: string | null;
   isDone: boolean;
+  /** Active stage — tasks here can run a timer. */
+  isDoing: boolean;
 }
 
 /**
@@ -121,7 +123,11 @@ export function useMyTaskStatuses(projectIds: string[]) {
         project_id: string;
         name: string;
         sort_order: number | null;
-        category: { color_code: string | null; is_done: boolean | null } | null;
+        category: {
+          color_code: string | null;
+          is_done: boolean | null;
+          is_doing: boolean | null;
+        } | null;
       }>;
       const map: Record<string, MyTaskStatusOption[]> = {};
       for (const r of rows) {
@@ -132,6 +138,7 @@ export function useMyTaskStatuses(projectIds: string[]) {
           sort_order: r.sort_order,
           color: r.category?.color_code ?? null,
           isDone: Boolean(r.category?.is_done),
+          isDoing: Boolean(r.category?.is_doing),
         });
       }
       return map;

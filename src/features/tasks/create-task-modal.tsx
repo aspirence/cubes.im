@@ -6,6 +6,7 @@ import {
   Button,
   Checkbox,
   DatePicker,
+  Dropdown,
   Input,
   Modal,
   Select,
@@ -26,6 +27,11 @@ import {
   useIsTeamAdmin,
 } from "@/features/team-members/use-team-members";
 import { MemberSelect } from "@/features/team-members/member-select";
+import { extractMentionUserIds } from "@/features/team-members/team-mention-input";
+import { RichDescription } from "@/features/tasks/rich-description";
+import { useNotifyMentions } from "@/features/notifications/use-mention-notify";
+import { useAuth } from "@/features/auth/use-auth";
+import { useActiveTeam } from "@/features/teams/use-teams";
 import { InviteMemberModal } from "@/features/invitations/invite-member-modal";
 import { useTaskPriorities } from "@/features/tasks/use-task-statuses";
 import { useUpdateTask } from "@/features/tasks/use-tasks";
@@ -85,6 +91,24 @@ export function CreateTaskModal({
   const createTask = useCreateTaskWithTemplate();
   const updateTask = useUpdateTask();
   const setDefaultTemplate = useSetProjectDefaultTemplate();
+
+  const { profile } = useAuth();
+  const { data: activeTeam } = useActiveTeam();
+  const notifyMentions = useNotifyMentions();
+  // @-mention picker options — user-keyed (mention fan-out is by user id);
+  // invited-but-not-joined rows (no user) are filtered out.
+  const mentionMembers = useMemo(
+    () =>
+      (members ?? [])
+        .filter((m) => m.user != null)
+        .map((m) => ({
+          id: m.user!.id,
+          name: m.user!.name ?? m.user!.email ?? "Unknown",
+          avatarUrl: m.user!.avatar_url,
+          email: m.user!.email,
+        })),
+    [members],
+  );
 
   const [projectId, setProjectId] = useState<string | undefined>(defaultProjectId);
   const [name, setName] = useState("");
@@ -187,6 +211,18 @@ export function CreateTaskModal({
           ? `Task created with ${stepCount} subtask${stepCount === 1 ? "" : "s"}.`
           : "Task created.",
       );
+      // Mention fan-out from the description — best-effort, never blocks
+      // creation; recipients get a "mention" notification linking to the task.
+      const mentioned = extractMentionUserIds(description, mentionMembers);
+      if (mentioned.length > 0 && projectId) {
+        void notifyMentions({
+          text: description,
+          members: mentionMembers,
+          message: `${profile?.name ?? "Someone"} mentioned you in the task "${name.trim()}"`,
+          url: `/projects/${projectId}?task=${taskId}`,
+          teamId: activeTeam?.id,
+        }).catch(() => {});
+      }
       onCreated?.(taskId);
       onClose();
     } catch (err) {
@@ -266,15 +302,16 @@ export function CreateTaskModal({
           maxLength={500}
           style={{ fontSize: 22, fontWeight: 600, padding: 0 }}
         />
-        <Input.TextArea
-          variant="borderless"
-          placeholder="Add description…"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          autoSize={{ minRows: 2, maxRows: 6 }}
-          maxLength={5000}
-          style={{ padding: 0, marginTop: 6 }}
-        />
+        <div style={{ marginTop: 10 }}>
+          <RichDescription
+            value={description}
+            onChange={setDescription}
+            onCommit={() => {}}
+            minRows={3}
+            maxRows={10}
+            mentionMembers={mentionMembers}
+          />
+        </div>
       </div>
 
       {/* Property row */}
@@ -290,6 +327,8 @@ export function CreateTaskModal({
       >
         <Property icon={<UserOutlined />}>
           <MemberSelect
+            popupInParent
+            variant="avatar"
             value={assignees}
             onChange={setAssignees}
             options={memberOptions}
@@ -343,24 +382,6 @@ export function CreateTaskModal({
             </span>
           </Property>
         ) : null}
-        <Property icon={<ProfileOutlined />}>
-          <Select
-            size="small"
-            variant="borderless"
-            allowClear
-            placeholder="Template"
-            value={templateId}
-            onChange={applyTemplate}
-            style={{ minWidth: 130 }}
-            options={templateList.map((t) => ({
-              value: t.id,
-              label:
-                (Array.isArray(t.steps) ? t.steps.length : 0) > 0
-                  ? `${t.name} · ${(t.steps as unknown[]).length} steps`
-                  : t.name,
-            }))}
-          />
-        </Property>
       </div>
 
       {templateId && projectId ? (
@@ -387,11 +408,42 @@ export function CreateTaskModal({
           borderTop: "1px solid rgba(128,128,140,0.18)",
         }}
       >
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {stepCount > 0
-            ? `Template adds ${stepCount} subtask${stepCount === 1 ? "" : "s"}`
-            : "Pick a template to prefill fields + add subtasks"}
-        </Typography.Text>
+        <Dropdown
+          trigger={["click"]}
+          menu={{
+            items:
+              templateList.length === 0
+                ? [{ key: "none", label: "No templates yet", disabled: true }]
+                : [
+                    ...templateList.map((t) => ({
+                      key: t.id,
+                      label:
+                        (Array.isArray(t.steps) ? t.steps.length : 0) > 0
+                          ? `${t.name} · ${(t.steps as unknown[]).length} steps`
+                          : t.name,
+                      onClick: () => applyTemplate(t.id),
+                    })),
+                    ...(templateId
+                      ? [
+                          { type: "divider" as const },
+                          {
+                            key: "clear",
+                            label: "Clear template",
+                            onClick: () => applyTemplate(undefined),
+                          },
+                        ]
+                      : []),
+                  ],
+          }}
+        >
+          <Button icon={<ProfileOutlined />}>
+            {templateId
+              ? `${templateList.find((t) => t.id === templateId)?.name ?? "Template"}${
+                  stepCount > 0 ? ` · ${stepCount} subtask${stepCount === 1 ? "" : "s"}` : ""
+                }`
+              : "Templates"}
+          </Button>
+        </Dropdown>
         <Button
           type="primary"
           loading={pending}

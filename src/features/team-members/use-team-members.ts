@@ -131,6 +131,33 @@ export function useCanAuthorContent(): boolean {
   return mt !== "limited" && mt !== "guest";
 }
 
+/**
+ * Whether the caller may create tasks in THIS project — the effective answer
+ * from the server (workspace `create_tasks` capability + the project's
+ * limited_task_creation override), so add-task affordances can be hidden
+ * instead of failing on submit. While loading: optimistic for full members
+ * (no flash-hide), pessimistic for limited/guest (no flash-show).
+ */
+export function useCanCreateTasks(projectId: string | undefined): boolean {
+  const supabase = useMemo(() => createClient(), []);
+  const mt = useMyMemberType();
+
+  const { data } = useQuery({
+    queryKey: ["can-create-tasks", projectId],
+    enabled: Boolean(projectId),
+    queryFn: async (): Promise<boolean> => {
+      const { data, error } = await supabase.rpc("can_create_tasks", {
+        _project_id: projectId as string,
+      });
+      if (error) throw error;
+      return Boolean(data);
+    },
+  });
+
+  if (data !== undefined) return data;
+  return mt !== "limited" && mt !== "guest";
+}
+
 /** Changes a member's role (admin-only via RLS). */
 export function useUpdateMemberRole() {
   const supabase = useMemo(() => createClient(), []);

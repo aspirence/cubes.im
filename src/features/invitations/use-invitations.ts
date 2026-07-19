@@ -23,10 +23,18 @@ export type EmailInvitation =
     member_type?: string | null;
   };
 
-/** A pending invitation addressed to the current user, with the team name. */
-export type MyPendingInvitation = EmailInvitation & {
-  teams: { name: string } | null;
-};
+/** A pending invitation addressed to the current user, with the team name
+ *  (via the my_pending_invitations SECURITY DEFINER RPC — teams RLS hides the
+ *  name from non-members, which the invitee still is). */
+export interface MyPendingInvitation {
+  id: string;
+  team_id: string;
+  email: string;
+  name: string;
+  member_type: string;
+  created_at: string;
+  team_name: string;
+}
 
 const invitationsKey = (teamId: string | undefined) =>
   ["invitations", teamId] as const;
@@ -88,8 +96,39 @@ export function useInviteMember() {
       if (error) throw error;
       return data as EmailInvitation;
     },
-    onSuccess: () => {
+    onSuccess: (invitation) => {
+      // The invitation EMAIL rides along fire-and-forget: creating the row
+      // must never fail because mail didn't go out (it can be re-sent from
+      // the People page).
+      void fetch("/api/email/invitation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ invitationId: invitation.id }),
+      }).catch(() => {});
       queryClient.invalidateQueries({ queryKey: invitationsKey(teamId) });
+    },
+  });
+}
+
+/** Re-sends the invitation email for a pending invitation. */
+export function useResendInvitationEmail() {
+  return useMutation({
+    mutationFn: async (
+      invitationId: string,
+    ): Promise<{ ok: boolean; status?: string; reason?: string }> => {
+      const res = await fetch("/api/email/invitation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ invitationId }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        status?: string;
+        reason?: string;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(json.error ?? "Couldn't send the invitation email.");
+      return { ok: Boolean(json.ok), status: json.status, reason: json.reason };
     },
   });
 }
@@ -126,16 +165,15 @@ export function useMyPendingInvitations() {
   const email = profile?.email ?? undefined;
 
   return useQuery({
-    queryKey: ["my-invitations", email],
+    // "v2": the row shape changed (PostgREST embed → my_pending_invitations
+    // RPC with team_name) — the key bump keeps stale-shaped cache entries from
+    // ever rendering.
+    queryKey: ["my-invitations", "v2", email],
     enabled: Boolean(email),
     queryFn: async (): Promise<MyPendingInvitation[]> => {
-      const { data, error } = await supabase
-        .from("email_invitations")
-        .select("*, teams(name)")
-        .eq("email", email as string)
-        .order("created_at", { ascending: false });
+      const { data, error } = await supabase.rpc("my_pending_invitations");
       if (error) throw error;
-      return (data ?? []) as unknown as MyPendingInvitation[];
+      return (data ?? []) as MyPendingInvitation[];
     },
   });
 }
@@ -162,6 +200,9 @@ export function useAcceptInvitation() {
       queryClient.invalidateQueries({ queryKey: ["teams"] });
       queryClient.invalidateQueries({ queryKey: ["active-team"] });
       queryClient.invalidateQueries({ queryKey: ["invitations"] });
+      // The onboarding chooser's "you've been invited" list — without this it
+      // keeps showing (and letting the user re-click) a consumed invitation.
+      queryClient.invalidateQueries({ queryKey: ["my-invitations"] });
       queryClient.invalidateQueries({ queryKey: ["team-members"] });
     },
   });

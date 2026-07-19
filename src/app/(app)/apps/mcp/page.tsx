@@ -47,7 +47,7 @@ export default function McpAppPage() {
   // immediately and the tools UI renders.
   if (!installed || !enabled) {
     return (
-      <div style={{ maxWidth: 720, margin: "0 auto", padding: "24px 0" }}>
+      <div style={{ padding: "24px 0" }}>
         <Result
           icon={
             <span style={{ color: ACCENT }}>
@@ -85,7 +85,7 @@ export default function McpAppPage() {
   }
 
   return (
-    <div style={{ maxWidth: 860, margin: "0 auto" }}>
+    <div>
       {/* Header */}
       <div
         style={{

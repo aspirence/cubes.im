@@ -1217,6 +1217,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <CreateTaskModal
           open={createTaskOpen}
+          // The project on screen is the obvious default; the picker stays
+          // editable for cross-project capture.
+          defaultProjectId={
+            pathname.match(/^\/projects\/(?!all-tasks)([^/?]+)/)?.[1]
+          }
           onClose={() => setCreateTaskOpen(false)}
         />
 

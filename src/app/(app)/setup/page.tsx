@@ -92,6 +92,17 @@ export default function SetupPage() {
 
   const goBack = () => setCurrent((c) => Math.max(c - 1, 0));
 
+  /**
+   * Bounds a best-effort step: resolves null when it outlasts `ms` so a single
+   * stalled network call can never wedge the Finish button. The underlying
+   * work keeps running server-side; only the wait is abandoned.
+   */
+  const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T | null> =>
+    Promise.race([
+      promise,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+    ]);
+
   const finish = async () => {
     // The org step is unmounted by now — use the captured values (falling back
     // to the pre-filled defaults).
@@ -116,10 +127,13 @@ export default function SetupPage() {
       );
       if (activeTeam?.id && (hasDetails || organizationName)) {
         try {
-          await saveDetails.mutateAsync({
-            teamId: activeTeam.id,
-            details: { companyName: organizationName, ...detailsValues },
-          });
+          await withTimeout(
+            saveDetails.mutateAsync({
+              teamId: activeTeam.id,
+              details: { companyName: organizationName, ...detailsValues },
+            }),
+            10_000,
+          );
         } catch (err) {
           console.error("Failed to save workspace details", err);
         }
@@ -127,12 +141,16 @@ export default function SetupPage() {
 
       // 3) Send any pending invitations (best-effort).
       if (invites.length > 0) {
-        const results = await Promise.allSettled(
-          invites.map((invite) =>
-            inviteMember.mutateAsync({ email: invite.email, name: invite.name }),
+        const results = await withTimeout(
+          Promise.allSettled(
+            invites.map((invite) =>
+              inviteMember.mutateAsync({ email: invite.email, name: invite.name }),
+            ),
           ),
+          15_000,
         );
-        const failed = results.filter((r) => r.status === "rejected").length;
+        const failed =
+          results?.filter((r) => r.status === "rejected").length ?? 0;
         if (failed > 0) {
           message.warning(
             `${failed} invitation${failed > 1 ? "s" : ""} could not be sent.`,
@@ -150,7 +168,15 @@ export default function SetupPage() {
           duration: 0,
         });
         try {
-          await seedSampleWorkspace(supabase, activeTeam.id, profile?.id);
+          const seeded = await withTimeout(
+            seedSampleWorkspace(supabase, activeTeam.id, profile?.id).then(
+              () => true,
+            ),
+            25_000,
+          );
+          if (seeded === null) {
+            throw new Error("Sample seeding timed out");
+          }
           message.open({
             key: "setup-seed",
             type: "success",

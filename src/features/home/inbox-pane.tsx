@@ -2,14 +2,19 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Segmented, Skeleton, Space, Tooltip, theme } from "antd";
+import { Button, Dropdown, Empty, Skeleton, Tooltip, theme } from "antd";
+import type { MenuProps } from "antd";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import {
-  useNotifications,
+  useInboxNotifications,
   useNotificationsRealtime,
   useMarkNotificationRead,
-  useMarkAllNotificationsRead,
+  useMarkNotificationUnread,
+  useSnoozeNotification,
+  useMarkNotificationsReadByTypes,
+  isActionNotification,
+  ACTION_NOTIFICATION_TYPES,
   type Notification,
 } from "@/features/notifications/use-notifications";
 
@@ -42,6 +47,10 @@ const TYPE_META: Record<string, { label: string; icon: string }> = {
   comment: { label: "Comment", icon: "chat_bubble" },
   assignment: { label: "Assigned", icon: "assignment_ind" },
   join_request: { label: "Join request", icon: "person_add" },
+  member_joined: { label: "Member joined", icon: "group_add" },
+  project_shared: { label: "Project shared", icon: "folder_shared" },
+  invitation: { label: "Invitation", icon: "mail" },
+  role_changed: { label: "Role changed", icon: "shield_person" },
   info: { label: "Info", icon: "info" },
 };
 
@@ -55,6 +64,26 @@ function dayLabel(iso: string): string {
   return d.format(d.year() === today.year() ? "MMM D" : "MMM D, YYYY");
 }
 
+/** Compact right-edge timestamp: clock time today, date otherwise. */
+function stamp(iso: string): string {
+  const d = dayjs(iso);
+  return d.isSame(dayjs(), "day") ? d.format("h:mm A") : d.format("MMM D");
+}
+
+const SNOOZE_CHOICES: { key: string; label: string; hours: number }[] = [
+  { key: "1h", label: "1 hour", hours: 1 },
+  { key: "3h", label: "3 hours", hours: 3 },
+  { key: "tomorrow", label: "Tomorrow", hours: 24 },
+  { key: "week", label: "Next week", hours: 24 * 7 },
+];
+
+type InboxTab = "primary" | "other" | "later" | "cleared";
+
+/** True while the row is snoozed into the future — the "Later" bucket. */
+function isSnoozed(n: Notification): boolean {
+  return Boolean(n.remind_at && dayjs(n.remind_at).isAfter(dayjs()));
+}
+
 export interface InboxPaneProps {
   title: string;
   description: string;
@@ -64,48 +93,81 @@ export interface InboxPaneProps {
 }
 
 /**
- * Full-page notification list backing the Home sidebar's Inbox and Assigned
- * Comments views. Same data as the header bell, filtered by type;
- * clicking an item marks it read and jumps to its task/project.
+ * ClickUp-style inbox: Primary (needs a response) / Other (updates) / Later
+ * (snoozed) / Cleared (read) tabs, day-grouped rows, and hover-revealed
+ * actions (snooze, mark unread, a prominent Clear). Backs the Home sidebar's
+ * Inbox and Assigned Comments views; `types` narrows the universe (Assigned
+ * Comments passes ['mention'], which also hides the Other tab).
  */
 export function InboxPane({ title, description, types }: InboxPaneProps) {
   const { token } = theme.useToken();
   const router = useRouter();
   useNotificationsRealtime();
-  const { data, isLoading } = useNotifications();
+  const { data, isLoading } = useInboxNotifications();
   const markRead = useMarkNotificationRead();
-  const markAllRead = useMarkAllNotificationsRead();
-  const [filter, setFilter] = useState<"all" | "unread">("all");
+  const markUnread = useMarkNotificationUnread();
+  const snooze = useSnoozeNotification();
+  const markByTypes = useMarkNotificationsReadByTypes();
+  const [tab, setTab] = useState<InboxTab>("primary");
 
-  const items = useMemo(() => {
-    let list = data?.items ?? [];
-    if (types && types.length > 0) {
-      list = list.filter((n) => types.includes(n.type));
+  // The universe this pane sees (Assigned Comments narrows to mentions).
+  const universe = useMemo(() => {
+    const list = data ?? [];
+    return types && types.length > 0 ? list.filter((n) => types.includes(n.type)) : list;
+  }, [data, types]);
+
+  const buckets = useMemo(() => {
+    const primary: Notification[] = [];
+    const other: Notification[] = [];
+    const later: Notification[] = [];
+    const cleared: Notification[] = [];
+    for (const n of universe) {
+      if (isSnoozed(n)) later.push(n);
+      else if (n.read) cleared.push(n);
+      else if (isActionNotification(n.type)) primary.push(n);
+      else other.push(n);
     }
-    if (filter === "unread") list = list.filter((n) => !n.read);
-    return list;
-  }, [data?.items, types, filter]);
+    return { primary, other, later, cleared };
+  }, [universe]);
 
-  const unreadHere = useMemo(
-    () =>
-      (data?.items ?? []).filter(
-        (n) => !n.read && (!types || types.includes(n.type)),
-      ).length,
-    [data?.items, types],
-  );
+  // With a type filter every item is one family — a lone "Other" tab is noise.
+  const showOther = !types || types.length === 0
+    ? true
+    : types.some((t) => !isActionNotification(t));
 
-  // The list arrives newest-first, so consecutive runs of the same day label
-  // are already contiguous — a single pass groups without re-sorting.
+  const TABS: { key: InboxTab; label: string; icon: string; count?: number }[] = [
+    { key: "primary", label: "Primary", icon: "inbox", count: buckets.primary.length },
+    ...(showOther
+      ? [{ key: "other" as const, label: "Other", icon: "notifications", count: buckets.other.length }]
+      : []),
+    { key: "later", label: "Later", icon: "schedule", count: buckets.later.length },
+    { key: "cleared", label: "Cleared", icon: "done_all" },
+  ];
+
+  const activeList = buckets[showOther || tab !== "other" ? tab : "primary"];
+
   const groups = useMemo(() => {
     const out: { label: string; items: Notification[] }[] = [];
-    for (const n of items) {
+    for (const n of activeList) {
       const label = dayLabel(n.created_at);
       const last = out[out.length - 1];
       if (last && last.label === label) last.items.push(n);
       else out.push({ label, items: [n] });
     }
     return out;
-  }, [items]);
+  }, [activeList]);
+
+  const clearAll = () => {
+    if (tab === "primary") {
+      markByTypes.mutate({
+        types: types?.length
+          ? types.filter((t) => isActionNotification(t))
+          : [...ACTION_NOTIFICATION_TYPES],
+      });
+    } else if (tab === "other") {
+      markByTypes.mutate({ types: [...ACTION_NOTIFICATION_TYPES], invert: true });
+    }
+  };
 
   const handleClick = (n: Notification) => {
     if (!n.read) markRead.mutate(n.id);
@@ -115,11 +177,22 @@ export function InboxPane({ title, description, types }: InboxPaneProps) {
 
   const renderRow = (n: Notification) => {
     const meta = TYPE_META[n.type] ?? { label: n.type, icon: "notifications" };
-    const href = notificationHref(n);
+    const unread = !n.read;
+    const snoozed = isSnoozed(n);
+
+    const snoozeMenu: MenuProps = {
+      items: SNOOZE_CHOICES.map((c) => ({ key: c.key, label: c.label })),
+      onClick: ({ key, domEvent }) => {
+        domEvent.stopPropagation();
+        const c = SNOOZE_CHOICES.find((x) => x.key === key);
+        if (c) snooze.mutate({ id: n.id, until: dayjs().add(c.hours, "hour").toISOString() });
+      },
+    };
+
     return (
       <div
         key={n.id}
-        className={`ib-row${n.read ? "" : " unread"}`}
+        className={`ib-row${unread ? " unread" : ""}`}
         role="button"
         tabIndex={0}
         onClick={() => handleClick(n)}
@@ -131,189 +204,171 @@ export function InboxPane({ title, description, types }: InboxPaneProps) {
         }}
       >
         <span className="ib-chip">
-          <MIcon name={meta.icon} size={17} color={BRAND} />
-          {!n.read ? <span className="ib-dot" aria-label="Unread" /> : null}
+          <MIcon name={meta.icon} size={16} color={BRAND} />
         </span>
+        {unread ? <span className="ib-dot" aria-label="Unread" /> : <span className="ib-dot ib-dot-off" />}
 
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="ib-msg" title={n.message}>
+        <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span className="ib-msg" title={n.message}>
             {n.message}
-          </div>
-          <div className="ib-meta">
-            <span className="ib-type">{meta.label}</span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <MIcon name="schedule" size={12} color={token.colorTextQuaternary} />
-              {dayjs(n.created_at).fromNow()}
+          </span>
+          <span className="ib-type">{meta.label}</span>
+          {snoozed ? (
+            <span className="ib-snoozed">
+              <MIcon name="schedule" size={11} />
+              until {dayjs(n.remind_at as string).format("MMM D, h:mm A")}
             </span>
-          </div>
+          ) : null}
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 2, alignSelf: "center", flex: "none" }}>
-          {!n.read ? (
-            <Tooltip title="Mark as read">
-              <button
-                type="button"
-                className="ib-act"
-                aria-label="Mark as read"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  markRead.mutate(n.id);
-                }}
-              >
-                <MIcon name="check" size={16} />
+        {/* Hover actions — ClickUp-style: quiet icons + a prominent Clear. */}
+        <div className="ib-actions" onClick={(e) => e.stopPropagation()}>
+          {tab === "cleared" ? (
+            <Tooltip title="Mark as unread">
+              <button type="button" className="ib-act" aria-label="Mark as unread" onClick={() => markUnread.mutate(n.id)}>
+                <MIcon name="mark_email_unread" size={15} />
               </button>
             </Tooltip>
           ) : null}
-          {href ? (
-            <Tooltip title="Open">
-              <span className="ib-act" aria-hidden>
-                <MIcon name="arrow_forward" size={16} />
-              </span>
+          {tab === "later" ? (
+            <Tooltip title="Remind now">
+              <button
+                type="button"
+                className="ib-act"
+                aria-label="Remind now"
+                onClick={() => snooze.mutate({ id: n.id, until: dayjs().toISOString() })}
+              >
+                <MIcon name="notifications_active" size={15} />
+              </button>
             </Tooltip>
           ) : null}
+          {tab === "primary" || tab === "other" ? (
+            <Dropdown menu={snoozeMenu} trigger={["click"]}>
+              <Tooltip title="Snooze">
+                <button type="button" className="ib-act" aria-label="Snooze">
+                  <MIcon name="schedule" size={15} />
+                </button>
+              </Tooltip>
+            </Dropdown>
+          ) : null}
+          {tab !== "cleared" ? (
+            <button
+              type="button"
+              className="ib-clear"
+              onClick={() => markRead.mutate(n.id)}
+            >
+              <MIcon name="check" size={14} color="#fff" />
+              Clear
+            </button>
+          ) : null}
         </div>
+
+        <span className="ib-stamp">{stamp(n.created_at)}</span>
       </div>
     );
   };
 
+  const emptyText: Record<InboxTab, string> = {
+    primary: "Nothing needs your response — you're all caught up 🎉",
+    other: "No new updates",
+    later: "Nothing snoozed",
+    cleared: "Nothing cleared yet",
+  };
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <style>{IB_CSS(token)}</style>
+    <div>
+      <style>{IB_CSS}</style>
+      <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>{title}</h1>
+      <p style={{ color: token.colorTextSecondary, margin: "4px 0 16px", fontSize: 13 }}>
+        {description}
+      </p>
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: 21,
-                fontWeight: 600,
-                letterSpacing: "-.4px",
-                color: token.colorText,
-              }}
+      {/* Tab bar + Clear all */}
+      <div className="ib-tabs">
+        {TABS.map((t) => {
+          const active = tab === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              className={`ib-tab${active ? " on" : ""}`}
+              onClick={() => setTab(t.key)}
             >
-              {title}
-            </h1>
-            {unreadHere > 0 ? (
-              <span className="ib-count">{unreadHere > 99 ? "99+" : unreadHere}</span>
-            ) : null}
-          </div>
-          <p style={{ margin: "4px 0 0", fontSize: 13, color: token.colorTextSecondary }}>
-            {description}
-          </p>
+              <MIcon name={t.icon} size={16} color={active ? token.colorText : token.colorTextTertiary} />
+              {t.label}
+              {t.count ? <span className="ib-tab-count">{t.count > 99 ? "99+" : t.count}</span> : null}
+            </button>
+          );
+        })}
+        <div style={{ marginLeft: "auto" }}>
+          {(tab === "primary" || tab === "other") && activeList.length > 0 ? (
+            <Button
+              size="small"
+              icon={<MIcon name="done_all" size={14} />}
+              loading={markByTypes.isPending}
+              onClick={clearAll}
+            >
+              Clear all
+            </Button>
+          ) : null}
         </div>
-        <Space>
-          <Segmented
-            value={filter}
-            onChange={(v) => setFilter(v as "all" | "unread")}
-            options={[
-              { label: "All", value: "all" },
-              { label: "Unread", value: "unread" },
-            ]}
-          />
-          <Button
-            size="small"
-            icon={<MIcon name="done_all" size={15} />}
-            disabled={unreadHere === 0}
-            loading={markAllRead.isPending}
-            onClick={() => markAllRead.mutate()}
-          >
-            Mark all read
-          </Button>
-        </Space>
       </div>
 
-      <div className="ib-card">
-        {isLoading ? (
-          <div style={{ padding: 16 }}>
-            <Skeleton active paragraph={{ rows: 6 }} />
+      {isLoading ? (
+        <Skeleton active paragraph={{ rows: 6 }} style={{ marginTop: 16 }} />
+      ) : activeList.length === 0 ? (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={emptyText[tab]}
+          style={{ margin: "48px 0" }}
+        />
+      ) : (
+        groups.map((g) => (
+          <div key={g.label}>
+            <div className="ib-day">{g.label}</div>
+            <div className="ib-list">{g.items.map(renderRow)}</div>
           </div>
-        ) : items.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "48px 24px 52px" }}>
-            <span
-              style={{
-                width: 54,
-                height: 54,
-                borderRadius: 16,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: token.colorPrimaryBg,
-              }}
-            >
-              <MIcon
-                name={filter === "unread" ? "mark_email_read" : "inbox"}
-                size={26}
-                color={BRAND}
-              />
-            </span>
-            <div style={{ marginTop: 12, fontSize: 14.5, fontWeight: 600, color: token.colorText }}>
-              {filter === "unread" ? "You're all caught up" : "Nothing here yet"}
-            </div>
-            <p
-              style={{
-                margin: "4px auto 0",
-                fontSize: 12.5,
-                color: token.colorTextTertiary,
-                maxWidth: 300,
-              }}
-            >
-              {filter === "unread"
-                ? "No unread notifications — new ones will surface here."
-                : "Comments, mentions and assignments will land here."}
-            </p>
-          </div>
-        ) : (
-          groups.map((g) => (
-            <div key={g.label} className="ib-group">
-              <div className="ib-day">
-                {g.label}
-                <span className="ib-day-n">{g.items.length}</span>
-              </div>
-              {g.items.map(renderRow)}
-            </div>
-          ))
-        )}
-      </div>
+        ))
+      )}
     </div>
   );
 }
 
-/** Row / chip / day-header chrome; single brand accent, tokens only for surfaces. */
-function IB_CSS(token: ReturnType<typeof theme.useToken>["token"]): string {
-  return `
-  .ib-count{display:inline-flex;align-items:center;font-size:11px;font-weight:700;color:${token.colorError};background:${token.colorErrorBg};border-radius:999px;padding:2px 9px;line-height:1.4;}
-
-  .ib-card{background:${token.colorBgContainer};border:1px solid ${token.colorBorderSecondary};border-radius:12px;padding:6px;box-shadow:0 1px 2px rgba(16,24,40,0.03);}
-
-  .ib-group + .ib-group .ib-day{margin-top:6px;border-top:1px solid ${token.colorSplit};padding-top:12px;}
-  .ib-day{display:flex;align-items:center;gap:8px;padding:8px 10px 4px;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:${token.colorTextQuaternary};}
-  .ib-day-n{font-size:10.5px;font-weight:600;color:${token.colorTextTertiary};background:${token.colorFillTertiary};border-radius:999px;padding:0 7px;line-height:16px;letter-spacing:0;}
-
-  .ib-row{display:flex;align-items:flex-start;gap:12px;padding:10px 12px;border-radius:10px;cursor:pointer;transition:background .12s;}
-  .ib-row:hover{background:${token.colorFillQuaternary};}
-  .ib-row + .ib-row{margin-top:1px;}
-  .ib-row.unread{background:color-mix(in srgb, ${BRAND} 4%, transparent);}
-  .ib-row.unread:hover{background:color-mix(in srgb, ${BRAND} 8%, transparent);}
-
-  .ib-chip{position:relative;width:32px;height:32px;border-radius:9px;flex:none;display:inline-flex;align-items:center;justify-content:center;background:${token.colorPrimaryBg};margin-top:1px;}
-  .ib-dot{position:absolute;top:-3px;right:-3px;width:6px;height:6px;border-radius:999px;background:${BRAND};box-shadow:0 0 0 2px ${token.colorBgContainer};}
-
-  .ib-msg{font-size:13px;font-weight:500;color:${token.colorTextSecondary};line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
-  .ib-row.unread .ib-msg{font-weight:600;color:${token.colorText};}
-  .ib-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:3px;font-size:11.5px;color:${token.colorTextTertiary};}
-  .ib-type{display:inline-flex;align-items:center;font-size:10.5px;font-weight:600;color:${token.colorTextSecondary};background:${token.colorFillQuaternary};border:1px solid ${token.colorBorderSecondary};border-radius:999px;padding:1px 8px;white-space:nowrap;}
-
-  .ib-act{display:inline-flex;align-items:center;justify-content:center;border:none;background:transparent;padding:5px;border-radius:7px;cursor:pointer;color:${token.colorTextQuaternary};opacity:0;transition:opacity .12s,background .12s,color .12s;}
-  .ib-row:hover .ib-act,.ib-row:focus-visible .ib-act{opacity:1;}
-  .ib-act:hover{background:${token.colorFillSecondary};color:${token.colorText};}
-  `;
-}
+/* ClickUp-flavoured styling: dense borderless rows inside a hairline card,
+   hover reveals actions, unread rows carry a dot + heavier text. Uses CSS
+   variables set from antd tokens at runtime via color-scheme-safe literals. */
+const IB_CSS = `
+.ib-tabs { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid rgba(128,131,145,.18); padding-bottom: 0; }
+.ib-tab { display: inline-flex; align-items: center; gap: 7px; padding: 9px 13px; border: 0; background: none; cursor: pointer;
+  font: 600 13px/1 inherit; color: rgba(110,114,128,.95); border-bottom: 2px solid transparent; margin-bottom: -1px; border-radius: 6px 6px 0 0; }
+.ib-tab:hover { background: rgba(128,131,145,.08); }
+.ib-tab.on { color: inherit; border-bottom-color: currentColor; }
+.ib-tab-count { min-width: 17px; height: 17px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 999px; font-size: 10px; font-weight: 700; color: #fff; background: ${BRAND}; font-variant-numeric: tabular-nums; }
+.ib-day { font-size: 12px; font-weight: 700; color: rgba(110,114,128,.9); margin: 18px 2px 8px; }
+.ib-list { border: 1px solid rgba(128,131,145,.16); border-radius: 12px; overflow: hidden; }
+.ib-row { display: flex; align-items: center; gap: 10px; padding: 11px 14px; cursor: pointer; position: relative;
+  border-top: 1px solid rgba(128,131,145,.10); }
+.ib-row:first-child { border-top: 0; }
+.ib-row:hover { background: rgba(128,131,145,.07); }
+.ib-row.unread { background: rgba(74,74,208,.035); }
+.ib-row.unread:hover { background: rgba(74,74,208,.07); }
+.ib-chip { width: 30px; height: 30px; border-radius: 999px; background: rgba(74,74,208,.10); display: inline-flex;
+  align-items: center; justify-content: center; flex: none; }
+.ib-dot { width: 7px; height: 7px; border-radius: 999px; background: ${BRAND}; flex: none; }
+.ib-dot-off { background: transparent; }
+.ib-msg { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ib-row.unread .ib-msg { font-weight: 600; }
+.ib-type { font-size: 11px; font-weight: 600; color: rgba(110,114,128,.85); flex: none; }
+.ib-snoozed { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: rgba(110,114,128,.85); flex: none; }
+.ib-stamp { font-size: 12px; color: rgba(110,114,128,.9); flex: none; min-width: 56px; text-align: right; font-variant-numeric: tabular-nums; }
+.ib-actions { display: none; align-items: center; gap: 4px; flex: none; }
+.ib-row:hover .ib-actions { display: inline-flex; }
+.ib-row:hover .ib-stamp { display: none; }
+.ib-act { width: 26px; height: 26px; border: 0; border-radius: 7px; background: none; cursor: pointer; display: inline-flex;
+  align-items: center; justify-content: center; color: rgba(110,114,128,.95); }
+.ib-act:hover { background: rgba(128,131,145,.14); }
+.ib-clear { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border: 0; border-radius: 7px;
+  background: ${BRAND}; color: #fff; font: 600 12px/1 inherit; cursor: pointer; }
+.ib-clear:hover { filter: brightness(1.08); }
+`;

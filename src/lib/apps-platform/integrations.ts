@@ -47,6 +47,8 @@ export interface Integration {
   color: string;
   /** When set, this integration is backed by a real org connector. */
   connectionProvider?: ConnectionProvider;
+  /** In-app route where this integration is managed (first-party features). */
+  manageRoute?: string;
 }
 
 const I = (
@@ -123,6 +125,7 @@ export const INTEGRATIONS: Integration[] = [
   I("airtable", "Airtable", "knowledge", "At", "#fcb400", "Sync Airtable records with tasks two ways."),
 
   // Time Tracking
+  I("attendance-webhook", "Attendance Webhook", "time-tracking", "Aw", "#22a06b", "Push clock punches from biometric devices or any external system into HR attendance, with a fully customizable payload mapping.", { featured: true, manageRoute: "/hr/attendance?tab=webhooks" }),
   I("harvest", "Harvest", "time-tracking", "Hv", "#fa5d00", "Track time on tasks and sync entries to Harvest."),
   I("toggl", "Toggl Track", "time-tracking", "Tg", "#e57cd8", "Start Toggl timers from tasks and sync durations."),
   I("clockify", "Clockify", "time-tracking", "Ck", "#03a9f4", "Log time against tasks and export timesheets."),

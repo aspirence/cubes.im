@@ -26,9 +26,10 @@ import { ADDABLE_VIEWS } from "@/lib/projects/views";
 const DEFAULT_PHASE_COLOR = "#3b7ddd";
 
 const STATUS_CATEGORY_OPTIONS = [
-  { value: "todo", label: "To do" },
-  { value: "doing", label: "Doing" },
+  { value: "not_started", label: "Not started" },
+  { value: "active", label: "Active" },
   { value: "done", label: "Done" },
+  { value: "closed", label: "Closed" },
 ];
 
 const PRIORITY_OPTIONS = [
@@ -99,7 +100,7 @@ export function ProjectTemplateBuilderModal({
         name: "",
         views: ["list", "board"],
         phases: [{ name: "", color: DEFAULT_PHASE_COLOR }],
-        statuses: [{ name: "", category: "todo" }],
+        statuses: [{ name: "", category: "not_started" }],
         tasks: [{ name: "" }],
       });
     }
@@ -129,7 +130,7 @@ export function ProjectTemplateBuilderModal({
       statuses: (values.statuses ?? [])
         .map((s) => ({
           name: (s.name ?? "").trim(),
-          category: s.category ?? "todo",
+          category: s.category ?? "not_started",
         }))
         .filter((s) => s.name.length > 0),
       tasks: (values.tasks ?? [])
@@ -289,7 +290,7 @@ export function ProjectTemplateBuilderModal({
               ))}
               <Button
                 type="dashed"
-                onClick={() => add({ name: "", category: "todo" })}
+                onClick={() => add({ name: "", category: "not_started" })}
                 icon={<PlusOutlined />}
                 block
               >

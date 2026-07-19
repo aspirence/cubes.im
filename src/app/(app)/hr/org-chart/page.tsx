@@ -77,6 +77,7 @@ function NodeCard({
   reports,
   isCollapsed,
   dimmed,
+  highlighted,
   canDrag,
   dragIdRef,
   menuItems,
@@ -90,6 +91,7 @@ function NodeCard({
   reports: number;
   isCollapsed: boolean;
   dimmed: boolean;
+  highlighted: boolean;
   canDrag: boolean;
   dragIdRef: React.MutableRefObject<string | null>;
   menuItems: MenuProps["items"];
@@ -107,7 +109,7 @@ function NodeCard({
           ev.dataTransfer.effectAllowed = "move";
           // Firefox refuses to start a drag without a payload.
           ev.dataTransfer.setData("text/plain", e.id);
-          // Without this the ghost is the whole 208px card, which is what makes
+          // Without this the ghost is the whole card, which is what makes
           // the drag feel heavy. Use a compact chip that tracks the cursor.
           const ghost = document.createElement("div");
           ghost.textContent = e.full_name;
@@ -154,65 +156,93 @@ function NodeCard({
           display: "inline-block",
           verticalAlign: "top",
           textAlign: "left",
-          width: 208,
+          width: 178,
           background: token.colorBgContainer,
-          border: `2px solid ${tier.color}`,
-          borderRadius: 14,
-          padding: "14px 14px 10px",
+          border: `1px solid ${highlighted ? token.colorPrimary : token.colorBorderSecondary}`,
+          borderRadius: 10,
+          padding: "8px 10px 7px",
           boxShadow: token.boxShadowTertiary,
           cursor: canDrag ? "grab" : "default",
-          opacity: dimmed ? 0.4 : 1,
-          transition: "opacity .15s ease",
+          opacity: dimmed ? 0.35 : 1,
+          transition:
+            "opacity .15s ease, box-shadow .15s ease, border-color .15s ease, outline-color .12s ease, transform .12s ease",
           position: "relative",
         }}
       >
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, textAlign: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div
             style={{
-              width: 46,
-              height: 46,
+              width: 30,
+              height: 30,
+              flex: "none",
               borderRadius: 999,
-              background: `${tier.color}22`,
+              background: `${tier.color}1f`,
               color: tier.color,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 15,
+              fontSize: 11,
               fontWeight: 700,
             }}
           >
             {initials(e.full_name)}
           </div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: token.colorText, lineHeight: 1.2 }}>
-            {e.full_name}
-          </div>
-          <div style={{ fontSize: 11.5, color: token.colorTextTertiary, lineHeight: 1.3 }}>
-            {[e.designation?.title, e.department?.name].filter(Boolean).join(" · ") || "—"}
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap", justifyContent: "center" }}>
-            <span
-              title={`${tier.label} · ${cubesOf(e)} cubes`}
+          <div style={{ minWidth: 0 }}>
+            <div
+              title={e.full_name}
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                fontSize: 11.5,
-                fontWeight: 700,
-                color: tier.color,
-                background: `${tier.color}18`,
-                borderRadius: 999,
-                padding: "2px 8px",
+                fontSize: 12.5,
+                fontWeight: 650,
+                color: token.colorText,
+                lineHeight: 1.25,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
               }}
             >
-              <MIcon name="deployed_code" size={13} color={tier.color} />
-              {cubesOf(e)}
-            </span>
-            {e.status ? (
-              <Tag color={statusColor(e.status)} style={{ margin: 0, fontSize: 10.5, lineHeight: "16px" }}>
-                {statusLabel(e.status)}
-              </Tag>
-            ) : null}
+              {e.full_name}
+            </div>
+            <div
+              title={[e.designation?.title, e.department?.name].filter(Boolean).join(" · ")}
+              style={{
+                fontSize: 10.5,
+                color: token.colorTextTertiary,
+                lineHeight: 1.3,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {[e.designation?.title, e.department?.name].filter(Boolean).join(" · ") || "—"}
+            </div>
           </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6, flexWrap: "wrap" }}>
+          <span
+            title={`${tier.label} · ${cubesOf(e)} cubes`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 3,
+              fontSize: 10.5,
+              fontWeight: 700,
+              color: tier.color,
+              background: `${tier.color}16`,
+              borderRadius: 999,
+              padding: "1px 7px",
+            }}
+          >
+            <MIcon name="deployed_code" size={12} color={tier.color} />
+            {cubesOf(e)}
+          </span>
+          {e.status ? (
+            <Tag
+              color={statusColor(e.status)}
+              style={{ margin: 0, fontSize: 10, lineHeight: "15px", padding: "0 5px" }}
+            >
+              {statusLabel(e.status)}
+            </Tag>
+          ) : null}
         </div>
 
         {/* Reports count + collapse toggle (like the reference's "59^"). */}
@@ -225,26 +255,26 @@ function NodeCard({
             }}
             style={{
               position: "absolute",
-              bottom: -12,
+              bottom: -10,
               left: "50%",
               transform: "translateX(-50%)",
               display: "inline-flex",
               alignItems: "center",
-              gap: 3,
-              height: 22,
-              padding: "0 9px",
+              gap: 2,
+              height: 19,
+              padding: "0 7px",
               borderRadius: 999,
               border: "none",
               background: token.colorText,
               color: token.colorBgContainer,
-              fontSize: 11.5,
+              fontSize: 10.5,
               fontWeight: 700,
               cursor: "pointer",
               zIndex: 1,
             }}
           >
             {reports}
-            <MIcon name={isCollapsed ? "expand_more" : "expand_less"} size={14} />
+            <MIcon name={isCollapsed ? "expand_more" : "expand_less"} size={13} />
           </button>
         ) : null}
       </div>
@@ -271,6 +301,9 @@ export default function HrOrgChartPage() {
   const [cubesValue, setCubesValue] = useState<number>(0);
   const [zoom, setZoom] = useState(1);
   const canvasRef = useRef<HTMLDivElement>(null);
+  // Drag-to-pan state — a ref for the same reason as dragIdRef: it is only
+  // read inside pointer handlers, so panning causes zero React renders.
+  const panRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
 
   const toggleCollapse = useCallback((id: string) => {
     setCollapsed((prev) => {
@@ -542,6 +575,7 @@ export default function HrOrgChartPage() {
           reports={descendantCount.get(e.id) ?? 0}
           isCollapsed={collapsed.has(e.id)}
           dimmed={Boolean(matched && !matched.has(e.id))}
+          highlighted={Boolean(matched && matched.has(e.id))}
           canDrag={isHrAdmin && !search}
           dragIdRef={dragIdRef}
           menuItems={menuFor(e)}
@@ -573,6 +607,9 @@ export default function HrOrgChartPage() {
           <Text type="secondary">Reporting lines & performance across your organization.</Text>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <Text type="secondary" style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>
+            Drag to pan · ⌘/Ctrl + scroll to zoom
+          </Text>
           <Input.Search
             allowClear
             placeholder="Search by name, role or department"
@@ -660,7 +697,47 @@ export default function HrOrgChartPage() {
             reparent(dragId, null);
             dragIdRef.current = null;
           }}
-          style={{ overflow: "auto", padding: "22px 20px 40px" }}
+          // Drag empty canvas to pan. Mouse only — touch pans via native
+          // scrolling — and never from a card (cards drag to reparent) or a
+          // control. Pointer capture keeps the pan alive outside the canvas.
+          onPointerDown={(ev) => {
+            if (ev.pointerType !== "mouse" || ev.button !== 0) return;
+            if ((ev.target as Element).closest(".org-card, button, a, input")) return;
+            const el = canvasRef.current;
+            if (!el) return;
+            ev.preventDefault();
+            panRef.current = { x: ev.clientX, y: ev.clientY, left: el.scrollLeft, top: el.scrollTop };
+            el.setPointerCapture(ev.pointerId);
+            el.style.cursor = "grabbing";
+          }}
+          onPointerMove={(ev) => {
+            const pan = panRef.current;
+            const el = canvasRef.current;
+            if (!pan || !el) return;
+            el.scrollLeft = pan.left - (ev.clientX - pan.x);
+            el.scrollTop = pan.top - (ev.clientY - pan.y);
+          }}
+          onPointerUp={(ev) => {
+            const el = canvasRef.current;
+            if (panRef.current && el) {
+              el.releasePointerCapture(ev.pointerId);
+              el.style.cursor = "";
+            }
+            panRef.current = null;
+          }}
+          onPointerCancel={() => {
+            panRef.current = null;
+            if (canvasRef.current) canvasRef.current.style.cursor = "";
+          }}
+          style={{
+            // A bounded viewport, so scrolling and zooming happen INSIDE the
+            // chart area instead of growing the page.
+            height: "calc(100vh - 230px)",
+            minHeight: 420,
+            overflow: "auto",
+            overscrollBehavior: "contain",
+            padding: "22px 20px 40px",
+          }}
         >
           <style>{ORG_CSS}</style>
           {/* CSS `zoom` (not `transform: scale`) on purpose: zoom reflows, so the
@@ -707,15 +784,19 @@ const ORG_CSS = `
 .org-tree { display: inline-block; min-width: 100%; text-align: center; --org-line: #c9ccd6; }
 /* Drop affordance — toggled by a data attribute straight on the node (not React
    state), so hovering a target during a drag never re-renders the tree. */
-.org-card { transition: outline-color .12s ease, transform .12s ease; outline: 2px dashed transparent; outline-offset: 3px; }
+/* Transitions live in the card's inline style (inline declarations win, so
+   listing them here would be dead CSS). The hover shadow needs !important for
+   the same reason: the base box-shadow is an inline theme token. */
+.org-card { outline: 2px dashed transparent; outline-offset: 3px; }
+.org-card:hover { box-shadow: 0 8px 20px -10px rgba(0,0,0,.28) !important; }
 .org-card[data-drop="1"] { outline-color: #4a4ad0; transform: translateY(-2px); }
 .org-card[data-drop="1"] * { pointer-events: none; }
-.org-tree ul { display: flex; justify-content: center; list-style: none; margin: 0; padding: 30px 0 0; position: relative; }
-.org-tree li { list-style: none; position: relative; padding: 30px 16px 0; text-align: center; }
+.org-tree ul { display: flex; justify-content: center; list-style: none; margin: 0; padding: 24px 0 0; position: relative; }
+.org-tree li { list-style: none; position: relative; padding: 24px 10px 0; text-align: center; }
 /* connectors from each node up to its siblings' horizontal bar */
 .org-tree li::before, .org-tree li::after {
   content: ""; position: absolute; top: 0; right: 50%;
-  border-top: 1.5px solid var(--org-line); width: 50%; height: 30px;
+  border-top: 1.5px solid var(--org-line); width: 50%; height: 24px;
 }
 .org-tree li::after { right: auto; left: 50%; border-left: 1.5px solid var(--org-line); }
 .org-tree li:only-child::before, .org-tree li:only-child::after { display: none; }
@@ -726,7 +807,7 @@ const ORG_CSS = `
 /* the vertical line dropping from a parent to its children's bar */
 .org-tree ul ul::before {
   content: ""; position: absolute; top: 0; left: 50%;
-  border-left: 1.5px solid var(--org-line); width: 0; height: 30px;
+  border-left: 1.5px solid var(--org-line); width: 0; height: 24px;
 }
 /* root level has no parent → no incoming connector */
 .org-tree > ul { padding-top: 0; }

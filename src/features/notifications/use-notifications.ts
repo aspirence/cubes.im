@@ -74,6 +74,32 @@ export function useNotifications() {
   });
 }
 
+const inboxKey = [NOTIFICATIONS_ROOT, "inbox"] as const;
+
+/**
+ * The full-page Inbox feed: latest 100 rows INCLUDING read and snoozed ones —
+ * the pane buckets them into Primary / Other / Later / Cleared itself. (The
+ * bell's useNotifications hides snoozed rows; the inbox must not, because
+ * "Later" IS the snoozed bucket.) Mutations invalidate the shared root key,
+ * so this stays in sync with every mark/snooze action.
+ */
+export function useInboxNotifications() {
+  const supabase = useMemo(() => createClient(), []);
+
+  return useQuery({
+    queryKey: inboxKey,
+    queryFn: async (): Promise<Notification[]> => {
+      const { data, error } = await supabase
+        .from("user_notifications")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+}
+
 export interface UnreadNotificationCounts {
   /** Unread action-type notifications (mention/assignment/comment) — the
    *  "needs a response" number shown red on the closed bell. */
@@ -233,15 +259,29 @@ export function useMarkNotificationsReadByTypes() {
  * and invalidates the notifications query so the bell updates live. Manages the
  * channel inside an effect with cleanup on unmount / user change.
  */
-export function useNotificationsRealtime() {
+export function useNotificationsRealtime(options?: { toast?: boolean }) {
   const supabase = useMemo(() => createClient(), []);
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const userId = user?.id;
   const channelIdRef = useRef<string>(crypto.randomUUID());
+  // Read inside the subscription callback without re-subscribing on change.
+  const toastRef = useRef(Boolean(options?.toast));
+  const toastEnabled = Boolean(options?.toast);
+  useEffect(() => {
+    toastRef.current = toastEnabled;
+  }, [toastEnabled]);
 
   useEffect(() => {
     if (!userId) return;
+
+    const invalidate = () => {
+      queryClient.invalidateQueries({ queryKey: [NOTIFICATIONS_ROOT] });
+      // A join-request approval adds the user to a new workspace server-side;
+      // refresh the team lists so it appears in the switcher immediately.
+      queryClient.invalidateQueries({ queryKey: ["teams"] });
+      queryClient.invalidateQueries({ queryKey: ["active-team"] });
+    };
 
     const channel = supabase
       // This hook mounts in more than one surface (e.g. bell + inbox pane), so
@@ -257,13 +297,29 @@ export function useNotificationsRealtime() {
           table: "user_notifications",
           filter: `user_id=eq.${userId}`,
         },
-        () => {
-          queryClient.invalidateQueries({ queryKey: [NOTIFICATIONS_ROOT] });
-          // A join-request approval adds the user to a new workspace server-side;
-          // refresh the team lists so it appears in the switcher immediately.
-          queryClient.invalidateQueries({ queryKey: ["teams"] });
-          queryClient.invalidateQueries({ queryKey: ["active-team"] });
+        (payload) => {
+          invalidate();
+          // Heads-up toast so a new notification is noticed without opening
+          // the bell. Only the surface that opted in (the bell) toasts —
+          // several mounts of this hook would otherwise stack duplicates.
+          const text = (payload.new as Partial<Notification>)?.message;
+          if (toastRef.current && text) {
+            void import("antd").then(({ message }) =>
+              message.info({ content: text, duration: 4 }),
+            );
+          }
         },
+      )
+      .on(
+        "postgres_changes",
+        {
+          // Read/snooze from another tab or device: keep every surface in sync.
+          event: "UPDATE",
+          schema: "public",
+          table: "user_notifications",
+          filter: `user_id=eq.${userId}`,
+        },
+        invalidate,
       )
       .subscribe();
 

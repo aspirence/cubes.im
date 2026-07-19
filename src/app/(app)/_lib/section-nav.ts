@@ -83,6 +83,7 @@ export const SECTION_NAVS: SectionNav[] = [
       { key: "/settings/permissions", label: "Permissions", icon: "shield_person", requiresAdmin: true },
       { key: "/settings/teams", label: "Workspaces", icon: "groups", requiresAdmin: true },
       { key: "/settings/apps", label: "Apps", icon: "extension", requiresAdmin: true },
+      { key: "/settings/email", label: "Email", icon: "mail", requiresAdmin: true },
       { type: "divider" },
       { key: "/settings/support", label: "Support", icon: "support_agent" },
     ],

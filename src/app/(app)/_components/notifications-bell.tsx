@@ -17,7 +17,7 @@ import {
 } from "antd";
 import type { MenuProps } from "antd";
 import {
-  BellOutlined,
+  BellFilled,
   CheckOutlined,
   MailOutlined,
   ClockCircleOutlined,
@@ -643,7 +643,7 @@ export function NotificationsBell() {
   const dark = useUIStore((s) => s.themeMode === "dark");
   const t = useMemo(() => cardTheme(dark), [dark]);
 
-  useNotificationsRealtime();
+  useNotificationsRealtime({ toast: true });
   const { data, isLoading } = useNotifications();
   const { data: counts } = useUnreadNotificationCounts();
   const markRead = useMarkNotificationRead();
@@ -747,42 +747,56 @@ export function NotificationsBell() {
   return (
     <>
       <Tooltip title="Notifications">
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
-          <Badge count={actionUnread} size="small" overflowCount={99}>
-            <Button
-              type="text"
-              aria-label={`Notifications — ${actionUnread} need a response, ${generalUnread} unread`}
-              icon={<BellOutlined />}
-              onClick={() => {
-                setTab(actionUnread > 0 ? "action" : "general");
-                setOpen(true);
-              }}
-            />
-          </Badge>
-          {generalUnread > 0 ? (
+        {/* Circular soft bell with ONE solid brand bubble overlapping its
+            top-right corner. The action/general split lives on the drawer
+            tabs; the bubble is the total unread. */}
+        <span style={{ position: "relative", display: "inline-flex" }}>
+          <Button
+            type="text"
+            shape="circle"
+            aria-label={`Notifications — ${actionUnread} need a response, ${generalUnread} unread`}
+            icon={
+              <BellFilled
+                style={{ fontSize: 17, color: dark ? "#8b93a5" : "#a4a9b6" }}
+              />
+            }
+            onClick={() => {
+              setTab(actionUnread > 0 ? "action" : "general");
+              setOpen(true);
+            }}
+            style={{
+              width: 38,
+              height: 38,
+              background: dark ? "rgba(255,255,255,0.06)" : "#f3f4f7",
+            }}
+          />
+          {actionUnread + generalUnread > 0 ? (
             <span
-              role="button"
-              aria-label={`${generalUnread} unread general notifications`}
-              onClick={() => {
-                setTab("general");
-                setOpen(true);
-              }}
+              aria-hidden
               style={{
+                position: "absolute",
+                top: -3,
+                right: -3,
                 minWidth: 18,
-                height: 16,
+                height: 18,
                 padding: "0 5px",
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
-                borderRadius: 9,
+                borderRadius: 999,
+                background: "#4a4ad0",
+                color: "#fff",
                 fontSize: 10.5,
-                fontWeight: 600,
-                color: dark ? "#9aa4b6" : "#6a6d78",
-                background: "rgba(128,128,140,0.14)",
-                cursor: "pointer",
+                fontWeight: 700,
+                lineHeight: 1,
+                fontVariantNumeric: "tabular-nums",
+                boxShadow: `0 0 0 2px ${dark ? "#141821" : "#ffffff"}`,
+                pointerEvents: "none",
               }}
             >
-              {generalUnread > 99 ? "99+" : generalUnread}
+              {actionUnread + generalUnread > 99
+                ? "99+"
+                : actionUnread + generalUnread}
             </span>
           ) : null}
         </span>

@@ -1,5 +1,6 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest, after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { sendWelcomeEmailSafely } from "@/lib/email/welcome";
 
 /**
  * Auth callback route handler.
@@ -24,8 +25,23 @@ export async function GET(request: NextRequest) {
 
   if (code) {
     const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
+      // Signup-confirmation landings get their welcome email here. Runs after
+      // the redirect is sent (never delays login) and dedupes server-side, so
+      // recovery/re-login landings are a cheap no-op.
+      const session = data?.session;
+      if (session?.user?.email) {
+        const user = session.user;
+        after(() =>
+          sendWelcomeEmailSafely({
+            userId: user.id,
+            email: user.email ?? "",
+            name: (user.user_metadata?.name as string | undefined) ?? null,
+            accessToken: session.access_token,
+          }),
+        );
+      }
       return NextResponse.redirect(`${origin}${redirectPath}`);
     }
   }

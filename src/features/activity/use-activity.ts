@@ -56,6 +56,21 @@ export function describeActivity(entry: {
         : to
           ? `changed priority to ${to}`
           : "changed the priority";
+    case "timer_started":
+      return "started the timer";
+    case "timer_stopped": {
+      const secs = Number(to);
+      if (Number.isFinite(secs) && secs > 0) {
+        const mins = Math.floor(secs / 60);
+        const label = mins >= 60
+          ? `${Math.floor(mins / 60)}h ${mins % 60}m`
+          : mins >= 1
+            ? `${mins}m`
+            : `${secs}s`;
+        return `tracked ${label} on the timer`;
+      }
+      return "stopped the timer";
+    }
     default: {
       const label = field ?? entry.action.replace(/_/g, " ");
       if (from && to) return `changed ${label} from ${from} to ${to}`;
@@ -77,6 +92,10 @@ export function activityGlyph(action: string): { icon: string; color: string } {
       return { icon: "person", color: "#7c6cf0" };
     case "status_changed":
       return { icon: "swap_horiz", color: "#c98a1b" };
+    case "timer_started":
+      return { icon: "play_circle", color: "#d97706" };
+    case "timer_stopped":
+      return { icon: "timer", color: "#d97706" };
     case "priority_changed":
       return { icon: "flag", color: "#c0453c" };
     case "renamed":

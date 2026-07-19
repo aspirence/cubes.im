@@ -43,7 +43,10 @@ export default function SignupPage() {
       return;
     }
 
-    // Dev / confirmation disabled: user is signed in immediately.
+    // Dev / confirmation disabled: user is signed in immediately. Fire the
+    // platform welcome email — fire-and-forget, deduped server-side (the
+    // confirmation flow gets it in the auth callback instead).
+    void fetch("/api/email/welcome", { method: "POST" }).catch(() => {});
     message.success("Account created.");
     router.replace("/home");
   };
@@ -86,7 +89,7 @@ export default function SignupPage() {
           name="name"
           rules={[{ required: true, message: "Please enter your name." }]}
         >
-          <Input placeholder="Jane Doe" autoComplete="name" />
+          <Input placeholder="Cubes" autoComplete="name" />
         </Form.Item>
 
         <Form.Item
@@ -97,7 +100,7 @@ export default function SignupPage() {
             { type: "email", message: "Please enter a valid email." },
           ]}
         >
-          <Input placeholder="you@example.com" type="email" autoComplete="email" />
+          <Input placeholder="name@cubes.im" type="email" autoComplete="email" />
         </Form.Item>
 
         <Form.Item

@@ -13,8 +13,8 @@ import type { Database, Json } from "@/types/database";
 export type StatusTemplate =
   Database["public"]["Tables"]["status_templates"]["Row"];
 
-/** One entry in a status template's `statuses` JSONB array. `category` matches
- * the builder's status categories (todo / doing / done). */
+/** One entry in a status template's `statuses` JSONB array. `category` is one of
+ * the four stage keys (not_started / active / done / closed). */
 export interface StatusTemplateStatus {
   name: string;
   category: string;
@@ -37,7 +37,7 @@ export function readStatusTemplateStatuses(
     return [
       {
         name: rec.name,
-        category: typeof rec.category === "string" ? rec.category : "todo",
+        category: typeof rec.category === "string" ? rec.category : "not_started",
       },
     ];
   });

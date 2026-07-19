@@ -215,12 +215,14 @@ export async function buildBackup(
   }
 
   const statusById = new Map(statusRows.map((s) => [s.id, s]));
-  const bucketOf = (s: StatusRow): StatusBucket =>
-    s.sys_task_status_categories?.is_done
-      ? "done"
-      : s.sys_task_status_categories?.is_doing
-        ? "doing"
-        : "todo";
+  const bucketOf = (s: StatusRow): StatusBucket => {
+    const c = s.sys_task_status_categories;
+    if (c?.is_done) return "done";
+    if (c?.is_doing) return "doing";
+    // Flagless category = the Done ("review") stage; only true is_todo is todo.
+    if (c && !c.is_todo) return "review";
+    return "todo";
+  };
 
   const projects: BackupProjectV1[] = projectRows.map((p) => {
     const statuses: BackupStatusV1[] = statusRows
@@ -342,10 +344,20 @@ export async function importBackup(
     .select("id, is_todo, is_doing, is_done, sort_order")
     .order("sort_order", { ascending: true });
   if (catErr) throw catErr;
-  const categoryIdFor = (bucket: StatusBucket): string | undefined =>
-    (sysCategories ?? []).find((c) =>
+  const categoryIdFor = (bucket: StatusBucket): string | undefined => {
+    const cats = sysCategories ?? [];
+    if (bucket === "review") {
+      // The flagless Done stage; fall back to the completed stage when
+      // restoring into a pre-4-stage install.
+      return (
+        cats.find((c) => !c.is_todo && !c.is_doing && !c.is_done) ??
+        cats.find((c) => c.is_done)
+      )?.id;
+    }
+    return cats.find((c) =>
       bucket === "done" ? c.is_done : bucket === "doing" ? c.is_doing : c.is_todo,
     )?.id;
+  };
 
   const { data: priorityRows, error: prioErr } = await supabase
     .from("task_priorities")

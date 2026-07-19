@@ -799,7 +799,7 @@ export default function ClientPortalPage() {
 
   if (!appLoading && (!installed || !enabled)) {
     return (
-      <div style={{ maxWidth: 720, margin: "0 auto", padding: "8px 0" }}>
+      <div style={{ padding: "8px 0" }}>
         <InstallPrompt
           admin={Boolean(isTeamAdmin)}
           installing={installApp.isPending}

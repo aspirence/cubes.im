@@ -52,7 +52,7 @@ export default function AdminBillingPage() {
   const maxGb = Math.max(1000, pricing.base_storage_gb * 10);
 
   return (
-    <div style={{ maxWidth: 860, display: "grid", gap: 16 }}>
+    <div style={{ display: "grid", gap: 16 }}>
       <div>
         <Title level={4} style={{ margin: 0 }}>Billing</Title>
         <Text type="secondary">

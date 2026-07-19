@@ -402,6 +402,14 @@ function AppCenterInner() {
             >
               {connected ? "Manage connection" : isOrgAdmin ? "Connect" : "Admins only"}
             </Button>
+          ) : it.manageRoute ? (
+            <Button
+              type="primary"
+              disabled={!isOrgAdmin}
+              onClick={() => router.push(it.manageRoute!)}
+            >
+              {isOrgAdmin ? "Set up" : "Admins only"}
+            </Button>
           ) : (
             <Button
               onClick={() =>
@@ -412,7 +420,7 @@ function AppCenterInner() {
             </Button>
           )}
         </div>
-        {!backed ? (
+        {!backed && !it.manageRoute ? (
           <Paragraph type="secondary" style={{ fontSize: 12, marginTop: 12 }}>
             Directory listing — this integration isn&apos;t connectable in your workspace yet.
           </Paragraph>

@@ -104,8 +104,10 @@ export interface CreateTaskTemplateInput {
   /** Blueprint fields that prefill a task created from this template. */
   description?: string;
   priority?: string;
-  /** Deliverable the template sets on the task: 'video' | 'text' | null. */
+  /** Deliverable the template sets on the task: 'status' | 'video' | null. */
   deliverableType?: string | null;
+  /** Due date offset (days from creation) applied to created tasks. */
+  dueOffsetDays?: number | null;
   /** Subtask steps created under the task. */
   steps?: TaskTemplateStep[];
   /** Legacy bulk-apply list (apply_task_template). */
@@ -133,6 +135,7 @@ export function useCreateTaskTemplate() {
           description: input.description ?? null,
           priority: input.priority ?? null,
           deliverable_type: input.deliverableType ?? null,
+        due_offset_days: input.dueOffsetDays ?? null,
           steps: (input.steps ?? []) as unknown as Json,
           tasks: (input.tasks ?? []) as unknown as Json,
         })
