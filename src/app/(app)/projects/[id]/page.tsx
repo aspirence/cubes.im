@@ -44,7 +44,6 @@ import { ProjectWorkspaceHeader } from "./_components/project-workspace-header";
 import { ProjectOverviewTab } from "./_components/project-overview-tab";
 import { TaskListTab } from "./_components/task-list-tab";
 import { BoardTab } from "./_components/board-tab";
-import { SerialTab } from "./_components/serial-tab";
 import { TrackBar } from "@/features/tracks/track-bar";
 import { useIsTeamAdmin } from "@/features/team-members/use-team-members";
 import { RoadmapTab } from "./_components/roadmap-tab";
@@ -79,8 +78,6 @@ function viewComponent(
   switch (key) {
     case "list":
       return <TaskListTab projectId={projectId} />;
-    case "serial":
-      return <SerialTab projectId={projectId} />;
     case "board":
       return <BoardTab projectId={projectId} />;
     case "timeline":
@@ -402,23 +399,10 @@ export default function ProjectWorkspacePage() {
         <Dropdown menu={menu} trigger={["contextMenu"]}>
           <span
             style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-            title={
-              i === 0
-                ? `${title} — default view · right-click for options`
-                : `${title} — right-click for options`
-            }
+            title={`${title} — right-click for options`}
           >
             <MIcon name={desc?.icon ?? "tab"} />
             {title}
-            {i === 0 ? (
-              <span
-                className="material-symbols-rounded"
-                aria-label="Default view"
-                style={{ fontSize: 12, opacity: 0.55, transform: "rotate(35deg)" }}
-              >
-                push_pin
-              </span>
-            ) : null}
           </span>
         </Dropdown>
       ),

@@ -174,7 +174,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const resetPassword = useCallback<AuthContextValue["resetPassword"]>(
     async (email) => {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        // Recovery links carry a PKCE `?code=` that must be exchanged for a
+        // session before the new password can be set. /auth/callback already
+        // does that exchange server-side (and persists the cookies), so route
+        // through it and let it hand off to the reset form.
+        redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
       });
       return { error: error ? friendlyError(error) : null };
     },
