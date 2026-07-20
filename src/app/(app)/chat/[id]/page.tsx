@@ -344,11 +344,14 @@ export default function ChatThreadPage() {
           flex: "none",
         }}
       >
+        {/* Mobile only: on desktop /chat bounces straight back into the latest
+            conversation (the rail is the list), so a back arrow does nothing. */}
         <Tooltip title="All conversations">
           <Button
+            className="wl-chat-back"
             type="text"
             size="small"
-            aria-label="Back to chat"
+            aria-label="Back to conversations"
             icon={<MIcon name="arrow_back" size={17} color={token.colorTextSecondary} />}
             onClick={() => router.push("/chat")}
           />
@@ -780,6 +783,8 @@ export default function ChatThreadPage() {
         </div>
       </div>
       <style>{`
+        .wl-chat-back{display:none;}
+        @media (max-width: 899px){ .wl-chat-back{display:inline-flex;} }
         .wl-chat-thread{margin:-22px -24px -48px;}
         @media (max-width: 899px){ .wl-chat-thread{margin:-16px -14px -40px;} }
         .wl-chat-composer:focus-within{border-color:#4a4ad0;box-shadow:0 0 0 2px rgba(74,74,208,.12);}
