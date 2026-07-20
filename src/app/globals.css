@@ -249,6 +249,25 @@ input[type="radio"] {
 }
 
 /* ---------------------------------------------------------------------------
+ * Active-track breadcrumb in the project header: the clear (×) only appears
+ * on hover, so the header reads as a title until you reach for it.
+ * ------------------------------------------------------------------------- */
+.wl-track-crumb .wl-track-crumb-clear {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.wl-track-crumb:hover .wl-track-crumb-clear,
+.wl-track-crumb .wl-track-crumb-clear:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  /* No hover on touch — keep it reachable. */
+  .wl-track-crumb .wl-track-crumb-clear {
+    opacity: 1;
+  }
+}
+
+/* ---------------------------------------------------------------------------
  * Task-ID chip (TaskIdChip): the copy glyph only appears on hover/focus, so
  * the ID reads as a label until you reach for it.
  * ------------------------------------------------------------------------- */

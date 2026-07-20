@@ -212,41 +212,50 @@ export function ProjectWorkspaceHeader({
         </button>
       )}
 
-      {/* Which track is filtering the views — without this the board just looks
-          empty and nothing says why. */}
+      {/* Which track is filtering the views — a breadcrumb step rather than a
+          loud chip: a track sits INSIDE the project, and the project's own name
+          should still lead. */}
       {activeTrack ? (
-        <Tooltip title={`Filtered to “${activeTrack.name}” — clear to see the whole project`}>
+        <span
+          className="wl-track-crumb"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "none" }}
+        >
           <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              height: 26,
-              padding: "0 6px 0 10px",
-              borderRadius: 999,
-              border: `1px solid ${activeTrack.color_code}`,
-              background: `${activeTrack.color_code}14`,
-              color: activeTrack.color_code,
-              fontSize: 13,
-              fontWeight: 650,
-              flex: "none",
-            }}
+            aria-hidden
+            style={{ fontSize: 17, color: token.colorTextQuaternary, lineHeight: 1 }}
           >
-            <span
-              aria-hidden
-              style={{
-                width: 7,
-                height: 7,
-                borderRadius: 2,
-                background: activeTrack.color_code,
-                display: "inline-block",
-              }}
-            />
-            {activeTrack.name}
+            /
+          </span>
+          <Tooltip title={`Showing “${activeTrack.name}” only`}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+              <span
+                aria-hidden
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 3,
+                  background: activeTrack.color_code,
+                  flex: "none",
+                }}
+              />
+              <span
+                style={{
+                  fontSize: 17,
+                  fontWeight: 550,
+                  letterSpacing: "-0.2px",
+                  color: token.colorTextSecondary,
+                }}
+              >
+                {activeTrack.name}
+              </span>
+            </span>
+          </Tooltip>
+          <Tooltip title="Show the whole project">
             <button
               type="button"
               aria-label="Show the whole project"
               onClick={() => setActiveTrack(project.id, null)}
+              className="wl-track-crumb-clear"
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -257,15 +266,15 @@ export function ProjectWorkspaceHeader({
                 background: "transparent",
                 borderRadius: "50%",
                 cursor: "pointer",
-                color: activeTrack.color_code,
+                color: token.colorTextTertiary,
               }}
             >
-              <span className="material-symbols-rounded" style={{ fontSize: 14 }}>
+              <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
                 close
               </span>
             </button>
-          </span>
-        </Tooltip>
+          </Tooltip>
+        </span>
       ) : null}
 
       <Tooltip title={isFavorite ? "Remove from favourites" : "Add to favourites"}>
