@@ -85,14 +85,18 @@ export function GroupedChart({
 
     /* ------------------------------------------------ part-to-whole (radial) */
     if (chart === "pie" || chart === "donut" || chart === "rose") {
+      // ONE anchor for the ring and its centre label — they were 32% and 31%,
+      // so the total sat a pixel off the hole it belongs in. Sharing the
+      // constant is what stops that drifting apart again.
+      const centreX = "38%";
       return {
         tooltip: { trigger: "item", ...TOOLTIP, formatter: "{b}: {c} ({d}%)" },
-        legend: { ...LEGEND, orient: "vertical", right: 0, top: "middle" },
+        legend: { ...LEGEND, orient: "vertical", right: 8, top: "middle" },
         graphic:
           chart === "donut"
             ? {
                 type: "text",
-                left: "31%",
+                left: centreX,
                 top: "middle",
                 style: {
                   text: `${total}\ntotal`,
@@ -108,7 +112,7 @@ export function GroupedChart({
           {
             type: "pie",
             radius: chart === "donut" ? ["55%", "82%"] : chart === "rose" ? ["22%", "82%"] : "78%",
-            center: ["32%", "50%"],
+            center: [centreX, "50%"],
             roseType: chart === "rose" ? "area" : undefined,
             avoidLabelOverlap: true,
             // A 2px ring in the surface colour is the separator — not a stroke.
