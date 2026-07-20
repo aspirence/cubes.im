@@ -485,11 +485,51 @@ interface ColumnProps {
   labelOptions: { value: string; label: string }[];
   onRenameStatus: () => void;
   onManageStatuses: () => void;
+  collapsed: boolean;
+  onCollapsedChange: (next: boolean) => void;
   /** Effective create-permission — hides all add-task affordances when false. */
   canAdd: boolean;
 }
 
 /** A single board column for one task_status. */
+/**
+ * Which board columns the user has collapsed, remembered per project.
+ *
+ * Kept in localStorage rather than the database on purpose: collapsing a column
+ * is a personal viewing preference, and storing it on the project would hide
+ * the column for every teammate too.
+ */
+function useCollapsedColumns(projectId: string) {
+  const storageKey = `cubes.board.collapsed:${projectId}`;
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : []);
+    } catch {
+      // A corrupt entry must not wedge the board — start clean.
+      return new Set();
+    }
+  });
+
+  const toggle = (statusId: string, next: boolean) => {
+    setCollapsed((prev) => {
+      const out = new Set(prev);
+      if (next) out.add(statusId);
+      else out.delete(statusId);
+      try {
+        window.localStorage.setItem(storageKey, JSON.stringify([...out]));
+      } catch {
+        // Private mode / quota — the session still works, it just won't persist.
+      }
+      return out;
+    });
+  };
+
+  return [collapsed, toggle] as const;
+}
+
 function BoardColumn({
   status,
   tasks,
@@ -502,6 +542,8 @@ function BoardColumn({
   onRenameStatus,
   onManageStatuses,
   canAdd,
+  collapsed,
+  onCollapsedChange,
 }: ColumnProps) {
   const isTeamAdmin = useIsTeamAdmin();
   const { token } = theme.useToken();
@@ -516,7 +558,6 @@ function BoardColumn({
   const [draftPriority, setDraftPriority] = useState<string | undefined>();
   const [draftLabels, setDraftLabels] = useState<string[]>([]);
   const [draftDue, setDraftDue] = useState<Dayjs | null>(null);
-  const [collapsed, setCollapsed] = useState(false);
 
   const { setNodeRef, isOver } = useDroppable({
     id: `column:${status.id}`,
@@ -565,7 +606,7 @@ function BoardColumn({
             unfold_less
           </span>
         ),
-        onClick: () => setCollapsed(true),
+        onClick: () => onCollapsedChange(true),
       },
       // Status editing is workspace-admin surface — members/limited only get
       // the view controls.
@@ -614,9 +655,9 @@ function BoardColumn({
       <div
         role="button"
         tabIndex={0}
-        onClick={() => setCollapsed(false)}
+        onClick={() => onCollapsedChange(false)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") setCollapsed(false);
+          if (e.key === "Enter" || e.key === " ") onCollapsedChange(false);
         }}
         title={`${status.name} — click to expand`}
         style={{
@@ -959,6 +1000,7 @@ export function BoardTab({ projectId }: { projectId: string }) {
   // Rename-status modal target (from a column's ⋯ menu).
   const [renamingStatus, setRenamingStatus] = useState<BoardStatus | null>(null);
   const [statusManagerOpen, setStatusManagerOpen] = useState(false);
+  const [collapsedColumns, setColumnCollapsed] = useCollapsedColumns(projectId);
   const [statusDraft, setStatusDraft] = useState("");
 
   const memberOptions = useMemo<MemberOption[]>(
@@ -1301,6 +1343,8 @@ export function BoardTab({ projectId }: { projectId: string }) {
               setStatusDraft(status.name);
             }}
             onManageStatuses={() => setStatusManagerOpen(true)}
+            collapsed={collapsedColumns.has(status.id)}
+            onCollapsedChange={(next) => setColumnCollapsed(status.id, next)}
           />
         ))}
       </div>
