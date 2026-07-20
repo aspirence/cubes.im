@@ -106,7 +106,6 @@ export function ChooseModeStep({
 }: {
   onChoose: (mode: SetupMode) => void;
 }) {
-  const router = useRouter();
   const { message } = AntdApp.useApp();
   // Invitations addressed to this email are surfaced RIGHT HERE — an invited
   // person should join in one click, not wander through "request access".
@@ -119,12 +118,15 @@ export function ChooseModeStep({
     try {
       await acceptInvite.mutateAsync(id);
       message.success("You're in!");
-      router.replace("/home");
+      // Joining flips the server-side onboarding gate (setup_completed) and
+      // repoints the active workspace, so boot the app fresh rather than a
+      // soft navigation that can reuse a cached pre-join route payload.
+      window.location.assign("/home");
     } catch (e) {
       // "not found" almost always means an earlier click already consumed the
       // invitation (membership exists) — proceed instead of scaring the user.
       if (e instanceof Error && /not found/i.test(e.message)) {
-        router.replace("/home");
+        window.location.assign("/home");
         return;
       }
       message.error("Couldn't accept that invitation — it may have expired.");
@@ -324,7 +326,9 @@ export function JoinStep({ onCreateInstead }: { onCreateInstead: () => void }) {
     try {
       await requestToJoin.mutateAsync();
       message.success("Request sent — we've notified the admins.");
-      router.replace("/home");
+      // request_to_join() completes onboarding server-side too, so re-enter
+      // the app with a fresh document rather than a soft navigation.
+      window.location.assign("/home");
     } catch (e) {
       const raw = e instanceof Error ? e.message : "";
       const key = Object.keys(REQUEST_ERRORS).find((k) => raw.includes(k));
@@ -337,10 +341,13 @@ export function JoinStep({ onCreateInstead }: { onCreateInstead: () => void }) {
     try {
       await acceptInvite.mutateAsync(id);
       message.success("You're in!");
-      router.replace("/home");
+      // Joining flips the server-side onboarding gate (setup_completed) and
+      // repoints the active workspace, so boot the app fresh rather than a
+      // soft navigation that can reuse a cached pre-join route payload.
+      window.location.assign("/home");
     } catch (e) {
       if (e instanceof Error && /not found/i.test(e.message)) {
-        router.replace("/home");
+        window.location.assign("/home");
         return;
       }
       message.error("Couldn't accept that invitation — it may have expired.");
@@ -619,30 +626,50 @@ export function StartStep({
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * Validates a typed address against the list already staged. Exported so the
+ * wizard can commit a still-in-the-box address when the user clicks Next or
+ * Finish without pressing Add — otherwise the invite is silently dropped.
+ */
+export function stageInviteEmail(
+  raw: string,
+  invites: InviteEntry[],
+): { ok: true; next: InviteEntry[] } | { ok: false; error: string } {
+  const trimmed = raw.trim().toLowerCase();
+  if (!trimmed) return { ok: false, error: "" };
+  if (!EMAIL_RE.test(trimmed))
+    return { ok: false, error: "Please enter a valid email address." };
+  if (invites.some((i) => i.email === trimmed))
+    return { ok: false, error: "That email has already been added." };
+  // Derive a friendly default name from the local part of the email.
+  const name = trimmed.split("@")[0] ?? trimmed;
+  return { ok: true, next: [...invites, { email: trimmed, name }] };
+}
+
 export function InviteStep({
   invites,
   onChange,
+  pending,
+  onPendingChange,
 }: {
   invites: InviteEntry[];
   onChange: (next: InviteEntry[]) => void;
+  /** The address currently in the box — owned by the wizard so it survives
+   *  this step unmounting and can still be committed on Finish. */
+  pending: string;
+  onPendingChange: (value: string) => void;
 }) {
-  const [email, setEmail] = useState("");
+  const email = pending;
+  const setEmail = onPendingChange;
   const [error, setError] = useState<string | null>(null);
 
   const addInvite = () => {
-    const trimmed = email.trim().toLowerCase();
-    if (!trimmed) return;
-    if (!EMAIL_RE.test(trimmed)) {
-      setError("Please enter a valid email address.");
+    const result = stageInviteEmail(email, invites);
+    if (!result.ok) {
+      if (result.error) setError(result.error);
       return;
     }
-    if (invites.some((i) => i.email === trimmed)) {
-      setError("That email has already been added.");
-      return;
-    }
-    // Derive a friendly default name from the local part of the email.
-    const name = trimmed.split("@")[0] ?? trimmed;
-    onChange([...invites, { email: trimmed, name }]);
+    onChange(result.next);
     setEmail("");
     setError(null);
   };
@@ -674,6 +701,7 @@ export function InviteStep({
             e.preventDefault();
             addInvite();
           }}
+          onBlur={addInvite}
         />
         <Button type="primary" icon={<PlusOutlined />} onClick={addInvite}>
           Add

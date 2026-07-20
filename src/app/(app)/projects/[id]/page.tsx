@@ -44,6 +44,8 @@ import { ProjectWorkspaceHeader } from "./_components/project-workspace-header";
 import { ProjectOverviewTab } from "./_components/project-overview-tab";
 import { TaskListTab } from "./_components/task-list-tab";
 import { BoardTab } from "./_components/board-tab";
+import { TrackBar } from "@/features/tracks/track-bar";
+import { useIsTeamAdmin } from "@/features/team-members/use-team-members";
 import { RoadmapTab } from "./_components/roadmap-tab";
 import { CalendarTab } from "./_components/calendar-tab";
 import { TableTab } from "./_components/table-tab";
@@ -219,6 +221,7 @@ export default function ProjectWorkspacePage() {
   const { message } = App.useApp();
 
   const { data: project, isLoading, isError, error } = useProject(projectId);
+  const isTeamAdmin = useIsTeamAdmin();
   const { data: views } = useProjectViews(projectId);
   const addView = useAddProjectView();
   const removeView = useRemoveProjectView();
@@ -396,23 +399,10 @@ export default function ProjectWorkspacePage() {
         <Dropdown menu={menu} trigger={["contextMenu"]}>
           <span
             style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-            title={
-              i === 0
-                ? `${title} — default view · right-click for options`
-                : `${title} — right-click for options`
-            }
+            title={`${title} — right-click for options`}
           >
             <MIcon name={desc?.icon ?? "tab"} />
             {title}
-            {i === 0 ? (
-              <span
-                className="material-symbols-rounded"
-                aria-label="Default view"
-                style={{ fontSize: 12, opacity: 0.55, transform: "rotate(35deg)" }}
-              >
-                push_pin
-              </span>
-            ) : null}
           </span>
         </Dropdown>
       ),
@@ -442,6 +432,7 @@ export default function ProjectWorkspacePage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <ProjectWorkspaceHeader project={project} />
+      <TrackBar projectId={project.id} canManage={isTeamAdmin} />
       <Tabs
         activeKey={activeTab}
         onChange={handleTabChange}

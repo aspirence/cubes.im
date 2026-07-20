@@ -60,9 +60,22 @@ export function useRequestToJoin() {
       if (error) throw error;
       return data as string;
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      // request_to_join() also flips users.setup_completed, which the proxy's
+      // onboarding gate reads server-side. <AuthProvider> only reloads its
+      // profile on an auth event, so refresh the session before the caller
+      // navigates — otherwise the client still believes setup is unfinished.
+      // Never fatal: the join already committed server-side, so a refresh
+      // hiccup must not surface as "couldn't accept" — the next auth event or
+      // reload picks the new profile up anyway.
+      try {
+        await supabase.auth.refreshSession();
+      } catch {
+        // ignore
+      }
       qc.invalidateQueries({ queryKey: ["joinable-org"] });
       qc.invalidateQueries({ queryKey: ["profile"] });
+      qc.invalidateQueries({ queryKey: ["active-team"] });
     },
   });
 }

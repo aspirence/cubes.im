@@ -8,6 +8,7 @@ import { useAuth } from "@/features/auth/use-auth";
 import { useActiveTeam } from "@/features/teams/use-teams";
 import { useCompleteSetup } from "@/features/onboarding/use-setup";
 import { useInviteMember } from "@/features/invitations/use-invitations";
+import { stageInviteEmail } from "./steps";
 import { useSaveTeamDetails } from "@/features/teams/use-team-details";
 import { seedSampleWorkspace } from "@/features/onboarding/sample-workspace";
 import {
@@ -46,6 +47,9 @@ export default function SetupPage() {
   const [mode, setMode] = useState<SetupMode | "choose">("choose");
   const [current, setCurrent] = useState(0);
   const [invites, setInvites] = useState<InviteEntry[]>([]);
+  // The invite box's current text, held here so leaving the step (Next/Finish)
+  // can still commit it — typing an address and clicking Finish used to drop it.
+  const [pendingInvite, setPendingInvite] = useState("");
   const [startChoice, setStartChoice] = useState<StartChoice>("sample");
   const [submitting, setSubmitting] = useState(false);
   // Captured when advancing past a form step — steps (and their <Form>s)
@@ -65,6 +69,19 @@ export default function SetupPage() {
     [activeTeam?.name, profile?.name],
   );
 
+  /** Commits a still-unstaged address; returns the list to actually invite. */
+  const flushPendingInvite = (): InviteEntry[] => {
+    const result = stageInviteEmail(pendingInvite, invites);
+    if (!result.ok) {
+      if (result.error && pendingInvite.trim())
+        message.warning(`"${pendingInvite.trim()}" wasn't invited — ${result.error}`);
+      return invites;
+    }
+    setInvites(result.next);
+    setPendingInvite("");
+    return result.next;
+  };
+
   const goNext = async () => {
     if (current === 0) {
       // Validate and capture before the step unmounts.
@@ -81,6 +98,7 @@ export default function SetupPage() {
         return;
       }
     }
+    if (current === 2) flushPendingInvite();
     setCurrent((c) => Math.min(c + 1, STEP_ITEMS.length - 1));
   };
 
@@ -139,11 +157,13 @@ export default function SetupPage() {
         }
       }
 
-      // 3) Send any pending invitations (best-effort).
-      if (invites.length > 0) {
+      // 3) Send any pending invitations (best-effort). Includes an address
+      //    still sitting in the input — Finish must not silently drop it.
+      const toInvite = flushPendingInvite();
+      if (toInvite.length > 0) {
         const results = await withTimeout(
           Promise.allSettled(
-            invites.map((invite) =>
+            toInvite.map((invite) =>
               inviteMember.mutateAsync({ email: invite.email, name: invite.name }),
             ),
           ),
@@ -288,7 +308,12 @@ export default function SetupPage() {
                   <StartStep value={startChoice} onChange={setStartChoice} />
                 ) : null}
                 {current === 3 ? (
-                  <InviteStep invites={invites} onChange={setInvites} />
+                  <InviteStep
+                    invites={invites}
+                    onChange={setInvites}
+                    pending={pendingInvite}
+                    onPendingChange={setPendingInvite}
+                  />
                 ) : null}
               </div>
 

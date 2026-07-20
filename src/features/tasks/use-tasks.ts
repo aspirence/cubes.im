@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import {
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
+import { useActiveTrack } from "@/features/tracks/use-tracks";
 import type { Database } from "@/types/database";
 
 export type Task = Database["public"]["Tables"]["tasks"]["Row"];
@@ -65,6 +66,8 @@ export type TaskWithRelations = Task & {
 export interface UseTasksOptions {
   /** Show only archived tasks. Default (false) hides archived tasks. */
   archived?: boolean;
+  /** Include subtasks in the result. Default (false) returns top-level only. */
+  includeSubtasks?: boolean;
 }
 
 const TASKS_ROOT = "tasks" as const;
@@ -74,7 +77,15 @@ export const tasksListKey = (
   projectId: string | undefined,
   opts?: UseTasksOptions,
 ) =>
-  [TASKS_ROOT, "list", projectId, { archived: Boolean(opts?.archived) }] as const;
+  [
+    TASKS_ROOT,
+    "list",
+    projectId,
+    {
+      archived: Boolean(opts?.archived),
+      includeSubtasks: Boolean(opts?.includeSubtasks),
+    },
+  ] as const;
 
 /** Broad key matching every task list/detail query for a project. */
 export const tasksRootKey = (projectId: string | undefined) =>
@@ -118,18 +129,29 @@ export function useTasks(
   opts?: UseTasksOptions,
 ) {
   const supabase = useMemo(() => createClient(), []);
+  const activeTrack = useActiveTrack(projectId);
+
+  // Narrowing to a track is a VIEW filter, so it runs in `select` — the fetched
+  // list stays whole in the cache and switching tracks is instant (no refetch).
+  const filterByTrack = useCallback(
+    (rows: TaskWithRelations[]) =>
+      activeTrack ? rows.filter((t) => t.track_id === activeTrack) : rows,
+    [activeTrack],
+  );
 
   return useQuery({
     queryKey: tasksListKey(projectId, opts),
     enabled: Boolean(projectId),
+    select: filterByTrack,
     queryFn: async (): Promise<TaskWithRelations[]> => {
-      const { data, error } = await supabase
+      let q = supabase
         .from("tasks")
         .select(TASK_SELECT)
         .eq("project_id", projectId as string)
-        .is("parent_task_id", null)
-        .eq("archived", Boolean(opts?.archived))
-        .order("sort_order", { ascending: true });
+        .eq("archived", Boolean(opts?.archived));
+      if (!opts?.includeSubtasks) q = q.is("parent_task_id", null);
+
+      const { data, error } = await q.order("sort_order", { ascending: true });
 
       if (error) throw error;
       return (data ?? []) as unknown as TaskWithRelations[];

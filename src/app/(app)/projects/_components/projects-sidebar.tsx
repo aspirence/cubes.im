@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   App as AntdApp,
@@ -145,6 +145,104 @@ function Swatch({
 /* -------------------------------------------------------------------------- */
 /* A single interactive row (project / all-tasks / folder).                   */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * The ⋯ menu on a sidebar row. Rows near the bottom of the window would open a
+ * long menu straight off the screen (Delete lands under the fold), and antd's
+ * own overflow flip measures optimistically for tall menus — so decide the side
+ * ourselves from the trigger's position at open time.
+ */
+function RowActionsMenu({
+  items,
+  label,
+  onOpenChange,
+}: {
+  items: MenuProps["items"];
+  label: string;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const T = useSidebarTokens();
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [placement, setPlacement] = useState<"bottomLeft" | "topLeft">("bottomLeft");
+
+  const decideSide = (open: boolean) => {
+    if (open && btnRef.current) {
+      // antd menu item ≈ 32px, divider ≈ 9px, plus the popup's own padding.
+      const estimated =
+        (items ?? []).reduce(
+          (h, it) => h + (it && "type" in it && it.type === "divider" ? 9 : 32),
+          0,
+        ) + 16;
+      const room = window.innerHeight - btnRef.current.getBoundingClientRect().bottom;
+      setPlacement(room < estimated ? "topLeft" : "bottomLeft");
+    }
+    onOpenChange(open);
+  };
+
+  return (
+    <Dropdown
+      menu={{ items }}
+      trigger={["click"]}
+      placement={placement}
+      onOpenChange={decideSide}
+    >
+      <button
+        ref={btnRef}
+        type="button"
+        aria-label={label}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 22,
+          height: 22,
+          border: "none",
+          background: "transparent",
+          borderRadius: 5,
+          color: T.textSecondary,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <MIcon name="more_horiz" size={16} />
+      </button>
+    </Dropdown>
+  );
+}
+
+/** Sentinel for "the user deliberately collapsed everything" — distinct from
+ *  "no preference stored yet", which a bare removeItem() collapses into. */
+const ACCORDION_COLLAPSED = "__collapsed__";
+
+/**
+ * Remembers which item of an accordion the user left open, across reloads.
+ *
+ * The auto-reveal (open the space containing the project you're viewing) is a
+ * FIRST-RUN convenience only: once the user has expanded or collapsed anything
+ * themselves, their choice wins — otherwise collapsing a space just re-opened
+ * it on the next visit.
+ */
+function usePersistedAccordion(
+  storageKey: string,
+  autoRevealId: string | null | undefined,
+) {
+  // undefined = the user has never chosen; null = chosen "all collapsed".
+  const [choice, setChoice] = useState<string | null | undefined>(() => {
+    if (typeof window === "undefined") return undefined;
+    const raw = window.localStorage.getItem(storageKey);
+    if (raw === null) return undefined;
+    return raw === ACCORDION_COLLAPSED ? null : raw;
+  });
+
+  const choose = (id: string | null) => {
+    setChoice(id);
+    if (typeof window !== "undefined")
+      window.localStorage.setItem(storageKey, id ?? ACCORDION_COLLAPSED);
+  };
+
+  const expandedId = choice !== undefined ? choice : (autoRevealId ?? null);
+  return [expandedId, choose] as const;
+}
 
 function Row({
   active,
@@ -361,32 +459,11 @@ function SidebarProjectRow({
           }
           forceShowActions={menuOpen}
           hoverActions={
-            <Dropdown
-              menu={{ items: menuItems }}
-              trigger={["click"]}
-              placement="bottomLeft"
+            <RowActionsMenu
+              items={menuItems}
+              label={`Actions for ${project.name}`}
               onOpenChange={setMenuOpen}
-            >
-              <button
-                type="button"
-                aria-label={`Actions for ${project.name}`}
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  width: 22,
-                  height: 22,
-                  border: "none",
-                  background: "transparent",
-                  borderRadius: 5,
-                  color: T.textSecondary,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <MIcon name="more_horiz" size={16} />
-              </button>
-            </Dropdown>
+            />
           }
         />
       </div>
@@ -429,23 +506,11 @@ function SpaceNode({
 }) {
   const T = useSidebarTokens();
   // Accordion among this node's children: at most one expanded at a time.
-  // Resolution order: the user's explicit toggle this session → the active
-  // project's chain (refresh reveal) → the last persisted choice.
   const childPersistKey = `cubes.sidebar.space-child:${node.folder.id}`;
-  const [userExpandedChildId, setUserExpandedChildId] = useState<
-    string | null | undefined
-  >(undefined);
-  const persistedChildId =
-    typeof window !== "undefined" ? window.localStorage.getItem(childPersistKey) : null;
-  const expandedChildId =
-    userExpandedChildId !== undefined
-      ? userExpandedChildId
-      : (activeChain?.[0] ?? persistedChildId);
-  useEffect(() => {
-    if (userExpandedChildId === undefined) return;
-    if (userExpandedChildId) window.localStorage.setItem(childPersistKey, userExpandedChildId);
-    else window.localStorage.removeItem(childPersistKey);
-  }, [userExpandedChildId, childPersistKey]);
+  const [expandedChildId, setExpandedChildId] = usePersistedAccordion(
+    childPersistKey,
+    activeChain?.[0],
+  );
   const [menuOpen, setMenuOpen] = useState(false);
   const projects = projectsByFolder.get(node.folder.id) ?? [];
   const childFolders = node.children;
@@ -508,32 +573,11 @@ function SpaceNode({
             trailing={<Count n={count} />}
             forceShowActions={menuOpen}
             hoverActions={
-              <Dropdown
-                menu={{ items: menuItems }}
-                trigger={["click"]}
-                placement="bottomLeft"
+              <RowActionsMenu
+                items={menuItems}
+                label={`Actions for ${node.folder.name}`}
                 onOpenChange={setMenuOpen}
-              >
-                <button
-                  type="button"
-                  aria-label={`Actions for ${node.folder.name}`}
-                  onClick={(e) => e.stopPropagation()}
-                  style={{
-                    width: 22,
-                    height: 22,
-                    border: "none",
-                    background: "transparent",
-                    borderRadius: 5,
-                    color: T.textSecondary,
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <MIcon name="more_horiz" size={16} />
-                </button>
-              </Dropdown>
+              />
             }
           />
         </div>
@@ -548,7 +592,7 @@ function SpaceNode({
                 depth={depth + 1}
                 expanded={expandedChildId === child.folder.id}
                 onToggle={() =>
-                  setUserExpandedChildId(
+                  setExpandedChildId(
                     expandedChildId === child.folder.id ? null : child.folder.id,
                   )
                 }
@@ -1581,14 +1625,6 @@ export function ProjectsSidebar() {
   const [spaceModal, setSpaceModal] = useState<{
     parentId: string | null;
   } | null>(null);
-  // Accordion among top-level spaces: at most one expanded at a time.
-  // Resolution order: the user's explicit toggle this session → the space
-  // containing the OPEN project (so a refresh keeps it revealed) → the last
-  // persisted choice. Persisting only on explicit toggles means the active-
-  // project reveal never overwrites what the user chose to keep open.
-  const [userExpandedSpaceId, setUserExpandedSpaceId] = useState<
-    string | null | undefined
-  >(undefined);
   const [query, setQuery] = useState("");
   const [renameProjectId, setRenameProjectId] = useState<string | null>(null);
   const [editProjectId, setEditProjectId] = useState<string | null>(null);
@@ -1632,20 +1668,10 @@ export function ProjectsSidebar() {
     return chain.length > 0 ? chain : null;
   }, [activeProjectId, projects, folders]);
 
-  const SPACE_PERSIST_KEY = "cubes.sidebar.expanded-space";
-  const persistedSpaceId =
-    typeof window !== "undefined"
-      ? window.localStorage.getItem(SPACE_PERSIST_KEY)
-      : null;
-  const expandedSpaceId =
-    userExpandedSpaceId !== undefined
-      ? userExpandedSpaceId
-      : (activeSpaceChain?.[0] ?? persistedSpaceId);
-  useEffect(() => {
-    if (userExpandedSpaceId === undefined) return;
-    if (userExpandedSpaceId) window.localStorage.setItem(SPACE_PERSIST_KEY, userExpandedSpaceId);
-    else window.localStorage.removeItem(SPACE_PERSIST_KEY);
-  }, [userExpandedSpaceId]);
+  const [expandedSpaceId, setExpandedSpaceId] = usePersistedAccordion(
+    "cubes.sidebar.expanded-space",
+    activeSpaceChain?.[0],
+  );
 
   const favorites = useMemo(
     () => projects.filter((p) => p.is_favorite),
@@ -2283,7 +2309,7 @@ export function ProjectsSidebar() {
                 depth={0}
                 expanded={expandedSpaceId === node.folder.id}
                 onToggle={() =>
-                  setUserExpandedSpaceId(
+                  setExpandedSpaceId(
                     expandedSpaceId === node.folder.id ? null : node.folder.id,
                   )
                 }

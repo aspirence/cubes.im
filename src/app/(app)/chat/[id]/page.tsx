@@ -37,6 +37,14 @@ import { useNotifyMentions } from "@/features/notifications/use-mention-notify";
 import { useTeams, useActiveTeam } from "@/features/teams/use-teams";
 import { useAllTeamTasks } from "@/features/tasks/use-all-tasks";
 import { useProjects } from "@/features/projects/use-projects";
+import { useUploadInlineImage } from "@/features/storage/use-storage";
+import {
+  LinkifiedText,
+  MessageAttachments,
+  MessageLinkPreview,
+  PendingAttachmentStrip,
+} from "@/features/chat/message-content";
+import type { ChatAttachment } from "@/features/chat/use-chat";
 
 function MIcon({ name, size = 18, color }: { name: string; size?: number; color?: string }) {
   return (
@@ -202,13 +210,51 @@ export default function ChatThreadPage() {
     [teamMembers, user?.id],
   );
 
+  // Pending uploads live here until the message is sent.
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [uploading, setUploading] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadImage = useUploadInlineImage();
+
+  const addFiles = async (files: File[]) => {
+    const room = 10 - attachments.length;
+    const batch = files.filter((f) => f.size > 0).slice(0, Math.max(0, room));
+    if (batch.length === 0) return;
+    if (files.length > batch.length)
+      message.warning("Up to 10 files per message.");
+    setUploading((n) => n + batch.length);
+    await Promise.all(
+      batch.map(async (file) => {
+        try {
+          if (file.size > 10 * 1024 * 1024)
+            throw new Error(`${file.name} is larger than 10 MB.`);
+          const url = await uploadImage.mutateAsync(file);
+          setAttachments((prev) => [
+            ...prev,
+            { url, name: file.name, type: file.type, size: file.size },
+          ]);
+        } catch (err) {
+          message.error(
+            err instanceof Error ? err.message : `Couldn't upload ${file.name}.`,
+          );
+        } finally {
+          setUploading((n) => Math.max(0, n - 1));
+        }
+      }),
+    );
+  };
+
   const submit = () => {
     const text = draft.trim();
-    if (!text || send.isPending) return;
+    if ((!text && attachments.length === 0) || send.isPending || uploading > 0) return;
+    const sentAttachments = attachments;
     setDraft("");
-    send.mutate(text, {
+    setAttachments([]);
+    send.mutate({ body: text, attachments: sentAttachments }, {
       onError: (err) => {
         setDraft(text);
+        setAttachments(sentAttachments);
         message.error(err instanceof Error ? err.message : "Couldn't send the message.");
       },
       onSuccess: () => {
@@ -481,17 +527,21 @@ export default function ChatThreadPage() {
                         </span>
                       </div>
                     ) : null}
-                    <div
-                      style={{
-                        fontSize: 13.5,
-                        lineHeight: 1.55,
-                        color: token.colorText,
-                        whiteSpace: "pre-wrap",
-                        overflowWrap: "break-word",
-                      }}
-                    >
-                      {m.body}
-                    </div>
+                    {m.body ? (
+                      <div
+                        style={{
+                          fontSize: 13.5,
+                          lineHeight: 1.55,
+                          color: token.colorText,
+                          whiteSpace: "pre-wrap",
+                          overflowWrap: "break-word",
+                        }}
+                      >
+                        <LinkifiedText text={m.body} />
+                      </div>
+                    ) : null}
+                    <MessageAttachments items={m.attachments ?? []} />
+                    {m.body ? <MessageLinkPreview text={m.body} /> : null}
                   </div>
                 </div>
               </div>
@@ -504,16 +554,71 @@ export default function ChatThreadPage() {
       <div style={{ padding: "4px 16px 14px", flex: "none" }}>
         <div
           className="wl-chat-composer"
+          onPaste={(e) => {
+            // Screenshots pasted into the composer upload inline.
+            const files = Array.from(e.clipboardData?.files ?? []).filter((f) =>
+              f.type.startsWith("image/"),
+            );
+            if (files.length) {
+              e.preventDefault();
+              void addFiles(files);
+            }
+          }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+            const files = Array.from(e.dataTransfer.files ?? []);
+            if (files.length) void addFiles(files);
+          }}
           style={{
-            border: `1px solid ${token.colorBorder}`,
+            border: `1px solid ${dragOver ? "#4a4ad0" : token.colorBorder}`,
             borderRadius: 10,
-            background: token.colorBgContainer,
-            display: "flex",
-            alignItems: "flex-end",
-            gap: 6,
-            padding: "4px 6px 4px 4px",
+            background: dragOver ? token.colorPrimaryBg : token.colorBgContainer,
+            transition: "background .15s ease, border-color .15s ease",
           }}
         >
+          <PendingAttachmentStrip
+            items={attachments}
+            uploading={uploading}
+            onRemove={(url) =>
+              setAttachments((prev) => prev.filter((a) => a.url !== url))
+            }
+          />
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-end",
+              gap: 6,
+              padding: "4px 6px 4px 4px",
+            }}
+          >
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              if (files.length) void addFiles(files);
+              e.target.value = "";
+            }}
+          />
+          <Tooltip title="Attach images">
+            <Button
+              type="text"
+              size="small"
+              aria-label="Attach images"
+              onClick={() => fileInputRef.current?.click()}
+              style={{ height: 30, width: 32, marginBottom: 3, flex: "none" }}
+              icon={<MIcon name="attach_file" size={17} />}
+            />
+          </Tooltip>
           <TeamMentionInput
             value={draft}
             onChange={setDraft}
@@ -536,13 +641,14 @@ export default function ChatThreadPage() {
               type="primary"
               size="small"
               aria-label="Send message"
-              disabled={!draft.trim()}
+              disabled={(!draft.trim() && attachments.length === 0) || uploading > 0}
               loading={send.isPending}
               onClick={submit}
               style={{ borderRadius: 8, height: 30, width: 34, marginBottom: 3 }}
               icon={<MIcon name="send" size={15} />}
             />
           </Tooltip>
+          </div>
         </div>
       </div>
       <style>{`
@@ -551,6 +657,8 @@ export default function ChatThreadPage() {
         .wl-chat-composer:focus-within{border-color:#4a4ad0;box-shadow:0 0 0 2px rgba(74,74,208,.12);}
         .wl-chat-msg{border-radius:8px;margin:0 -8px;padding-left:8px;padding-right:8px;}
         .wl-chat-msg:hover{background:${token.colorFillQuaternary};}
+        @keyframes wl-spin{to{transform:rotate(360deg);}}
+        .wl-spin{animation:wl-spin 1s linear infinite;}
       `}</style>
     </div>
   );

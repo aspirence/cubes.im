@@ -16,7 +16,7 @@ interface ResetValues {
 export default function ResetPasswordPage() {
   const router = useRouter();
   const { message } = App.useApp();
-  const { updatePassword } = useAuth();
+  const { updatePassword, user, loading } = useAuth();
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -31,6 +31,26 @@ export default function ResetPasswordPage() {
     message.success("Password updated. Please sign in.");
     router.replace("/login");
   };
+
+  // Setting a password needs the recovery session /auth/callback established.
+  // Landing here without one means the link expired, was already used, or was
+  // opened directly — say so instead of failing on submit with "session missing".
+  if (!loading && !user) {
+    return (
+      <>
+        <Title level={4} style={{ marginTop: 0, marginBottom: 8 }}>
+          This reset link isn&apos;t valid
+        </Title>
+        <Text type="secondary" style={{ display: "block", marginBottom: 24 }}>
+          It may have expired or already been used. Request a fresh one and open
+          the newest email.
+        </Text>
+        <Button type="primary" block onClick={() => router.replace("/forgot-password")}>
+          Send a new reset link
+        </Button>
+      </>
+    );
+  }
 
   return (
     <>

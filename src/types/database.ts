@@ -5011,6 +5011,7 @@ export type Database = {
           submission_status: string
           task_no: number | null
           total_minutes: number
+          track_id: string | null
           updated_at: string
         }
         Insert: {
