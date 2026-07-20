@@ -37,6 +37,16 @@ export const PROJECT_VIEWS: ProjectViewDescriptor[] = [
     available: true,
   },
   {
+    key: "serial",
+    title: "Serial",
+    icon: "format_list_numbered",
+    color: "#7c3aed",
+    kind: "task",
+    description: "Every task in one continuously numbered run (1, 1.1, 2…).",
+    addable: true,
+    available: true,
+  },
+  {
     key: "board",
     title: "Board",
     icon: "view_kanban",

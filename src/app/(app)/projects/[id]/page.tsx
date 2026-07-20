@@ -44,6 +44,9 @@ import { ProjectWorkspaceHeader } from "./_components/project-workspace-header";
 import { ProjectOverviewTab } from "./_components/project-overview-tab";
 import { TaskListTab } from "./_components/task-list-tab";
 import { BoardTab } from "./_components/board-tab";
+import { SerialTab } from "./_components/serial-tab";
+import { TrackBar } from "@/features/tracks/track-bar";
+import { useIsTeamAdmin } from "@/features/team-members/use-team-members";
 import { RoadmapTab } from "./_components/roadmap-tab";
 import { CalendarTab } from "./_components/calendar-tab";
 import { TableTab } from "./_components/table-tab";
@@ -76,6 +79,8 @@ function viewComponent(
   switch (key) {
     case "list":
       return <TaskListTab projectId={projectId} />;
+    case "serial":
+      return <SerialTab projectId={projectId} />;
     case "board":
       return <BoardTab projectId={projectId} />;
     case "timeline":
@@ -219,6 +224,7 @@ export default function ProjectWorkspacePage() {
   const { message } = App.useApp();
 
   const { data: project, isLoading, isError, error } = useProject(projectId);
+  const isTeamAdmin = useIsTeamAdmin();
   const { data: views } = useProjectViews(projectId);
   const addView = useAddProjectView();
   const removeView = useRemoveProjectView();
@@ -442,6 +448,7 @@ export default function ProjectWorkspacePage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <ProjectWorkspaceHeader project={project} />
+      <TrackBar projectId={project.id} canManage={isTeamAdmin} />
       <Tabs
         activeKey={activeTab}
         onChange={handleTabChange}

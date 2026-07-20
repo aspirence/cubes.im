@@ -68,6 +68,7 @@ import {
 } from "@/features/tasks/use-task-phase";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
 import { MemberSelect } from "@/features/team-members/member-select";
+import { useProjectTracks, useSetTaskTrack } from "@/features/tracks/use-tracks";
 import { TaskTimerButton } from "@/features/tasks/timer-widget";
 import {
   TeamMentionInput,
@@ -142,6 +143,7 @@ interface DrawerTask {
   end_date: string | null;
   parent_task_id: string | null;
   done: boolean | null;
+  track_id: string | null;
   deliverable_type: string | null;
   submission_content: string | null;
   submission_status: string | null;
@@ -427,7 +429,7 @@ function useDrawerTask(taskId: string) {
       const { data, error } = await supabase
         .from("tasks")
         .select(
-          "id, project_id, name, description, task_no, status_id, priority_id, start_date, end_date, parent_task_id, done, deliverable_type, submission_content, submission_status",
+          "id, project_id, name, description, task_no, status_id, priority_id, start_date, end_date, parent_task_id, done, track_id, deliverable_type, submission_content, submission_status",
         )
         .eq("id", taskId)
         .single();
@@ -1295,6 +1297,14 @@ function TaskDrawerContent({
                   </Tag>
                 );
               }}
+            />
+          </MetaRow>
+
+          <MetaRow icon="lan" label="Track">
+            <TaskTrackSelect
+              taskId={task.id}
+              projectId={task.project_id}
+              value={task.track_id ?? undefined}
             />
           </MetaRow>
 
@@ -2611,5 +2621,86 @@ function TaskActivity({ taskId }: { taskId: string }) {
         />
       )}
     </>
+  );
+}
+
+
+/** Moves a task between the project's tracks (single-select; clear = No track). */
+function TaskTrackSelect({
+  taskId,
+  projectId,
+  value,
+}: {
+  taskId: string;
+  projectId: string;
+  value?: string;
+}) {
+  const DT = useDrawerTokens();
+  const { message } = App.useApp();
+  const { data: tracks } = useProjectTracks(projectId);
+  const setTaskTrack = useSetTaskTrack(projectId);
+
+  if ((tracks ?? []).length === 0) {
+    return (
+      <span style={{ fontSize: 12.5, color: DT.textTertiary }}>
+        No tracks in this project yet
+      </span>
+    );
+  }
+
+  return (
+    <Select
+      value={value}
+      onChange={(v) =>
+        setTaskTrack
+          .mutateAsync({ taskId, trackId: (v as string | undefined) ?? null })
+          .catch(() => message.error("Couldn't move the task."))
+      }
+      placeholder="No track"
+      allowClear
+      variant="borderless"
+      style={{ width: "100%" }}
+      loading={setTaskTrack.isPending}
+      optionFilterProp="label"
+      options={(tracks ?? []).map((t) => ({
+        value: t.id,
+        label: t.name,
+      }))}
+      optionRender={(opt) => {
+        const t = (tracks ?? []).find((x) => x.id === opt.value);
+        return (
+          <Space size={7}>
+            <span
+              style={{
+                display: "inline-block",
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: t?.color_code ?? DT.textTertiary,
+              }}
+            />
+            {t?.name ?? String(opt.label)}
+          </Space>
+        );
+      }}
+      labelRender={(props) => {
+        const t = (tracks ?? []).find((x) => x.id === props.value);
+        if (!t) return <span style={{ color: DT.textTertiary }}>No track</span>;
+        return (
+          <Space size={7}>
+            <span
+              style={{
+                display: "inline-block",
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: t.color_code,
+              }}
+            />
+            {t.name}
+          </Space>
+        );
+      }}
+    />
   );
 }
