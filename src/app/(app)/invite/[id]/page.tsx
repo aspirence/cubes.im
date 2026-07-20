@@ -41,7 +41,9 @@ export default function AcceptInvitePage() {
 
     acceptInvitation.mutate(invitationId, {
       onSuccess: () => {
-        router.replace("/home");
+        // Same as the onboarding chooser: the onboarding gate just changed
+        // server-side, so re-enter the app with a fresh document.
+        window.location.assign("/home");
       },
     });
   }, [loading, user, invitationId, acceptInvitation, router]);

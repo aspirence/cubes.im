@@ -196,7 +196,24 @@ export function useAcceptInvitation() {
       if (error) throw error;
       return data as string;
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      // accept_invitation flips users.setup_completed AND repoints active_team
+      // — the same two fields complete_account_setup changes. The onboarding
+      // gate in proxy.ts reads them server-side, and <AuthProvider> only
+      // reloads its profile when an auth event fires, so refresh the session
+      // here: without it the client keeps a profile that still says "setup not
+      // done" pointing at the OLD workspace, and the post-accept navigation
+      // races a stale gate. mutateAsync awaits this, so callers navigate only
+      // after the session is current.
+      // Never fatal: the join already committed server-side, so a refresh
+      // hiccup must not surface as "couldn't accept" — the next auth event or
+      // reload picks the new profile up anyway.
+      try {
+        await supabase.auth.refreshSession();
+      } catch {
+        // ignore
+      }
+      queryClient.invalidateQueries({ queryKey: ["profile"] });
       queryClient.invalidateQueries({ queryKey: ["teams"] });
       queryClient.invalidateQueries({ queryKey: ["active-team"] });
       queryClient.invalidateQueries({ queryKey: ["invitations"] });
