@@ -259,3 +259,45 @@ export async function getAttachmentSignedUrl(
   if (!data?.signedUrl) throw new Error("Failed to create signed URL");
   return data.signedUrl;
 }
+
+/** 25 MB — comfortably above a phone screenshot, below anything that would
+ *  stall a chat thread. */
+export const CHAT_UPLOAD_MAX_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Uploads a chat attachment (image OR document) to the PUBLIC avatars bucket
+ * under the caller's own folder and returns its public URL.
+ *
+ * Separate from `useUploadInlineImage`, which is images-only because it embeds
+ * into rich text; a chat message renders non-images as download chips, so this
+ * one accepts them.
+ */
+export function useUploadChatFile() {
+  const supabase = useMemo(() => createClient(), []);
+
+  return useMutation({
+    mutationFn: async (file: File): Promise<string> => {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!user) throw new Error("Not authenticated");
+      if (file.size > CHAT_UPLOAD_MAX_BYTES)
+        throw new Error(`${file.name} is larger than 25 MB.`);
+
+      const ext = fileExtension(file.name) || "bin";
+      const path = `${user.id}/chat-${Date.now()}-${Math.round(Math.random() * 1e6)}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from(AVATARS_BUCKET)
+        .upload(path, file, { upsert: false, contentType: file.type || undefined });
+      if (uploadError) throw uploadError;
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from(AVATARS_BUCKET).getPublicUrl(path);
+      return publicUrl;
+    },
+  });
+}

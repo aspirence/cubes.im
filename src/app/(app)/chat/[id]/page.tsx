@@ -6,6 +6,7 @@ import {
   App as AntdApp,
   Avatar,
   Button,
+  Input,
   Popover,
   Select,
   Skeleton,
@@ -37,7 +38,7 @@ import { useNotifyMentions } from "@/features/notifications/use-mention-notify";
 import { useTeams, useActiveTeam } from "@/features/teams/use-teams";
 import { useAllTeamTasks } from "@/features/tasks/use-all-tasks";
 import { useProjects } from "@/features/projects/use-projects";
-import { useUploadInlineImage } from "@/features/storage/use-storage";
+import { useUploadChatFile } from "@/features/storage/use-storage";
 import {
   LinkifiedText,
   MessageAttachments,
@@ -45,6 +46,17 @@ import {
   PendingAttachmentStrip,
 } from "@/features/chat/message-content";
 import type { ChatAttachment } from "@/features/chat/use-chat";
+import {
+  useChatReactions,
+  useToggleReaction,
+  useEditMessage,
+  useDeleteMessage,
+} from "@/features/chat/use-chat";
+import {
+  MessageHoverActions,
+  MessageReactions,
+  ComposerEmojiButton,
+} from "@/features/chat/message-actions";
 
 function MIcon({ name, size = 18, color }: { name: string; size?: number; color?: string }) {
   return (
@@ -83,7 +95,7 @@ export default function ChatThreadPage() {
   const params = useParams<{ id: string }>();
   const channelId = params.id;
   const router = useRouter();
-  const { message } = AntdApp.useApp();
+  const { message, modal } = AntdApp.useApp();
   const { user } = useAuth();
 
   const { data: info, isLoading: infoLoading } = useChatChannel(channelId);
@@ -215,7 +227,12 @@ export default function ChatThreadPage() {
   const [uploading, setUploading] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const uploadImage = useUploadInlineImage();
+  const uploadFile = useUploadChatFile();
+  const editMessage = useEditMessage(channelId);
+  const deleteMessage = useDeleteMessage(channelId);
+  const toggleReaction = useToggleReaction(channelId);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
 
   const addFiles = async (files: File[]) => {
     const room = 10 - attachments.length;
@@ -227,9 +244,7 @@ export default function ChatThreadPage() {
     await Promise.all(
       batch.map(async (file) => {
         try {
-          if (file.size > 10 * 1024 * 1024)
-            throw new Error(`${file.name} is larger than 10 MB.`);
-          const url = await uploadImage.mutateAsync(file);
+          const url = await uploadFile.mutateAsync(file);
           setAttachments((prev) => [
             ...prev,
             { url, name: file.name, type: file.type, size: file.size },
@@ -273,6 +288,38 @@ export default function ChatThreadPage() {
   };
 
   const rows = messages ?? [];
+  const { data: reactionsByMessage } = useChatReactions(
+    channelId,
+    rows.map((m) => m.id),
+  );
+
+  const onToggleReaction = (messageId: string, emoji: string, existingId?: string) =>
+    toggleReaction
+      .mutateAsync({ messageId, emoji, existingId })
+      .catch(() => message.error("Couldn't update the reaction."));
+
+  const onDeleteMessage = (id: string) =>
+    modal.confirm({
+      title: "Delete this message?",
+      content: "It disappears for everyone in the conversation.",
+      okText: "Delete",
+      okButtonProps: { danger: true },
+      onOk: () =>
+        deleteMessage
+          .mutateAsync(id)
+          .catch(() => message.error("Couldn't delete the message.")),
+    });
+
+  const commitEdit = async (id: string) => {
+    const next = editDraft.trim();
+    setEditingId(null);
+    if (!next) return;
+    try {
+      await editMessage.mutateAsync({ id, body: next });
+    } catch {
+      message.error("Couldn't save the edit.");
+    }
+  };
 
   return (
     <div
@@ -473,7 +520,10 @@ export default function ChatThreadPage() {
                 ? `This is the start of your conversation with ${title}.`
                 : `Welcome to #${title}`}
             </div>
-            <div style={{ fontSize: 12.5, color: token.colorTextTertiary }}>Say hello below.</div>
+            <div style={{ fontSize: 12.5, color: token.colorTextTertiary, textAlign: "center" }}>
+              Say hello — you can drop in images and files, paste a screenshot,
+              or @mention someone.
+            </div>
           </div>
         ) : (
           rows.map((m, i) => {
@@ -504,11 +554,29 @@ export default function ChatThreadPage() {
                 <div
                   className="wl-chat-msg"
                   style={{
+                    position: "relative",
                     display: "flex",
                     gap: 10,
                     padding: grouped ? "1px 0" : "6px 0 1px",
                   }}
                 >
+                  <MessageHoverActions
+                    mine={mine}
+                    onReact={(e) => void onToggleReaction(m.id, e,
+                      (reactionsByMessage?.get(m.id) ?? []).find(
+                        (r) => r.user_id === user?.id && r.emoji === e,
+                      )?.id,
+                    )}
+                    onEdit={() => {
+                      setEditDraft(m.body);
+                      setEditingId(m.id);
+                    }}
+                    onDelete={() => onDeleteMessage(m.id)}
+                    onCopy={() => {
+                      void navigator.clipboard?.writeText(m.body);
+                      message.success("Copied");
+                    }}
+                  />
                   <div style={{ width: 30, flex: "none" }}>
                     {!grouped ? (
                       <Avatar size={30} src={m.author?.avatar_url ?? undefined} style={{ fontSize: 12 }}>
@@ -527,21 +595,65 @@ export default function ChatThreadPage() {
                         </span>
                       </div>
                     ) : null}
-                    {m.body ? (
-                      <div
-                        style={{
-                          fontSize: 13.5,
-                          lineHeight: 1.55,
-                          color: token.colorText,
-                          whiteSpace: "pre-wrap",
-                          overflowWrap: "break-word",
-                        }}
-                      >
-                        <LinkifiedText text={m.body} />
+                    {editingId === m.id ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <Input.TextArea
+                          value={editDraft}
+                          onChange={(e) => setEditDraft(e.target.value)}
+                          autoSize={{ minRows: 1, maxRows: 8 }}
+                          maxLength={4000}
+                          autoFocus
+                          onPressEnter={(e) => {
+                            if (!e.shiftKey) {
+                              e.preventDefault();
+                              void commitEdit(m.id);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Escape") setEditingId(null);
+                          }}
+                        />
+                        <span style={{ fontSize: 11.5, color: token.colorTextTertiary }}>
+                          Enter to save · Esc to cancel
+                        </span>
                       </div>
-                    ) : null}
-                    <MessageAttachments items={m.attachments ?? []} />
-                    {m.body ? <MessageLinkPreview text={m.body} /> : null}
+                    ) : (
+                      <>
+                        {m.body ? (
+                          <div
+                            style={{
+                              fontSize: 13.5,
+                              lineHeight: 1.55,
+                              color: token.colorText,
+                              whiteSpace: "pre-wrap",
+                              overflowWrap: "break-word",
+                            }}
+                          >
+                            <LinkifiedText text={m.body} />
+                            {m.edited_at ? (
+                              <span
+                                style={{
+                                  fontSize: 11,
+                                  color: token.colorTextQuaternary,
+                                  marginLeft: 6,
+                                }}
+                              >
+                                (edited)
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        <MessageAttachments items={m.attachments ?? []} />
+                        {m.body ? <MessageLinkPreview text={m.body} /> : null}
+                        <MessageReactions
+                          reactions={reactionsByMessage?.get(m.id) ?? []}
+                          myUserId={user?.id}
+                          onToggle={(emoji, existingId) =>
+                            void onToggleReaction(m.id, emoji, existingId)
+                          }
+                        />
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -601,7 +713,6 @@ export default function ChatThreadPage() {
             ref={fileInputRef}
             type="file"
             multiple
-            accept="image/*"
             style={{ display: "none" }}
             onChange={(e) => {
               const files = Array.from(e.target.files ?? []);
@@ -609,7 +720,10 @@ export default function ChatThreadPage() {
               e.target.value = "";
             }}
           />
-          <Tooltip title="Attach images">
+          <ComposerEmojiButton
+            onPick={(e) => setDraft((d) => (d ? `${d} ${e}` : e))}
+          />
+          <Tooltip title="Attach files or images">
             <Button
               type="text"
               size="small"
@@ -650,6 +764,20 @@ export default function ChatThreadPage() {
           </Tooltip>
           </div>
         </div>
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            padding: "6px 4px 0",
+            fontSize: 11.5,
+            color: token.colorTextQuaternary,
+          }}
+        >
+          <span>Enter to send · Shift+Enter for a new line</span>
+          <span style={{ marginLeft: "auto" }}>
+            Paste or drop images and files to share them
+          </span>
+        </div>
       </div>
       <style>{`
         .wl-chat-thread{margin:-22px -24px -48px;}
@@ -657,6 +785,9 @@ export default function ChatThreadPage() {
         .wl-chat-composer:focus-within{border-color:#4a4ad0;box-shadow:0 0 0 2px rgba(74,74,208,.12);}
         .wl-chat-msg{border-radius:8px;margin:0 -8px;padding-left:8px;padding-right:8px;}
         .wl-chat-msg:hover{background:${token.colorFillQuaternary};}
+        .wl-msg-actions{opacity:0;transition:opacity .12s ease;pointer-events:none;}
+        .wl-chat-msg:hover .wl-msg-actions,
+        .wl-msg-actions:focus-within{opacity:1;pointer-events:auto;}
         @keyframes wl-spin{to{transform:rotate(360deg);}}
         .wl-spin{animation:wl-spin 1s linear infinite;}
       `}</style>

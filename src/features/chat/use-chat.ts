@@ -354,3 +354,127 @@ export function useChatRealtime(channelId?: string) {
     };
   }, [supabase, queryClient, teamId, channelId]);
 }
+
+/* -------------------------------------------------------------------------- */
+/* Reactions + message editing                                                */
+/* -------------------------------------------------------------------------- */
+
+export interface ChatReaction {
+  id: string;
+  message_id: string;
+  user_id: string;
+  emoji: string;
+  user: { id: string; name: string } | null;
+}
+
+const reactionsKey = (channelId: string | undefined) =>
+  ["chat-reactions", channelId] as const;
+
+/** Every reaction on the channel's loaded messages, grouped by message id. */
+export function useChatReactions(
+  channelId: string | undefined,
+  messageIds: string[],
+) {
+  const supabase = useMemo(() => createClient(), []);
+  // Key on the channel, not the id list: the list changes as messages stream
+  // in, and re-keying on it would throw the cache away on every new message.
+  const ids = messageIds.join(",");
+
+  return useQuery({
+    queryKey: [...reactionsKey(channelId), ids.length] as const,
+    enabled: Boolean(channelId) && messageIds.length > 0,
+    queryFn: async (): Promise<Map<string, ChatReaction[]>> => {
+      const { data, error } = await loose(supabase)
+        .from("chat_message_reactions")
+        .select("id, message_id, user_id, emoji, user:users!chat_message_reactions_user_fk(id,name)")
+        .in("message_id", messageIds);
+      if (error) throw error;
+      const byMessage = new Map<string, ChatReaction[]>();
+      for (const r of (data ?? []) as unknown as ChatReaction[]) {
+        const arr = byMessage.get(r.message_id) ?? [];
+        arr.push(r);
+        byMessage.set(r.message_id, arr);
+      }
+      return byMessage;
+    },
+  });
+}
+
+/** Adds or removes the caller's reaction — the same emoji twice toggles off. */
+export function useToggleReaction(channelId: string | undefined) {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: async (input: {
+      messageId: string;
+      emoji: string;
+      /** The caller's existing reaction row for this emoji, when there is one. */
+      existingId?: string;
+    }): Promise<void> => {
+      if (!user) throw new Error("Not authenticated");
+      if (input.existingId) {
+        const { error } = await loose(supabase)
+          .from("chat_message_reactions")
+          .delete()
+          .eq("id", input.existingId);
+        if (error) throw error;
+        return;
+      }
+      const { error } = await loose(supabase)
+        .from("chat_message_reactions")
+        .insert({
+          message_id: input.messageId,
+          user_id: user.id,
+          emoji: input.emoji,
+        });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: reactionsKey(channelId) });
+    },
+  });
+}
+
+/** Edits the caller's own message (RLS enforces authorship). */
+export function useEditMessage(channelId: string | undefined) {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: { id: string; body: string }): Promise<void> => {
+      const body = input.body.trim();
+      if (!body) throw new Error("A message can't be empty.");
+      const { error } = await loose(supabase)
+        .from("chat_messages")
+        .update({ body: body.slice(0, 4000), edited_at: new Date().toISOString() })
+        .eq("id", input.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: messagesKey(channelId) });
+    },
+  });
+}
+
+/** Deletes a message (own message, or any as a workspace admin — per RLS). */
+export function useDeleteMessage(channelId: string | undefined) {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+  const { data: activeTeam } = useActiveTeam();
+
+  return useMutation({
+    mutationFn: async (id: string): Promise<void> => {
+      const { error } = await loose(supabase)
+        .from("chat_messages")
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: messagesKey(channelId) });
+      queryClient.invalidateQueries({ queryKey: channelsKey(activeTeam?.id) });
+    },
+  });
+}
