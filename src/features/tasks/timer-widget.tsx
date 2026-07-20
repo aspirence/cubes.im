@@ -8,6 +8,7 @@ import {
   useStopTimer,
   useElapsed,
 } from "@/features/tasks/use-task-timer";
+import { useShowTimerWidget } from "@/features/app-team-pulse/use-team-pulse";
 
 /**
  * The running-timer widget pinned to the sidebar's footer: a soft amber card
@@ -20,8 +21,10 @@ export function TimerWidget() {
   const { data: timer } = useMyRunningTimer();
   const stopTimer = useStopTimer();
   const elapsed = useElapsed(timer?.started_at);
+  // Team Pulse lets an admin turn this off for the workspace.
+  const showWidget = useShowTimerWidget();
 
-  if (!timer) return null;
+  if (!timer || !showWidget) return null;
 
   async function onPause() {
     if (!timer || stopTimer.isPending) return;

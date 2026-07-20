@@ -465,6 +465,26 @@ export default function TeamPulsePage() {
                     </div>
                   </div>
                 </div>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                  <Switch
+                    size="small"
+                    checked={config.showTimerWidget}
+                    loading={setConfig.isPending}
+                    onChange={(v) =>
+                      setConfig
+                        .mutateAsync({ showTimerWidget: v })
+                        .catch(() => message.error("Couldn't save."))
+                    }
+                  />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>Timer widget in the sidebar</div>
+                    <div style={{ fontSize: 11.5, color: token.colorTextTertiary, lineHeight: 1.5 }}>
+                      Shows everyone their running timer at the bottom of the sidebar.
+                      Turning it off only hides the widget — tracking still runs, and
+                      the play/pause buttons on tasks stay.
+                    </div>
+                  </div>
+                </div>
               </div>
             }
           >

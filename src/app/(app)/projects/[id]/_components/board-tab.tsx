@@ -71,6 +71,7 @@ import {
 import { useTeamLabels } from "@/features/settings/use-labels";
 import { useSetTaskLabels } from "@/features/tasks/use-task-details";
 import { TaskIdLabel } from "@/features/tasks/task-id-label";
+import { descriptionSnippet } from "@/features/tasks/description-text";
 import { TaskTimerButton } from "@/features/tasks/timer-widget";
 import { StatusManagerModal } from "@/features/tasks/status-manager-modal";
 import { useUIStore } from "@/store/ui-store";
@@ -361,7 +362,7 @@ function TaskCardBody({ task, onOpen, statusName, statusAccent, overlay, activeS
               whiteSpace: "nowrap",
             }}
           >
-            {task.description}
+            {descriptionSnippet(task.description, 120)}
           </span>
         </div>
       ) : null}
