@@ -65,6 +65,7 @@ import { useNotifications } from "@/features/notifications/use-notifications";
 import { useMyTasks } from "@/features/home/use-home";
 import { ChatNavSections } from "@/app/(app)/chat/_components/chat-sidebar";
 import { TimerWidget } from "@/features/tasks/timer-widget";
+import { useProjectTracks, useCreateTrack } from "@/features/tracks/use-tracks";
 
 /* -------------------------------------------------------------------------- */
 /* Design tokens (canonical handoff).                                         */
@@ -468,6 +469,93 @@ function SidebarProjectRow({
         />
       </div>
     </Dropdown>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* New track (a workstream inside a project)                                  */
+/* -------------------------------------------------------------------------- */
+
+/** Creates a track in a project — the sidebar twin of "New sub-space…". */
+function NewTrackModal({
+  project,
+  onClose,
+}: {
+  project: ProjectWithRelations | null;
+  onClose: () => void;
+}) {
+  const T = useSidebarTokens();
+  const { message } = AntdApp.useApp();
+  const { data: tracks } = useProjectTracks(project?.id);
+  const createTrack = useCreateTrack(project?.id);
+  const [name, setName] = useState("");
+  // Null until the user picks: the default rotates with the track count so a
+  // project's tracks stay visually distinct. Derived rather than seeded in an
+  // effect — the modal is keyed on the project, so it remounts per target.
+  const [colorChoice, setColorChoice] = useState<string | null>(null);
+  const color =
+    colorChoice ?? COLOR_SWATCHES[(tracks?.length ?? 0) % COLOR_SWATCHES.length];
+
+  const submit = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || !project || createTrack.isPending) return;
+    try {
+      await createTrack.mutateAsync({
+        name: trimmed,
+        color,
+        sortOrder: tracks?.length ?? 0,
+      });
+      onClose();
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : "";
+      message.error(
+        /duplicate|unique/i.test(raw)
+          ? "A track with that name already exists in this project."
+          : "Failed to create track.",
+      );
+    }
+  };
+
+  return (
+    <Modal
+      title={project ? `New track in “${project.name}”` : "New track"}
+      open={project !== null}
+      onOk={submit}
+      okText="Create"
+      confirmLoading={createTrack.isPending}
+      okButtonProps={{ disabled: !name.trim() }}
+      onCancel={onClose}
+      destroyOnHidden
+      width={460}
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ fontSize: 12.5, color: T.textTertiary, lineHeight: 1.6 }}>
+          Tracks group a project&apos;s work by area — Social Media, Paid Ads,
+          Website. The project keeps showing every task; picking a track narrows
+          the views to just that one.
+        </div>
+        <Input
+          autoFocus
+          placeholder="Track name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onPressEnter={submit}
+          maxLength={60}
+        />
+        <div>
+          <div style={{ fontSize: 12.5, color: T.textSecondary, marginBottom: 8 }}>
+            Colour
+          </div>
+          <ColorPicker value={color} onChange={setColorChoice} />
+        </div>
+        {(tracks ?? []).length > 0 ? (
+          <div style={{ fontSize: 12, color: T.textTertiary }}>
+            Already here:{" "}
+            {(tracks ?? []).map((t) => t.name).join(" · ")}
+          </div>
+        ) : null}
+      </div>
+    </Modal>
   );
 }
 
@@ -1627,6 +1715,7 @@ export function ProjectsSidebar() {
   } | null>(null);
   const [query, setQuery] = useState("");
   const [renameProjectId, setRenameProjectId] = useState<string | null>(null);
+  const [newTrackProjectId, setNewTrackProjectId] = useState<string | null>(null);
   const [editProjectId, setEditProjectId] = useState<string | null>(null);
   const [shareTargetId, setShareTargetId] = useState<string | null>(null);
   const [saveTemplateId, setSaveTemplateId] = useState<string | null>(null);
@@ -1963,6 +2052,18 @@ export function ProjectsSidebar() {
       label: p.is_favorite ? "Remove from favorites" : "Add to favorites",
       onClick: () => void handleToggleFavorite(p),
     },
+    // Tracks are the in-project twin of sub-spaces. Writing them is gated by
+    // project-admin RLS, so only offer it to admins.
+    ...(isTeamAdmin
+      ? [
+          {
+            key: "new-track",
+            icon: <PlusOutlined />,
+            label: "New track…",
+            onClick: () => setNewTrackProjectId(p.id),
+          },
+        ]
+      : []),
     {
       key: "rename",
       icon: <EditOutlined />,
@@ -2350,6 +2451,11 @@ export function ProjectsSidebar() {
       <RenameProjectModal
         project={renameProject}
         onClose={() => setRenameProjectId(null)}
+      />
+      <NewTrackModal
+        key={`track:${newTrackProjectId ?? "none"}`}
+        project={projects.find((p) => p.id === newTrackProjectId) ?? null}
+        onClose={() => setNewTrackProjectId(null)}
       />
       <EditProjectModal
         project={editProject}
