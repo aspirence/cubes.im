@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { theme } from "antd";
 import type { Block, BlockType } from "./use-docs";
+import { LinkPreviews, urlAtOffset } from "@/features/links/link-preview";
 
 /* ----------------------------------------------------------- block model */
 
@@ -171,6 +172,13 @@ function BlockRow({
     );
   }
 
+  // Links are unfurled BELOW the block, outside contentEditable — putting
+  // anchors in the text itself would fight the "DOM owns the text" model the
+  // caret depends on.
+  const hasLink = /(?:https?:\/\/|www\.)\S/i.test(block.text);
+  const previews =
+    hasLink && block.type !== "code" ? <LinkPreviews text={block.text} max={2} compact /> : null;
+
   const editableEl = (
     <div
       ref={(el) => {
@@ -182,6 +190,22 @@ function BlockRow({
       data-block-id={block.id}
       data-placeholder={placeholderFor(block.type)}
       onInput={(e) => onInput(block.id, e.currentTarget.textContent ?? "")}
+      title={
+        hasLink
+          ? `${navigator?.platform?.includes("Mac") ? "⌘" : "Ctrl"}+click a link to open it`
+          : undefined
+      }
+      onClick={(e) => {
+        // Only on the modifier: a plain click has to keep placing the caret,
+        // or a typo inside a URL could never be fixed.
+        if (!e.metaKey && !e.ctrlKey) return;
+        const text = e.currentTarget.textContent ?? "";
+        const url = urlAtOffset(text, caretOffset(e.currentTarget));
+        if (url) {
+          e.preventDefault();
+          window.open(url, "_blank", "noopener,noreferrer");
+        }
+      }}
       onKeyDown={(e) => {
         // While the slash menu is open it owns Arrow/Enter/Escape so they
         // navigate/pick/dismiss instead of splitting the block.
@@ -240,7 +264,10 @@ function BlockRow({
     return (
       <div style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "1px 0" }}>
         <span style={{ lineHeight: "1.65", fontSize: 15, color: token.colorText, userSelect: "none" }}>•</span>
-        <div style={{ flex: 1, minWidth: 0 }}>{editableEl}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {editableEl}
+          {previews}
+        </div>
       </div>
     );
   }
@@ -250,7 +277,10 @@ function BlockRow({
         <span style={{ lineHeight: "1.65", fontSize: 15, color: token.colorTextSecondary, userSelect: "none", minWidth: 18 }}>
           {numberLabel ?? 1}.
         </span>
-        <div style={{ flex: 1, minWidth: 0 }}>{editableEl}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {editableEl}
+          {previews}
+        </div>
       </div>
     );
   }
@@ -263,7 +293,10 @@ function BlockRow({
           onChange={() => onToggleTodo(block.id)}
           style={{ marginTop: 5, cursor: "pointer", flex: "none" }}
         />
-        <div style={{ flex: 1, minWidth: 0 }}>{editableEl}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {editableEl}
+          {previews}
+        </div>
       </div>
     );
   }
@@ -277,6 +310,7 @@ function BlockRow({
         }}
       >
         {editableEl}
+        {previews}
       </div>
     );
   }
@@ -294,7 +328,12 @@ function BlockRow({
       </div>
     );
   }
-  return <div style={{ padding: "1px 0" }}>{editableEl}</div>;
+  return (
+    <div style={{ padding: "1px 0" }}>
+      {editableEl}
+      {previews}
+    </div>
+  );
 }
 
 /* --------------------------------------------------------- slash popup */
