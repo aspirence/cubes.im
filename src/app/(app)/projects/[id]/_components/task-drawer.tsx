@@ -2638,7 +2638,7 @@ function TaskTrackSelect({
   const DT = useDrawerTokens();
   const { message } = App.useApp();
   const { data: tracks } = useProjectTracks(projectId);
-  const setTaskTrack = useSetTaskTrack(projectId);
+  const setTaskTrack = useSetTaskTrack();
 
   if ((tracks ?? []).length === 0) {
     return (

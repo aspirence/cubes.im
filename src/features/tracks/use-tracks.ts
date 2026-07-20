@@ -23,6 +23,8 @@ export interface ProjectTrack {
 
 const tracksKey = (projectId: string | undefined) =>
   ["project-tracks", projectId] as const;
+/** Root key — invalidating it refreshes both the per-project and bulk queries. */
+const tracksRootKey = ["project-tracks"] as const;
 
 /** The project's tracks, in display order. */
 export function useProjectTracks(projectId: string | undefined) {
@@ -39,6 +41,37 @@ export function useProjectTracks(projectId: string | undefined) {
         .order("created_at", { ascending: true });
       if (error) throw error;
       return (data ?? []) as ProjectTrack[];
+    },
+  });
+}
+
+/**
+ * Tracks for MANY projects in one round trip — the sidebar renders them nested
+ * under every visible project, and a per-project query would mean one request
+ * per row.
+ */
+export function useTeamTracks(projectIds: string[]) {
+  const supabase = useMemo(() => createClient(), []);
+  const ids = useMemo(() => [...new Set(projectIds)].sort(), [projectIds]);
+
+  return useQuery({
+    queryKey: ["project-tracks", "bulk", ids.join(",")] as const,
+    enabled: ids.length > 0,
+    queryFn: async (): Promise<Map<string, ProjectTrack[]>> => {
+      const { data, error } = await loose(supabase)
+        .from("project_tracks")
+        .select("id, project_id, name, color_code, sort_order, created_at")
+        .in("project_id", ids)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      const byProject = new Map<string, ProjectTrack[]>();
+      for (const t of (data ?? []) as ProjectTrack[]) {
+        const arr = byProject.get(t.project_id) ?? [];
+        arr.push(t);
+        byProject.set(t.project_id, arr);
+      }
+      return byProject;
     },
   });
 }
@@ -70,11 +103,11 @@ export function useCreateTrack(projectId: string | undefined) {
       if (error) throw error;
       return data as ProjectTrack;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: tracksKey(projectId) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: tracksRootKey }),
   });
 }
 
-export function useUpdateTrack(projectId: string | undefined) {
+export function useUpdateTrack() {
   const supabase = useMemo(() => createClient(), []);
   const qc = useQueryClient();
   return useMutation({
@@ -94,12 +127,12 @@ export function useUpdateTrack(projectId: string | undefined) {
         .eq("id", input.id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: tracksKey(projectId) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: tracksRootKey }),
   });
 }
 
 /** Deletes a track. Its tasks are NOT deleted — they fall back to "No track". */
-export function useDeleteTrack(projectId: string | undefined) {
+export function useDeleteTrack() {
   const supabase = useMemo(() => createClient(), []);
   const qc = useQueryClient();
   return useMutation({
@@ -111,7 +144,7 @@ export function useDeleteTrack(projectId: string | undefined) {
       if (error) throw error;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: tracksKey(projectId) });
+      qc.invalidateQueries({ queryKey: tracksRootKey });
       // Tasks that pointed at it are now untracked.
       qc.invalidateQueries({ queryKey: ["tasks"] });
     },
@@ -119,7 +152,7 @@ export function useDeleteTrack(projectId: string | undefined) {
 }
 
 /** Moves a task into a track (or clears it with null). */
-export function useSetTaskTrack(projectId: string | undefined) {
+export function useSetTaskTrack() {
   const supabase = useMemo(() => createClient(), []);
   const qc = useQueryClient();
   return useMutation({
@@ -135,7 +168,7 @@ export function useSetTaskTrack(projectId: string | undefined) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tasks"] });
-      qc.invalidateQueries({ queryKey: tracksKey(projectId) });
+      qc.invalidateQueries({ queryKey: tracksRootKey });
     },
   });
 }

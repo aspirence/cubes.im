@@ -65,7 +65,16 @@ import { useNotifications } from "@/features/notifications/use-notifications";
 import { useMyTasks } from "@/features/home/use-home";
 import { ChatNavSections } from "@/app/(app)/chat/_components/chat-sidebar";
 import { TimerWidget } from "@/features/tasks/timer-widget";
-import { useProjectTracks, useCreateTrack } from "@/features/tracks/use-tracks";
+import {
+  useProjectTracks,
+  useCreateTrack,
+  useTeamTracks,
+  useUpdateTrack,
+  useDeleteTrack,
+  useActiveTrackStore,
+  useActiveTrack,
+  type ProjectTrack,
+} from "@/features/tracks/use-tracks";
 
 /* -------------------------------------------------------------------------- */
 /* Design tokens (canonical handoff).                                         */
@@ -400,6 +409,80 @@ function Count({ n }: { n: number }) {
 /* Project row with hover 3-dot + right-click context menu.                   */
 /* -------------------------------------------------------------------------- */
 
+/** A track nested under its project — the in-project sibling of a project row. */
+function SidebarTrackRow({
+  track,
+  indent,
+  active,
+  onOpen,
+  menuItems,
+}: {
+  track: ProjectTrack;
+  indent: number;
+  active: boolean;
+  onOpen: () => void;
+  menuItems: MenuProps["items"];
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const row = (
+    <Row
+      active={active}
+      indent={indent}
+      onClick={onOpen}
+      label={track.name}
+      leading={
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span aria-hidden style={{ width: 18, flex: "none" }} />
+          <span
+            style={{
+              width: 16,
+              flex: "none",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <span
+              aria-hidden
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: 2,
+                background: track.color_code,
+                display: "inline-block",
+              }}
+            />
+          </span>
+        </span>
+      }
+      forceShowActions={menuOpen}
+      hoverActions={
+        menuItems ? (
+          <RowActionsMenu
+            items={menuItems}
+            label={`Actions for ${track.name}`}
+            onOpenChange={setMenuOpen}
+          />
+        ) : undefined
+      }
+    />
+  );
+
+  if (!menuItems) return row;
+  return (
+    <Dropdown
+      menu={{ items: menuItems }}
+      trigger={["contextMenu"]}
+      onOpenChange={(open, info) => {
+        if (info.source === "trigger") setMenuOpen(open);
+      }}
+    >
+      <div>{row}</div>
+    </Dropdown>
+  );
+}
+
 function SidebarProjectRow({
   project,
   indent = 0,
@@ -407,6 +490,12 @@ function SidebarProjectRow({
   active,
   onOpen,
   menuItems,
+  tracks = [],
+  expanded = false,
+  onToggleExpand,
+  activeTrackId,
+  onOpenTrack,
+  trackMenu,
 }: {
   project: ProjectWithRelations;
   indent?: number;
@@ -415,9 +504,18 @@ function SidebarProjectRow({
   active: boolean;
   onOpen: () => void;
   menuItems: MenuProps["items"];
+  /** The project's tracks, rendered nested beneath it. */
+  tracks?: ProjectTrack[];
+  expanded?: boolean;
+  onToggleExpand?: () => void;
+  /** Which track is currently filtering the project (null = All). */
+  activeTrackId?: string | null;
+  onOpenTrack?: (trackId: string) => void;
+  trackMenu?: (track: ProjectTrack) => MenuProps["items"];
 }) {
   const T = useSidebarTokens();
   const [menuOpen, setMenuOpen] = useState(false);
+  const hasTracks = tracks.length > 0;
 
   return (
     <Dropdown
@@ -438,7 +536,32 @@ function SidebarProjectRow({
               style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
             >
               {withGutter ? (
-                <span aria-hidden style={{ width: 18, flex: "none" }} />
+                hasTracks ? (
+                  <button
+                    type="button"
+                    aria-label={expanded ? "Collapse tracks" : "Expand tracks"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleExpand?.();
+                    }}
+                    style={{
+                      width: 18,
+                      flex: "none",
+                      border: "none",
+                      background: "transparent",
+                      padding: 0,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: T.textTertiary,
+                    }}
+                  >
+                    <MIcon name={expanded ? "expand_more" : "chevron_right"} size={16} />
+                  </button>
+                ) : (
+                  <span aria-hidden style={{ width: 18, flex: "none" }} />
+                )
               ) : null}
               <span
                 style={{
@@ -467,6 +590,19 @@ function SidebarProjectRow({
             />
           }
         />
+        {/* Tracks sit under their project the way projects sit under a space. */}
+        {expanded && hasTracks
+          ? tracks.map((t) => (
+              <SidebarTrackRow
+                key={t.id}
+                track={t}
+                indent={indent + 1}
+                active={activeTrackId === t.id}
+                onOpen={() => onOpenTrack?.(t.id)}
+                menuItems={trackMenu?.(t)}
+              />
+            ))
+          : null}
       </div>
     </Dropdown>
   );
@@ -554,6 +690,68 @@ function NewTrackModal({
             {(tracks ?? []).map((t) => t.name).join(" · ")}
           </div>
         ) : null}
+      </div>
+    </Modal>
+  );
+}
+
+/** Renames a track (its colour is edited from the same dialog). */
+function RenameTrackModal({
+  track,
+  onClose,
+}: {
+  track: ProjectTrack | null;
+  onClose: () => void;
+}) {
+  const T = useSidebarTokens();
+  const { message } = AntdApp.useApp();
+  const updateTrack = useUpdateTrack();
+  const [name, setName] = useState(track?.name ?? "");
+  const [colorChoice, setColorChoice] = useState<string | null>(null);
+  const color = colorChoice ?? track?.color_code ?? COLOR_SWATCHES[0];
+
+  const submit = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || !track || updateTrack.isPending) return;
+    try {
+      await updateTrack.mutateAsync({ id: track.id, name: trimmed, color });
+      onClose();
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : "";
+      message.error(
+        /duplicate|unique/i.test(raw)
+          ? "A track with that name already exists in this project."
+          : "Failed to rename the track.",
+      );
+    }
+  };
+
+  return (
+    <Modal
+      title="Rename track"
+      open={track !== null}
+      onOk={submit}
+      okText="Save"
+      confirmLoading={updateTrack.isPending}
+      okButtonProps={{ disabled: !name.trim() }}
+      onCancel={onClose}
+      destroyOnHidden
+      width={440}
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <Input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onPressEnter={submit}
+          maxLength={60}
+        />
+        <div>
+          <div style={{ fontSize: 12.5, color: T.textSecondary, marginBottom: 8 }}>
+            Colour
+          </div>
+          <ColorPicker value={color} onChange={setColorChoice} />
+        </div>
       </div>
     </Modal>
   );
@@ -1716,6 +1914,7 @@ export function ProjectsSidebar() {
   const [query, setQuery] = useState("");
   const [renameProjectId, setRenameProjectId] = useState<string | null>(null);
   const [newTrackProjectId, setNewTrackProjectId] = useState<string | null>(null);
+  const [renameTrack, setRenameTrack] = useState<ProjectTrack | null>(null);
   const [editProjectId, setEditProjectId] = useState<string | null>(null);
   const [shareTargetId, setShareTargetId] = useState<string | null>(null);
   const [saveTemplateId, setSaveTemplateId] = useState<string | null>(null);
@@ -1738,6 +1937,70 @@ export function ProjectsSidebar() {
     const seg = m[1];
     return seg === "all-tasks" ? null : seg;
   }, [pathname]);
+  // Tracks for every visible project, in one query.
+  const { data: tracksByProject } = useTeamTracks(projects.map((p) => p.id));
+  const setActiveTrack = useActiveTrackStore((st) => st.setTrack);
+  const activeTrackId = useActiveTrack(activeProjectId ?? undefined);
+  const deleteTrack = useDeleteTrack();
+
+  // Which projects show their tracks — remembered, like the space accordion.
+  const PROJECT_EXPAND_KEY = "cubes.sidebar.expanded-projects";
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const raw = window.localStorage.getItem(PROJECT_EXPAND_KEY);
+      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      return new Set(
+        Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [],
+      );
+    } catch {
+      return new Set();
+    }
+  });
+  const toggleProjectExpanded = (projectId: string) =>
+    setExpandedProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
+      try {
+        window.localStorage.setItem(PROJECT_EXPAND_KEY, JSON.stringify([...next]));
+      } catch {
+        // Private mode / quota — the session still works, it just won't persist.
+      }
+      return next;
+    });
+
+  const buildTrackMenu = (t: ProjectTrack): MenuProps["items"] => [
+    {
+      key: "rename-track",
+      icon: <EditOutlined />,
+      label: "Rename…",
+      onClick: () => setRenameTrack(t),
+    },
+    { type: "divider" as const },
+    {
+      key: "delete-track",
+      icon: <DeleteOutlined />,
+      label: "Delete",
+      danger: true,
+      onClick: () =>
+        modal.confirm({
+          title: `Delete track “${t.name}”?`,
+          content:
+            "Its tasks move to “No track” — none of the work is deleted.",
+          okText: "Delete",
+          okButtonProps: { danger: true },
+          onOk: async () => {
+            try {
+              await deleteTrack.mutateAsync(t.id);
+              setActiveTrack(t.project_id, null);
+            } catch {
+              message.error("Couldn't delete that track.");
+            }
+          },
+        }),
+    },
+  ];
 
   const allTasksActive = pathname.startsWith("/projects/all-tasks");
 
@@ -2142,8 +2405,21 @@ export function ProjectsSidebar() {
       indent={indent}
       withGutter={withGutter}
       active={activeProjectId === p.id}
-      onOpen={() => openProject(p.id)}
+      onOpen={() => {
+        // Opening the project itself clears any track filter — that IS "All".
+        setActiveTrack(p.id, null);
+        openProject(p.id);
+      }}
       menuItems={buildProjectMenu(p)}
+      tracks={tracksByProject?.get(p.id) ?? []}
+      expanded={expandedProjects.has(p.id)}
+      onToggleExpand={() => toggleProjectExpanded(p.id)}
+      activeTrackId={activeProjectId === p.id ? activeTrackId : null}
+      onOpenTrack={(trackId) => {
+        setActiveTrack(p.id, trackId);
+        openProject(p.id);
+      }}
+      trackMenu={isTeamAdmin ? (t) => buildTrackMenu(t) : undefined}
     />
   );
 
@@ -2451,6 +2727,11 @@ export function ProjectsSidebar() {
       <RenameProjectModal
         project={renameProject}
         onClose={() => setRenameProjectId(null)}
+      />
+      <RenameTrackModal
+        key={`rename-track:${renameTrack?.id ?? "none"}`}
+        track={renameTrack}
+        onClose={() => setRenameTrack(null)}
       />
       <NewTrackModal
         key={`track:${newTrackProjectId ?? "none"}`}
