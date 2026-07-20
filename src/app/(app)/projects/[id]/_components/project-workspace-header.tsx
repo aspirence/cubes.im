@@ -10,6 +10,11 @@ import {
 } from "@/features/projects/use-projects";
 import { AiTaskButton } from "./ai-task-button";
 import { useCanCreateTasks } from "@/features/team-members/use-team-members";
+import {
+  useProjectTracks,
+  useActiveTrack,
+  useActiveTrackStore,
+} from "@/features/tracks/use-tracks";
 
 /** A small material glyph. */
 function MIcon({ name, size = 14 }: { name: string; size?: number }) {
@@ -90,6 +95,10 @@ export function ProjectWorkspaceHeader({
 }) {
   const { message } = App.useApp();
   const { token } = theme.useToken();
+  const activeTrackId = useActiveTrack(project.id);
+  const { data: tracks } = useProjectTracks(project.id);
+  const setActiveTrack = useActiveTrackStore((st) => st.setTrack);
+  const activeTrack = (tracks ?? []).find((t) => t.id === activeTrackId) ?? null;
 
   const updateProject = useUpdateProject();
   const toggleFavorite = useToggleFavorite();
@@ -202,6 +211,62 @@ export function ProjectWorkspaceHeader({
           />
         </button>
       )}
+
+      {/* Which track is filtering the views — without this the board just looks
+          empty and nothing says why. */}
+      {activeTrack ? (
+        <Tooltip title={`Filtered to “${activeTrack.name}” — clear to see the whole project`}>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              height: 26,
+              padding: "0 6px 0 10px",
+              borderRadius: 999,
+              border: `1px solid ${activeTrack.color_code}`,
+              background: `${activeTrack.color_code}14`,
+              color: activeTrack.color_code,
+              fontSize: 13,
+              fontWeight: 650,
+              flex: "none",
+            }}
+          >
+            <span
+              aria-hidden
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: 2,
+                background: activeTrack.color_code,
+                display: "inline-block",
+              }}
+            />
+            {activeTrack.name}
+            <button
+              type="button"
+              aria-label="Show the whole project"
+              onClick={() => setActiveTrack(project.id, null)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 18,
+                height: 18,
+                border: "none",
+                background: "transparent",
+                borderRadius: "50%",
+                cursor: "pointer",
+                color: activeTrack.color_code,
+              }}
+            >
+              <span className="material-symbols-rounded" style={{ fontSize: 14 }}>
+                close
+              </span>
+            </button>
+          </span>
+        </Tooltip>
+      ) : null}
 
       <Tooltip title={isFavorite ? "Remove from favourites" : "Add to favourites"}>
         <Button
