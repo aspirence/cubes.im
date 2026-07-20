@@ -13,12 +13,33 @@
  */
 
 export const BACKUP_FORMAT = "cubes-backup" as const;
-export const BACKUP_VERSION = 1 as const;
+/**
+ * v2 adds task comments, task reference links, project phases, deliverable type,
+ * and tracked minutes. v1 files still import (their new sections read as empty).
+ */
+export const BACKUP_VERSION = 2 as const;
+/** Versions this build can read. */
+const SUPPORTED_VERSIONS = new Set([1, 2]);
 
 /** Stage bucket: "review" is the flagless Done stage (finished, pending
  *  acceptance); "done" stays the counts-as-complete Closed stage so v1 files
  *  keep their meaning. */
 export type StatusBucket = "todo" | "doing" | "review" | "done";
+
+/** A comment on a task (v2). Author is by email for cross-workspace portability. */
+export interface BackupComment {
+  /** Author's email; null when the author is unknown/removed. */
+  author: string | null;
+  body: string;
+  createdAt: string | null;
+}
+
+/** A task reference link (v2). */
+export interface BackupReference {
+  url: string;
+  title: string | null;
+  sortOrder: number;
+}
 
 export interface BackupTaskV1 {
   /** Local id, unique within the file (the exporter uses the source task id). */
@@ -42,6 +63,23 @@ export interface BackupTaskV1 {
   labels: string[];
   /** Assignee emails. */
   assignees: string[];
+  /** Deliverable kind: 'status' | 'video' (v2; null for v1 files). */
+  deliverableType: string | null;
+  /** Tracked minutes rollup (v2; 0 for v1). */
+  totalMinutes: number;
+  /** Comments, oldest first (v2; [] for v1). */
+  comments: BackupComment[];
+  /** Reference links (v2; [] for v1). */
+  references: BackupReference[];
+}
+
+/** A project phase / milestone lane (v2). */
+export interface BackupPhase {
+  name: string;
+  color: string | null;
+  sortIndex: number;
+  startDate: string | null;
+  endDate: string | null;
 }
 
 export interface BackupStatusV1 {
@@ -73,6 +111,8 @@ export interface BackupProjectV1 {
   /** Containing folder's lid. */
   folderLid: string | null;
   statuses: BackupStatusV1[];
+  /** Phases / milestone lanes (v2; [] for v1). */
+  phases: BackupPhase[];
   tasks: BackupTaskV1[];
 }
 
@@ -92,14 +132,32 @@ export interface BackupCounts {
   tasks: number;
   folders: number;
   labels: number;
+  comments: number;
+  references: number;
+  phases: number;
 }
 
 export function backupCounts(file: BackupFileV1): BackupCounts {
+  let tasks = 0;
+  let comments = 0;
+  let references = 0;
+  let phases = 0;
+  for (const p of file.projects) {
+    phases += p.phases.length;
+    for (const t of p.tasks) {
+      tasks += 1;
+      comments += t.comments.length;
+      references += t.references.length;
+    }
+  }
   return {
     projects: file.projects.length,
-    tasks: file.projects.reduce((n, p) => n + p.tasks.length, 0),
+    tasks,
     folders: file.folders.length,
     labels: file.labels.length,
+    comments,
+    references,
+    phases,
   };
 }
 
@@ -125,9 +183,9 @@ export function validateBackup(raw: unknown): Result {
   if (!isObj(raw)) return fail("The file is not a JSON object.");
   if (raw.format !== BACKUP_FORMAT)
     return fail('Not a Cubes backup (missing "format": "cubes-backup").');
-  if (raw.version !== BACKUP_VERSION)
+  if (typeof raw.version !== "number" || !SUPPORTED_VERSIONS.has(raw.version))
     return fail(
-      `Unsupported backup version ${JSON.stringify(raw.version)} — this build imports version ${BACKUP_VERSION}.`,
+      `Unsupported backup version ${JSON.stringify(raw.version)} — this build imports versions ${[...SUPPORTED_VERSIONS].join(", ")}.`,
     );
   if (!isObj(raw.workspace) || typeof raw.workspace.name !== "string")
     return fail("Missing workspace metadata.");
@@ -209,6 +267,34 @@ export function validateBackup(raw: unknown): Result {
       const statusLid = optStr(t.statusLid) ? t.statusLid : null;
       if (statusLid !== null && !statusLids.has(statusLid))
         return fail(`projects[${i}].tasks[${j}] points at unknown status "${statusLid}".`);
+      // v2 sections — absent in v1 files, so default to empty/neutral.
+      const comments: BackupComment[] = Array.isArray(t.comments)
+        ? t.comments.flatMap((c) => {
+            if (!isObj(c) || typeof c.body !== "string" || c.body.trim() === "")
+              return [];
+            return [
+              {
+                author: optStr(c.author) ? c.author : null,
+                body: c.body.slice(0, 5000),
+                createdAt: optStr(c.createdAt) ? c.createdAt : null,
+              },
+            ];
+          })
+        : [];
+      const references: BackupReference[] = Array.isArray(t.references)
+        ? t.references.flatMap((r, k) => {
+            if (!isObj(r) || typeof r.url !== "string" || r.url.trim() === "")
+              return [];
+            return [
+              {
+                url: r.url.trim().slice(0, 2000),
+                title: optStr(r.title) ? r.title : null,
+                sortOrder: typeof r.sortOrder === "number" ? r.sortOrder : k,
+              },
+            ];
+          })
+        : [];
+
       tasks.push({
         lid: t.lid,
         name: t.name.trim().slice(0, 500),
@@ -228,6 +314,16 @@ export function validateBackup(raw: unknown): Result {
         assignees: Array.isArray(t.assignees)
           ? t.assignees.filter((x): x is string => typeof x === "string")
           : [],
+        deliverableType:
+          t.deliverableType === "video" || t.deliverableType === "status"
+            ? t.deliverableType
+            : null,
+        totalMinutes:
+          typeof t.totalMinutes === "number" && t.totalMinutes > 0
+            ? t.totalMinutes
+            : 0,
+        comments,
+        references,
       });
     }
     // Parent references must resolve within the same project, and must not
@@ -246,6 +342,22 @@ export function validateBackup(raw: unknown): Result {
       }
     }
 
+    const phases: BackupPhase[] = Array.isArray(p.phases)
+      ? p.phases.flatMap((ph, k) => {
+          if (!isObj(ph) || typeof ph.name !== "string" || ph.name.trim() === "")
+            return [];
+          return [
+            {
+              name: ph.name.trim().slice(0, 100),
+              color: optStr(ph.color) ? ph.color : null,
+              sortIndex: typeof ph.sortIndex === "number" ? ph.sortIndex : k,
+              startDate: optStr(ph.startDate) ? ph.startDate : null,
+              endDate: optStr(ph.endDate) ? ph.endDate : null,
+            },
+          ];
+        })
+      : [];
+
     projects.push({
       name: p.name.trim().slice(0, 100),
       color: optStr(p.color) ? p.color : null,
@@ -254,6 +366,7 @@ export function validateBackup(raw: unknown): Result {
       endDate: optStr(p.endDate) ? p.endDate : null,
       folderLid: typeof p.folderLid === "string" ? p.folderLid : null,
       statuses,
+      phases,
       tasks,
     });
   }

@@ -16,6 +16,7 @@ import {
 } from "antd";
 import { SendOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
+import { APP_VERSION_LABEL } from "@/lib/app-version";
 
 import {
   useSupportRequests,
@@ -187,6 +188,28 @@ export default function SupportSettingsPage() {
           />
         )}
       </Card>
+
+      {/* Build footer — quoting this makes a support request diagnosable. */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+          padding: "4px 0 8px",
+        }}
+      >
+        <span
+          className="material-symbols-rounded"
+          aria-hidden
+          style={{ fontSize: 15, color: "#9a9da8" }}
+        >
+          deployed_code
+        </span>
+        <Text type="secondary" style={{ fontSize: 12.5 }}>
+          Cubes <span className="tabular">{APP_VERSION_LABEL}</span>
+        </Text>
+      </div>
     </Space>
   );
 }

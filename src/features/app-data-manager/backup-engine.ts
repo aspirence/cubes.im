@@ -104,19 +104,46 @@ export async function buildBackup(
   );
   const priorityNameById = new Map(priorityRows.map((p) => [p.id, p.name]));
 
-  // Member emails (for assignee references).
+  // Member emails (for assignee references) + user→email (for comment authors).
   const memberRows = await fetchAll((from, to) =>
     supabase
       .from("team_members")
-      .select("id, user:users!team_members_user_id_fk ( email )")
+      .select("id, user:users!team_members_user_id_fk ( id, email )")
       .eq("team_id", teamId)
       .order("id", { ascending: true })
       .range(from, to),
   );
   const emailByMemberId = new Map<string, string>();
+  const emailByUserId = new Map<string, string>();
   for (const m of memberRows) {
-    const email = (m.user as { email: string } | null)?.email;
-    if (email) emailByMemberId.set(m.id, email);
+    const u = m.user as { id: string; email: string } | null;
+    if (u?.email) {
+      emailByMemberId.set(m.id, u.email);
+      emailByUserId.set(u.id, u.email);
+    }
+  }
+
+  // Project phases (per project-id chunk).
+  type PhaseRow = {
+    project_id: string;
+    name: string;
+    color_code: string | null;
+    sort_index: number | null;
+    start_date: string | null;
+    end_date: string | null;
+  };
+  const phaseRows: PhaseRow[] = [];
+  for (const ids of chunk(projectIds, 80)) {
+    phaseRows.push(
+      ...(await fetchAll((from, to) =>
+        supabase
+          .from("project_phases")
+          .select("project_id, name, color_code, sort_index, start_date, end_date")
+          .in("project_id", ids)
+          .order("id", { ascending: true })
+          .range(from, to),
+      )),
+    );
   }
 
   // Statuses and tasks — fetched per project-id chunk, each chunk paginated.
@@ -145,6 +172,8 @@ export async function buildBackup(
     parent_task_id: string | null;
     status_id: string | null;
     priority_id: string | null;
+    deliverable_type: string | null;
+    total_minutes: number | null;
   }[] = [];
 
   for (const ids of chunk(projectIds, 80)) {
@@ -166,7 +195,7 @@ export async function buildBackup(
         supabase
           .from("tasks")
           .select(
-            "id, project_id, name, description, start_date, end_date, completed_at, archived, sort_order, parent_task_id, status_id, priority_id",
+            "id, project_id, name, description, start_date, end_date, completed_at, archived, sort_order, parent_task_id, status_id, priority_id, deliverable_type, total_minutes",
           )
           .in("project_id", ids)
           .order("sort_order", { ascending: true })
@@ -179,6 +208,14 @@ export async function buildBackup(
   const taskIds = taskRows.map((t) => t.id);
   const labelsByTask = new Map<string, string[]>();
   const assigneesByTask = new Map<string, string[]>();
+  const commentsByTask = new Map<
+    string,
+    { author: string | null; body: string; createdAt: string | null }[]
+  >();
+  const referencesByTask = new Map<
+    string,
+    { url: string; title: string | null; sortOrder: number }[]
+  >();
   for (const ids of chunk(taskIds, 150)) {
     const tlRows = await fetchAll((from, to) =>
       supabase
@@ -211,6 +248,42 @@ export async function buildBackup(
         ...(assigneesByTask.get(ta.task_id) ?? []),
         email,
       ]);
+    }
+
+    // Comments (oldest first) with author email.
+    const cRows = await fetchAll((from, to) =>
+      supabase
+        .from("task_comments")
+        .select("task_id, content, created_by, created_at")
+        .in("task_id", ids)
+        .order("task_id", { ascending: true })
+        .order("created_at", { ascending: true })
+        .range(from, to),
+    );
+    for (const c of cRows) {
+      const arr = commentsByTask.get(c.task_id) ?? [];
+      arr.push({
+        author: c.created_by ? (emailByUserId.get(c.created_by) ?? null) : null,
+        body: c.content,
+        createdAt: c.created_at,
+      });
+      commentsByTask.set(c.task_id, arr);
+    }
+
+    // Reference links.
+    const rRows = await fetchAll((from, to) =>
+      supabase
+        .from("task_reference_links")
+        .select("task_id, url, title, sort_order")
+        .in("task_id", ids)
+        .order("task_id", { ascending: true })
+        .order("sort_order", { ascending: true })
+        .range(from, to),
+    );
+    for (const r of rRows) {
+      const arr = referencesByTask.get(r.task_id) ?? [];
+      arr.push({ url: r.url, title: r.title, sortOrder: r.sort_order ?? arr.length });
+      referencesByTask.set(r.task_id, arr);
     }
   }
 
@@ -252,6 +325,21 @@ export async function buildBackup(
         parentLid: t.parent_task_id,
         labels: labelsByTask.get(t.id) ?? [],
         assignees: assigneesByTask.get(t.id) ?? [],
+        deliverableType: t.deliverable_type,
+        totalMinutes: Number(t.total_minutes ?? 0),
+        comments: commentsByTask.get(t.id) ?? [],
+        references: referencesByTask.get(t.id) ?? [],
+      }));
+
+    const phases = phaseRows
+      .filter((ph) => ph.project_id === p.id)
+      .sort((a, b) => (a.sort_index ?? 0) - (b.sort_index ?? 0))
+      .map((ph) => ({
+        name: ph.name,
+        color: ph.color_code,
+        sortIndex: ph.sort_index ?? 0,
+        startDate: ph.start_date,
+        endDate: ph.end_date,
       }));
 
     return {
@@ -262,6 +350,7 @@ export async function buildBackup(
       endDate: p.end_date,
       folderLid: p.folder_id,
       statuses,
+      phases,
       tasks,
     };
   });
@@ -288,6 +377,12 @@ export interface ImportSummary {
   labelsCreated: number;
   /** Assignee references whose email has no active member in this workspace. */
   assigneesDropped: number;
+  /** Task comments recreated. */
+  comments: number;
+  /** Reference links recreated. */
+  references: number;
+  /** Project phases recreated. */
+  phases: number;
   /** Projects renamed to avoid clashing with existing project names. */
   renamed: string[];
 }
@@ -325,6 +420,9 @@ export async function importBackup(
     foldersReused: 0,
     labelsCreated: 0,
     assigneesDropped: 0,
+    comments: 0,
+    references: 0,
+    phases: 0,
     renamed: [],
   };
   const totalTasks = file.projects.reduce((n, p) => n + p.tasks.length, 0);
@@ -370,15 +468,20 @@ export async function importBackup(
   const memberRows = await fetchAll((from, to) =>
     supabase
       .from("team_members")
-      .select("id, active, user:users!team_members_user_id_fk ( email )")
+      .select("id, active, user:users!team_members_user_id_fk ( id, email )")
       .eq("team_id", teamId)
       .order("id", { ascending: true })
       .range(from, to),
   );
   const memberIdByEmail = new Map<string, string>();
+  // email → user_id, for restoring comment authorship (any member, not only
+  // active ones — a past author's comments should keep their name).
+  const userIdByEmail = new Map<string, string>();
   for (const m of memberRows) {
-    const email = (m.user as { email: string } | null)?.email;
-    if (email && m.active !== false) memberIdByEmail.set(lower(email), m.id);
+    const u = m.user as { id: string; email: string } | null;
+    if (!u?.email) continue;
+    if (m.active !== false) memberIdByEmail.set(lower(u.email), m.id);
+    userIdByEmail.set(lower(u.email), u.id);
   }
 
   // --- Labels: reuse by name (case-insensitive), create the missing ones ---
@@ -574,12 +677,40 @@ export async function importBackup(
       if (!statusIdByName.has(lower(s.name))) statusIdByName.set(lower(s.name), sid);
     }
 
+    // Phases (bulk insert; the DB assigns ids we don't need to reference).
+    if (project.phases.length > 0) {
+      const { error: phaseErr } = await supabase.from("project_phases").insert(
+        project.phases.map((ph) => ({
+          project_id: pid,
+          name: ph.name,
+          color_code: ph.color ?? "#70a6f3",
+          sort_index: ph.sortIndex,
+          start_date: ph.startDate,
+          end_date: ph.endDate,
+        })),
+      );
+      if (phaseErr) throw phaseErr;
+      summary.phases += project.phases.length;
+    }
+
     // Tasks: parents before children (level by level), bounded concurrency.
     // Ordering fidelity comes from the unconditional sort_order write below —
     // create_task's own append counter races under concurrency, but it gets
     // overwritten with the backup's authoritative value.
     const taskIdByLid = new Map<string, string>();
     const labelPairs: { task_id: string; label_id: string }[] = [];
+    const commentRows: {
+      task_id: string;
+      content: string;
+      created_by: string | null;
+      created_at?: string;
+    }[] = [];
+    const referenceRows: {
+      task_id: string;
+      url: string;
+      title: string | null;
+      sort_order: number;
+    }[] = [];
     let pending = [...project.tasks];
     while (pending.length > 0) {
       const ready = pending.filter(
@@ -620,6 +751,8 @@ export async function importBackup(
             start_date: task.startDate,
             end_date: task.endDate,
             sort_order: task.sortOrder,
+            ...(task.deliverableType ? { deliverable_type: task.deliverableType } : {}),
+            ...(task.totalMinutes > 0 ? { total_minutes: task.totalMinutes } : {}),
             // Preserve the original completion timestamp (the done-category
             // trigger stamped "now" on create); never null it out.
             ...(task.completedAt ? { completed_at: task.completedAt } : {}),
@@ -633,6 +766,27 @@ export async function importBackup(
           if (labelId) labelPairs.push({ task_id: tid, label_id: labelId });
         }
 
+        // Comments — author re-resolved by email to a target user; falls back
+        // to the importer so the note is never lost. mentions dropped (they're
+        // notification bookkeeping, meaningless across workspaces).
+        for (const c of task.comments) {
+          commentRows.push({
+            task_id: tid,
+            content: c.body,
+            created_by:
+              (c.author ? userIdByEmail.get(lower(c.author)) : undefined) ?? user.id,
+            ...(c.createdAt ? { created_at: c.createdAt } : {}),
+          });
+        }
+        for (const r of task.references) {
+          referenceRows.push({
+            task_id: tid,
+            url: r.url,
+            title: r.title,
+            sort_order: r.sortOrder,
+          });
+        }
+
         doneTasks += 1;
         summary.tasks += 1;
         if (doneTasks % 5 === 0 || doneTasks === totalTasks)
@@ -644,6 +798,16 @@ export async function importBackup(
     for (const rows of chunk(labelPairs, 200)) {
       const { error: tlErr } = await supabase.from("task_labels").insert(rows);
       if (tlErr) throw tlErr;
+    }
+    for (const rows of chunk(commentRows, 200)) {
+      const { error: cErr } = await supabase.from("task_comments").insert(rows);
+      if (cErr) throw cErr;
+      summary.comments += rows.length;
+    }
+    for (const rows of chunk(referenceRows, 200)) {
+      const { error: rErr } = await supabase.from("task_reference_links").insert(rows);
+      if (rErr) throw rErr;
+      summary.references += rows.length;
     }
   }
 

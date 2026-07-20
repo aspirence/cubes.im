@@ -294,9 +294,10 @@ export default function DataManagerPage() {
           </Title>
           <Paragraph type="secondary" style={{ maxWidth: 640 }}>
             Downloads a portable <Text code>.json</Text> backup of this
-            workspace: folders, projects, statuses, tasks (with subtasks, dates,
-            priorities), labels, and assignees (referenced by email). The file
-            imports cleanly into this or any other Cubes workspace.
+            workspace: folders, projects, phases, statuses, tasks (with subtasks,
+            dates, priorities, deliverable type, tracked time), comments,
+            reference links, labels, and assignees (referenced by email). The
+            file imports cleanly into this or any other Cubes workspace.
           </Paragraph>
           <Button
             type="primary"
@@ -368,6 +369,9 @@ export default function DataManagerPage() {
                   { key: "t", label: "Tasks", children: pending.counts.tasks },
                   { key: "f", label: "Folders", children: pending.counts.folders },
                   { key: "l", label: "Labels", children: pending.counts.labels },
+                  { key: "c", label: "Comments", children: pending.counts.comments },
+                  { key: "r", label: "References", children: pending.counts.references },
+                  { key: "ph", label: "Phases", children: pending.counts.phases },
                 ]}
               />
               <Space style={{ marginTop: 14 }}>
@@ -411,6 +415,14 @@ export default function DataManagerPage() {
               message={`Imported ${importSummary.projects} projects, ${importSummary.tasks} tasks, ${importSummary.folders} folders (${importSummary.labelsCreated} new labels).`}
               description={
                 <>
+                  {importSummary.comments > 0 || importSummary.references > 0 || importSummary.phases > 0 ? (
+                    <div>
+                      Also restored: {importSummary.comments} comment
+                      {importSummary.comments === 1 ? "" : "s"}, {importSummary.references} reference
+                      {importSummary.references === 1 ? "" : "s"}, {importSummary.phases} phase
+                      {importSummary.phases === 1 ? "" : "s"}.
+                    </div>
+                  ) : null}
                   {importSummary.renamed.length > 0 ? (
                     <div>
                       Renamed to avoid clashes: {importSummary.renamed.join(", ")}
