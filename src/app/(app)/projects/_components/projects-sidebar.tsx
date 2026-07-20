@@ -1943,32 +1943,13 @@ export function ProjectsSidebar() {
   const activeTrackId = useActiveTrack(activeProjectId ?? undefined);
   const deleteTrack = useDeleteTrack();
 
-  // Which projects show their tracks — remembered, like the space accordion.
-  const PROJECT_EXPAND_KEY = "cubes.sidebar.expanded-projects";
-  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
-    try {
-      const raw = window.localStorage.getItem(PROJECT_EXPAND_KEY);
-      const parsed: unknown = raw ? JSON.parse(raw) : [];
-      return new Set(
-        Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [],
-      );
-    } catch {
-      return new Set();
-    }
-  });
-  const toggleProjectExpanded = (projectId: string) =>
-    setExpandedProjects((prev) => {
-      const next = new Set(prev);
-      if (next.has(projectId)) next.delete(projectId);
-      else next.add(projectId);
-      try {
-        window.localStorage.setItem(PROJECT_EXPAND_KEY, JSON.stringify([...next]));
-      } catch {
-        // Private mode / quota — the session still works, it just won't persist.
-      }
-      return next;
-    });
+  // Tracks open one project at a time, like the space accordion above — and
+  // stay that way across visits. No auto-reveal: the user's choice is the only
+  // thing that opens or closes a project.
+  const [expandedProjectId, setExpandedProjectId] = usePersistedAccordion(
+    "cubes.sidebar.expanded-project",
+    undefined,
+  );
 
   const buildTrackMenu = (t: ProjectTrack): MenuProps["items"] => [
     {
@@ -2404,7 +2385,7 @@ export function ProjectsSidebar() {
       project={p}
       indent={indent}
       withGutter={withGutter}
-      active={activeProjectId === p.id}
+      active={activeProjectId === p.id && !activeTrackId}
       onOpen={() => {
         // Opening the project itself clears any track filter — that IS "All".
         setActiveTrack(p.id, null);
@@ -2412,8 +2393,10 @@ export function ProjectsSidebar() {
       }}
       menuItems={buildProjectMenu(p)}
       tracks={tracksByProject?.get(p.id) ?? []}
-      expanded={expandedProjects.has(p.id)}
-      onToggleExpand={() => toggleProjectExpanded(p.id)}
+      expanded={expandedProjectId === p.id}
+      onToggleExpand={() =>
+        setExpandedProjectId(expandedProjectId === p.id ? null : p.id)
+      }
       activeTrackId={activeProjectId === p.id ? activeTrackId : null}
       onOpenTrack={(trackId) => {
         setActiveTrack(p.id, trackId);
