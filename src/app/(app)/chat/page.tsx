@@ -269,9 +269,13 @@ export default function ChatIndexPage() {
                       marginTop: 1,
                     }}
                   >
-                    {c.last_body
+                    {c.last_body?.trim()
                       ? `${c.last_author ? `${c.last_author}: ` : ""}${c.last_body}`
-                      : c.topic || "No messages yet — say hello."}
+                      : c.last_at
+                        ? // An image-only message has an empty body — say what
+                          // it was instead of showing a blank line.
+                          `${c.last_author ? `${c.last_author}: ` : ""}📷 Photo`
+                        : c.topic || "No messages yet — say hello."}
                   </span>
                 </span>
                 {unread ? (

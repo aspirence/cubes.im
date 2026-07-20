@@ -56,13 +56,10 @@ export const metadata: Metadata = {
       "max-video-preview": -1,
     },
   },
-  icons: {
-    icon: [
-      { url: "/favicon.ico", sizes: "any" },
-      { url: "/icon.png", type: "image/png", sizes: "512x512" },
-    ],
-    apple: "/apple-icon.png",
-  },
+  // NOTE: no `icons` here on purpose. app/{favicon.ico,icon.png,apple-icon.png}
+  // are file-convention icons — Next emits their <link> tags automatically WITH
+  // a content hash in the URL. Declaring them here instead emits unhashed URLs,
+  // which browsers cache forever: a replaced icon would never reach users.
 };
 
 export const viewport: Viewport = {

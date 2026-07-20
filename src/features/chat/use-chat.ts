@@ -33,6 +33,15 @@ export interface ChatChannelSummary {
   joined: boolean;
 }
 
+/** A file shared in chat — already uploaded; the message carries its URL. */
+export interface ChatAttachment {
+  url: string;
+  name: string;
+  /** MIME type, e.g. "image/png" — drives image vs. file rendering. */
+  type: string;
+  size: number;
+}
+
 export interface ChatMessage {
   id: string;
   channel_id: string;
@@ -40,6 +49,7 @@ export interface ChatMessage {
   body: string;
   created_at: string;
   edited_at: string | null;
+  attachments: ChatAttachment[];
   author: { id: string; name: string; avatar_url: string | null } | null;
 }
 
@@ -246,14 +256,21 @@ export function useSendMessage(channelId: string | undefined) {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: async (body: string): Promise<void> => {
+    mutationFn: async (
+      input: string | { body: string; attachments?: ChatAttachment[] },
+    ): Promise<void> => {
+      const { body, attachments } =
+        typeof input === "string" ? { body: input, attachments: [] } : input;
       const text = body.trim();
-      if (!text) return;
+      const files = (attachments ?? []).slice(0, 10);
+      // An image-only message is valid; an empty one is not.
+      if (!text && files.length === 0) return;
       if (!user) throw new Error("Not authenticated");
       const { error } = await loose(supabase).from("chat_messages").insert({
         channel_id: channelId,
         user_id: user.id,
         body: text.slice(0, 4000),
+        attachments: files,
       });
       if (error) throw error;
     },

@@ -74,7 +74,7 @@ import {
   extractMentionUserIds,
   type MentionEntity,
 } from "@/features/team-members/team-mention-input";
-import { TaskIdLabel } from "@/features/tasks/task-id-label";
+import { TaskIdChip } from "@/features/tasks/task-id-label";
 import {
   useTaskStatuses,
   useTaskPriorities,
@@ -1019,21 +1019,12 @@ function TaskDrawerContent({
                 Subtask
               </button>
             ) : null}
-            <span
-              style={{
-                fontFamily: DT.mono,
-                fontSize: 11.5,
-                fontWeight: 600,
-                letterSpacing: 0.3,
-                color: DT.textTertiary,
-              }}
-            >
-              {task.task_no != null ? (
-                <TaskIdLabel projectId={task.project_id} taskNo={task.task_no} />
-              ) : (
-                "TASK"
-              )}
-            </span>
+            <TaskIdChip
+              projectId={task.project_id}
+              taskNo={task.task_no}
+              taskId={task.id}
+              taskName={task.name}
+            />
             <a
               href={`/projects/${task.project_id}`}
               style={{

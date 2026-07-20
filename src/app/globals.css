@@ -249,6 +249,22 @@ input[type="radio"] {
 }
 
 /* ---------------------------------------------------------------------------
+ * Task-ID chip (TaskIdChip): the copy glyph only appears on hover/focus, so
+ * the ID reads as a label until you reach for it.
+ * ------------------------------------------------------------------------- */
+.wl-task-id-chip .wl-task-id-copy {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.wl-task-id-chip:hover .wl-task-id-copy,
+.wl-task-id-chip:focus-visible .wl-task-id-copy {
+  opacity: 0.75;
+}
+.wl-task-id-chip:hover {
+  border-color: #c9cbd4;
+}
+
+/* ---------------------------------------------------------------------------
  * ClickUp-style assignee picker (AvatarStackPicker in member-select.tsx):
  * hover states inline styles can't express.
  * ------------------------------------------------------------------------- */
