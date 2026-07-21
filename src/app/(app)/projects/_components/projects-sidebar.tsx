@@ -50,6 +50,7 @@ import {
   useCanAuthorContent,
 } from "@/features/team-members/use-team-members";
 import { MemberSelect } from "@/features/team-members/member-select";
+import { useAuth } from "@/features/auth/use-auth";
 import { useAddProjectMember } from "@/features/projects/use-project-members";
 import { useApplyTemplateViews } from "@/features/projects/use-project-views";
 import {
@@ -958,6 +959,7 @@ function NewSpaceModal({
   const { message } = AntdApp.useApp();
   const createSpace = useCreateSpace();
   const { data: teamMembers } = useTeamMembers();
+  const { user } = useAuth();
   const [name, setName] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
   const [shareWith, setShareWith] = useState<string[]>([]);
@@ -1046,7 +1048,8 @@ function NewSpaceModal({
               onChange={setShareWith}
               placeholder="Add team members…"
               options={(teamMembers ?? [])
-                .filter((m) => m.user)
+                // The creator always has access — no point offering to add yourself.
+                .filter((m) => m.user && m.user.id !== user?.id)
                 .map((m) => ({
                   value: m.id,
                   label: m.user!.name,
@@ -1266,6 +1269,7 @@ function NewProjectInSpaceModal({
   const addMember = useAddProjectMember();
   const { data: projectTemplates } = useProjectTemplates();
   const { data: teamMembers } = useTeamMembers();
+  const { user } = useAuth();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [color, setColor] = useState<string>(T.accent);
@@ -1463,7 +1467,8 @@ function NewProjectInSpaceModal({
               onChange={setShareWith}
               placeholder="Add team members…"
               options={(teamMembers ?? [])
-                .filter((m) => m.user)
+                // The creator always has access — no point offering to add yourself.
+                .filter((m) => m.user && m.user.id !== user?.id)
                 .map((m) => ({
                   value: m.id,
                   label: m.user!.name,
