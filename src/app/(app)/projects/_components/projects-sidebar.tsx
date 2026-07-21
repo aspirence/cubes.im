@@ -2394,6 +2394,11 @@ export function ProjectsSidebar() {
       onOpen={() => {
         // Opening the project itself clears any track filter — that IS "All".
         setActiveTrack(p.id, null);
+        // Selecting a project that has tracks reveals them (one-at-a-time
+        // accordion, so this also collapses whichever project was open before).
+        if ((tracksByProject?.get(p.id)?.length ?? 0) > 0) {
+          setExpandedProjectId(p.id);
+        }
         openProject(p.id);
       }}
       menuItems={buildProjectMenu(p)}
