@@ -7,6 +7,7 @@ import {
   useUpdateNotificationSettings,
 } from "@/features/settings/use-notification-settings";
 import { useUIStore } from "@/store/ui-store";
+import { InstallAppCard } from "@/features/pwa/install-app-card";
 import { IosToggle } from "../_components/ios-toggle";
 
 type ToggleKey =
@@ -250,6 +251,9 @@ export default function NotificationsSettingsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Install the PWA + enable OS-level push on this device. */}
+      <InstallAppCard />
+
       {/* Channels — how you're notified */}
       <div style={card}>
         <div style={{ padding: "18px 18px 14px" }}>

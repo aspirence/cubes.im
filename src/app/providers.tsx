@@ -8,6 +8,7 @@ import { getThemeConfig } from "@/lib/theme";
 import { useUIStore } from "@/store/ui-store";
 import { I18nProvider } from "@/lib/i18n/provider";
 import { AuthProvider } from "@/features/auth/auth-provider";
+import { registerServiceWorker } from "@/features/pwa/use-pwa";
 
 /**
  * Client-side provider tree:
@@ -25,6 +26,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     document.documentElement.classList.toggle("theme-dark", themeMode === "dark");
   }, [themeMode]);
+
+  // Register the service worker (installability + Web Push). Idempotent.
+  useEffect(() => {
+    void registerServiceWorker();
+  }, []);
 
   const [queryClient] = useState(
     () =>

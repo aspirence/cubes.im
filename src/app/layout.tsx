@@ -24,6 +24,13 @@ export const metadata: Metadata = {
   },
   description: SITE_DESCRIPTION,
   applicationName: SITE_NAME,
+  // Installed-PWA behaviour on iOS/iPadOS (Add to Home Screen): run full-screen,
+  // use the app name, and a translucent status bar.
+  appleWebApp: {
+    capable: true,
+    title: SITE_NAME,
+    statusBarStyle: "black-translucent",
+  },
   keywords: SITE_KEYWORDS,
   authors: [{ name: SITE_NAME, url: SITE_URL }],
   creator: SITE_NAME,
