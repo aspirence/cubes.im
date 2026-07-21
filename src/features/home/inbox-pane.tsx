@@ -51,6 +51,8 @@ const TYPE_META: Record<string, { label: string; icon: string }> = {
   comment: { label: "Comment", icon: "chat_bubble" },
   assignment: { label: "Assigned", icon: "assignment_ind" },
   status_change: { label: "Status", icon: "swap_horiz" },
+  video_uploaded: { label: "New video", icon: "movie" },
+  video_version: { label: "New version", icon: "video_library" },
   client_review: { label: "Client", icon: "reviews" },
   join_request: { label: "Join request", icon: "person_add" },
   member_joined: { label: "Member joined", icon: "group_add" },

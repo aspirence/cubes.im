@@ -34,8 +34,12 @@ export const ACTION_NOTIFICATION_TYPES = [
   "join_request",
 ] as const;
 
-/** Team-activity notifications (status changes) — the Inbox "Team" tab. */
-export const TEAM_NOTIFICATION_TYPES = ["status_change"] as const;
+/** Team-activity notifications (status changes, video uploads) — the "Team" tab. */
+export const TEAM_NOTIFICATION_TYPES = [
+  "status_change",
+  "video_uploaded",
+  "video_version",
+] as const;
 
 /** Client-activity notifications (review link comments) — the "Client" tab. */
 export const CLIENT_NOTIFICATION_TYPES = ["client_review"] as const;

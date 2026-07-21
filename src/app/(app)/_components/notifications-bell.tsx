@@ -166,6 +166,22 @@ const TYPE_ICON: Record<
     tag: "Team",
     verb: "Status changed",
   },
+  video_uploaded: {
+    icon: "movie",
+    bg: "#eef0ff",
+    fg: "#4a4ad0",
+    label: "New video",
+    tag: "Team",
+    verb: "New video for review",
+  },
+  video_version: {
+    icon: "video_library",
+    bg: "#eef0ff",
+    fg: "#4a4ad0",
+    label: "New version",
+    tag: "Team",
+    verb: "New version uploaded",
+  },
   client_review: {
     icon: "reviews",
     bg: "#f3edfb",

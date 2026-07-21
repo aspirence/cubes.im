@@ -17,6 +17,8 @@ const TITLE: Record<string, string> = {
   comment: "New comment",
   assignment: "New assignment",
   status_change: "Status update",
+  video_uploaded: "New video for review",
+  video_version: "New version uploaded",
   client_review: "Client review",
   join_request: "Join request",
   member_joined: "New member",
