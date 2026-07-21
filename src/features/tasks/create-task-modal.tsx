@@ -136,12 +136,16 @@ export function CreateTaskModal({
     return m;
   }, [priorities]);
 
-  // Statuses for the chosen project. The default is the first "To Do" (Not
-  // Started) status, falling back to the first status by order.
+  // Statuses for the chosen project. Default to a status literally named
+  // "To Do" (Todo / To-Do all match); otherwise the first Not-Started status,
+  // then the first status by order.
   const { data: statusList } = useTaskStatuses(projectId);
   const defaultStatusId = useMemo(() => {
     const list = statusList ?? [];
     if (list.length === 0) return undefined;
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
+    const named = list.find((s) => norm(s.name) === "todo");
+    if (named) return named.id;
     return (list.find((s) => s.category?.is_todo) ?? list[0]).id;
   }, [statusList]);
   const effectiveStatusId = statusId ?? defaultStatusId;
