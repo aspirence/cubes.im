@@ -27,7 +27,7 @@ export interface ReviewRevision {
   has_source: boolean;
 }
 export interface ReviewShareData {
-  share: { allow_download: boolean; require_name: boolean };
+  share: { allow_download: boolean; require_name: boolean; reviewer_name: string | null };
   video: {
     id: string;
     title: string;
@@ -140,14 +140,19 @@ export function ReviewApp({ data, token }: { data: ReviewShareData; token: strin
   const hasWindow = typeof window !== "undefined";
   const storedName = hasWindow ? localStorage.getItem(keyFor(token, "name")) : null;
   const storedSession = hasWindow ? localStorage.getItem(keyFor(token, "session")) : null;
-  const [name, setName] = useState<string | null>(storedName);
+  // When the client isn't asked, the team's preset name (or "Guest") is used —
+  // so the name gate is skipped entirely and there's never a null name.
+  const presetName = data.share.reviewer_name?.trim() || "";
+  const initialName = data.share.require_name
+    ? storedName
+    : presetName || storedName || "Guest";
+  const [name, setName] = useState<string | null>(initialName);
   // Seed the session so a returning reviewer can comment without waiting for the
   // record round-trip; the effect below still refreshes/validates it.
   const [sessionId, setSessionId] = useState<string | null>(storedSession);
   const [nameDraft, setNameDraft] = useState(storedName ?? "");
   const [identifying, setIdentifying] = useState(false);
   const recordedRef = useRef(false);
-  const requireName = view.share.require_name;
 
   // Record (or refresh) the visit once per load, as soon as a name is known.
   useEffect(() => {
@@ -243,8 +248,8 @@ export function ReviewApp({ data, token }: { data: ReviewShareData; token: strin
   const videoSrc = `/api/review/${token}/video?rev=${rev}`;
 
   // ---- Name gate ---------------------------------------------------------
-  // Always identify before entering; when names aren't required the gate
-  // offers a "continue without a name" escape that files comments as "Guest".
+  // Only reached when the client IS asked for a name and hasn't given one yet;
+  // when names aren't required, `name` is pre-resolved (preset/Guest) above.
   if (!name) {
     return (
       <NameGate
@@ -254,9 +259,6 @@ export function ReviewApp({ data, token }: { data: ReviewShareData; token: strin
         onChange={setNameDraft}
         loading={identifying}
         onSubmit={() => void submitName(nameDraft)}
-        onSkip={
-          requireName ? undefined : () => void submitName(nameDraft || "Guest")
-        }
       />
     );
   }
@@ -678,7 +680,6 @@ function NameGate({
   onChange,
   loading,
   onSubmit,
-  onSkip,
 }: {
   title: string;
   projectName: string | null;
@@ -686,7 +687,6 @@ function NameGate({
   onChange: (v: string) => void;
   loading: boolean;
   onSubmit: () => void;
-  onSkip?: () => void;
 }) {
   return (
     <main
@@ -779,24 +779,6 @@ function NameGate({
         >
           {loading ? "Starting…" : "Start reviewing"}
         </button>
-        {onSkip ? (
-          <button
-            type="button"
-            onClick={onSkip}
-            disabled={loading}
-            style={{
-              width: "100%",
-              marginTop: 10,
-              border: "none",
-              background: "none",
-              color: C.textTertiary,
-              fontSize: 12.5,
-              cursor: "pointer",
-            }}
-          >
-            Continue without a name
-          </button>
-        ) : null}
       </div>
     </main>
   );

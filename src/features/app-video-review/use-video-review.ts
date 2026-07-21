@@ -788,6 +788,8 @@ export interface VideoShare {
   active: boolean;
   allow_download: boolean;
   require_name: boolean;
+  /** Team-preset reviewer name, used when require_name is off. */
+  reviewer_name: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -809,7 +811,7 @@ const shareSessionsKey = (shareId: string | undefined) =>
   ["video-review-share-sessions", shareId] as const;
 
 const SHARE_COLS =
-  "id, video_id, token, active, allow_download, require_name, created_at, updated_at";
+  "id, video_id, token, active, allow_download, require_name, reviewer_name, created_at, updated_at";
 
 /** The video's share link, or null if it was never published. */
 export function useVideoShare(videoId: string | undefined) {
@@ -879,6 +881,7 @@ export function useUpdateShare(videoId: string | undefined) {
       active?: boolean;
       allow_download?: boolean;
       require_name?: boolean;
+      reviewer_name?: string | null;
     }): Promise<void> => {
       const patch: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
@@ -888,6 +891,10 @@ export function useUpdateShare(videoId: string | undefined) {
         patch.allow_download = input.allow_download;
       if (input.require_name !== undefined)
         patch.require_name = input.require_name;
+      if (input.reviewer_name !== undefined)
+        patch.reviewer_name = input.reviewer_name
+          ? input.reviewer_name.trim().slice(0, 80)
+          : null;
       const { error } = await loose(supabase)
         .from("app_video_review_shares")
         .update(patch)

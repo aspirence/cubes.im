@@ -108,6 +108,7 @@ export function ShareReviewModal({
     active?: boolean;
     allow_download?: boolean;
     require_name?: boolean;
+    reviewer_name?: string | null;
   }) => {
     if (!share) return;
     try {
@@ -262,6 +263,36 @@ export function ShareReviewModal({
               checked={Boolean(share?.require_name)}
               onChange={(v) => void patch({ require_name: v })}
             />
+            {share && !share.require_name ? (
+              // Not asking the client → the team names the reviewer here.
+              <div style={{ paddingLeft: 29, marginTop: -4 }}>
+                <Input
+                  key={share.id}
+                  size="small"
+                  defaultValue={share.reviewer_name ?? ""}
+                  placeholder="e.g. Acme Client"
+                  maxLength={80}
+                  prefix={
+                    <span
+                      className="material-symbols-rounded"
+                      aria-hidden
+                      style={{ fontSize: 14, color: VR.textTertiary }}
+                    >
+                      person
+                    </span>
+                  }
+                  onPressEnter={(e) => e.currentTarget.blur()}
+                  onBlur={(e) => {
+                    const v = e.target.value.trim();
+                    if ((share.reviewer_name ?? "") !== v)
+                      void patch({ reviewer_name: v || null });
+                  }}
+                />
+                <div style={{ fontSize: 11, color: VR.textTertiary, marginTop: 4 }}>
+                  Comments will be attributed to this name. Leave empty to use “Guest”.
+                </div>
+              </div>
+            ) : null}
             <ToggleRow
               icon="download"
               title="Allow download"
