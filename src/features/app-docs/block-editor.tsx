@@ -189,7 +189,18 @@ function BlockRow({
       suppressContentEditableWarning
       data-block-id={block.id}
       data-placeholder={placeholderFor(block.type)}
-      onInput={(e) => onInput(block.id, e.currentTarget.textContent ?? "")}
+      // innerText (not textContent) so soft line breaks (Shift+Enter / pasted
+      // multi-line content, which the browser inserts as <br>/<div>) survive as
+      // "\n" — textContent silently drops them, joining the lines on reload.
+      onInput={(e) => onInput(block.id, e.currentTarget.innerText ?? "")}
+      onPaste={(e) => {
+        // Paste as plain text so multi-line content stays in this block as
+        // newlines instead of injecting nested markup that breaks the model.
+        if (!editable) return;
+        e.preventDefault();
+        const text = e.clipboardData.getData("text/plain");
+        document.execCommand("insertText", false, text);
+      }}
       title={
         hasLink
           ? `${navigator?.platform?.includes("Mac") ? "⌘" : "Ctrl"}+click a link to open it`
@@ -251,6 +262,9 @@ function BlockRow({
         outline: "none",
         minHeight: "1.6em",
         color: token.colorText,
+        // Preserve the user's spaces and line breaks (code blocks may override).
+        whiteSpace: "pre-wrap",
+        overflowWrap: "anywhere",
         textDecoration:
           block.type === "todo" && block.checked ? "line-through" : "none",
         opacity: block.type === "todo" && block.checked ? 0.6 : 1,
