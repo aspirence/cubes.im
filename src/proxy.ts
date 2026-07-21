@@ -26,6 +26,8 @@ const PUBLIC_PATHS = [
   "/share",
   // Public, token-gated client portal (no login — the share token is the gate).
   "/portal",
+  // Public, token-gated video review link for clients (no login required).
+  "/review",
   // Public marketing pages.
   "/pricing",
   "/features",

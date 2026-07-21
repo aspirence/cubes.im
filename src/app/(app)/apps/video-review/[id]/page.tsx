@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   App,
   Avatar,
@@ -25,6 +25,7 @@ import {
   DownloadOutlined,
   EditOutlined,
   SearchOutlined,
+  ShareAltOutlined,
   UndoOutlined,
   UploadOutlined,
   VideoCameraOutlined,
@@ -52,9 +53,11 @@ import {
   useVideoWorkflowTemplates,
   useCreateWorkflowTemplate,
   useApplyWorkflowTemplate,
+  useVideoShare,
   type VideoWithProject,
   type Drawing,
 } from "@/features/app-video-review/use-video-review";
+import { ShareReviewModal } from "@/features/app-video-review/share-modal";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
 import { MemberSelect } from "@/features/team-members/member-select";
 import { errMsg } from "@/lib/err";
@@ -508,6 +511,7 @@ function WorkflowPanel({ video }: { video: VideoWithProject }) {
 
 export default function VideoReviewScreen() {
   const VR = useVR();
+  const router = useRouter();
   const params = useParams<{ id: string }>();
   const id = params?.id;
   const { message } = App.useApp();
@@ -528,6 +532,8 @@ export default function VideoReviewScreen() {
   const [currentTime, setCurrentTime] = useState(0);
   const [body, setBody] = useState("");
   const [versionOpen, setVersionOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const { data: share } = useVideoShare(id);
   // Frame drawing
   const [drawMode, setDrawMode] = useState(false);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
@@ -537,6 +543,17 @@ export default function VideoReviewScreen() {
   const [commentFilter, setCommentFilter] = useState<"all" | "open" | "done">("all");
   const [sortBy, setSortBy] = useState<"time" | "new">("time");
   const [searchQ, setSearchQ] = useState("");
+
+  // Back returns to wherever the review was opened from (the project's Video
+  // Review tab, or the hub). router.back() restores that exact entry; when the
+  // page was loaded directly (no history) we fall back to the project tab.
+  const backFallback = video?.project
+    ? `/projects/${video.project.id}?tab=video-review`
+    : "/apps/video-review";
+  const goBack = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) router.back();
+    else router.push(backFallback);
+  };
 
   const seek = (ms: number) => {
     if (videoRef.current) {
@@ -586,7 +603,7 @@ export default function VideoReviewScreen() {
       (c) =>
         !q ||
         c.body.toLowerCase().includes(q) ||
-        (c.author?.name ?? "").toLowerCase().includes(q),
+        (c.guest_name ?? c.author?.name ?? "").toLowerCase().includes(q),
     );
   const sortedComments =
     sortBy === "time"
@@ -619,13 +636,18 @@ export default function VideoReviewScreen() {
             flexWrap: "wrap",
           }}
         >
-          <Link
-            href="/apps/video-review"
-            aria-label="Back to Video Review"
+          <button
+            type="button"
+            onClick={goBack}
+            aria-label="Back"
+            title="Back"
             style={{
               width: 32,
               height: 32,
+              flex: "none",
               borderRadius: 16,
+              border: "none",
+              cursor: "pointer",
               background: VR.panelSoft,
               display: "inline-flex",
               alignItems: "center",
@@ -634,7 +656,7 @@ export default function VideoReviewScreen() {
             }}
           >
             <ArrowLeftOutlined />
-          </Link>
+          </button>
           <span
             style={{
               fontWeight: 700,
@@ -677,6 +699,29 @@ export default function VideoReviewScreen() {
             download
           >
             Download
+          </Button>
+          <Button
+            size="small"
+            type="primary"
+            icon={<ShareAltOutlined />}
+            onClick={() => setShareOpen(true)}
+          >
+            Share
+            {share?.active ? (
+              <span
+                aria-hidden
+                title="Live client link"
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: "#5eead4",
+                  display: "inline-block",
+                  marginInlineStart: 6,
+                  boxShadow: "0 0 0 3px rgba(94, 234, 212, 0.3)",
+                }}
+              />
+            ) : null}
           </Button>
         </div>
 
@@ -967,16 +1012,33 @@ export default function VideoReviewScreen() {
                       >
                         <Avatar
                           size={26}
-                          src={c.author?.avatar_url ?? undefined}
-                          style={{ fontSize: 11, flex: "none" }}
+                          src={c.guest_name ? undefined : c.author?.avatar_url ?? undefined}
+                          style={{
+                            fontSize: 11,
+                            flex: "none",
+                            background: c.guest_name ? "#0e9f6e" : undefined,
+                          }}
                         >
-                          {initials(c.author?.name ?? "?")}
+                          {initials(c.guest_name ?? c.author?.name ?? "?")}
                         </Avatar>
                         <div style={{ minWidth: 0, flex: 1 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                             <Text strong style={{ fontSize: 12.5, color: VR.text }}>
-                              {c.author?.name ?? "Someone"}
+                              {c.guest_name ?? c.author?.name ?? "Someone"}
                             </Text>
+                            {c.guest_name ? (
+                              <Tag
+                                color="green"
+                                style={{
+                                  marginInlineEnd: 0,
+                                  fontSize: 10,
+                                  lineHeight: "16px",
+                                  padding: "0 5px",
+                                }}
+                              >
+                                Client
+                              </Tag>
+                            ) : null}
                             <button
                               type="button"
                               onClick={() => {
@@ -1048,6 +1110,12 @@ export default function VideoReviewScreen() {
         videoId={video.id}
         teamId={video.team_id}
         nextRevision={nextRevision}
+      />
+
+      <ShareReviewModal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        videoId={video.id}
       />
 
       <style>{`

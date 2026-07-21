@@ -6,10 +6,16 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveTeam } from "@/features/teams/use-teams";
 import { useAuth } from "@/features/auth/use-auth";
 import type { Database } from "@/types/database";
+
+/** The share tables are newer than the generated database types. */
+function loose(s: ReturnType<typeof createClient>) {
+  return s as unknown as SupabaseClient;
+}
 
 const BUCKET = "video-review" as const;
 const SIGNED_TTL = 60 * 60 * 4; // 4h — long enough to watch a review session.
@@ -42,6 +48,8 @@ export type VideoWithProject = VideoRow & {
 
 export type CommentWithAuthor = CommentRow & {
   author: { id: string; name: string; avatar_url: string | null } | null;
+  /** Set when the comment came from a public share link (client reviewer). */
+  guest_name?: string | null;
 };
 
 /** A freehand annotation over the paused frame; coordinates normalized 0..1. */
@@ -150,6 +158,8 @@ export function useVideoComments(id: string | undefined, revision: number) {
     queryFn: async (): Promise<CommentWithAuthor[]> => {
       const { data, error } = await supabase
         .from("app_video_review_comments")
+        // `*` includes guest_name (added by the share migration, ahead of the
+        // generated types) — surfaced via the CommentWithAuthor extension.
         .select(
           "*, author:users!app_video_review_comments_author_fk ( id, name, avatar_url )",
         )
@@ -764,6 +774,149 @@ export function useCreateWorkflowTemplate() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: wfTemplatesKey(teamId) });
+    },
+  });
+}
+
+/* ------------------------------------------------------- public sharing */
+
+/** A public client-review link for a video (one per video). */
+export interface VideoShare {
+  id: string;
+  video_id: string;
+  token: string;
+  active: boolean;
+  allow_download: boolean;
+  require_name: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A named client who opened the link — how many times, and when last. */
+export interface VideoShareSession {
+  id: string;
+  share_id: string;
+  name: string;
+  visitor_key: string;
+  visit_count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+const shareKey = (videoId: string | undefined) =>
+  ["video-review-share", videoId] as const;
+const shareSessionsKey = (shareId: string | undefined) =>
+  ["video-review-share-sessions", shareId] as const;
+
+const SHARE_COLS =
+  "id, video_id, token, active, allow_download, require_name, created_at, updated_at";
+
+/** The video's share link, or null if it was never published. */
+export function useVideoShare(videoId: string | undefined) {
+  const supabase = useMemo(() => createClient(), []);
+  return useQuery({
+    queryKey: shareKey(videoId),
+    enabled: Boolean(videoId),
+    queryFn: async (): Promise<VideoShare | null> => {
+      const { data, error } = await loose(supabase)
+        .from("app_video_review_shares")
+        .select(SHARE_COLS)
+        .eq("video_id", videoId as string)
+        .maybeSingle();
+      if (error) throw error;
+      return (data as VideoShare | null) ?? null;
+    },
+  });
+}
+
+/** Publishes the review link (get-or-create, and re-activates a paused one). */
+export function useCreateOrEnableShare(videoId: string | undefined) {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  return useMutation({
+    mutationFn: async (): Promise<VideoShare> => {
+      if (!videoId) throw new Error("No video");
+      const client = loose(supabase);
+      const { data: existing } = await client
+        .from("app_video_review_shares")
+        .select(SHARE_COLS)
+        .eq("video_id", videoId)
+        .maybeSingle();
+      if (existing) {
+        const row = existing as VideoShare;
+        if (row.active) return row;
+        const { data, error } = await client
+          .from("app_video_review_shares")
+          .update({ active: true, updated_at: new Date().toISOString() })
+          .eq("id", row.id)
+          .select(SHARE_COLS)
+          .single();
+        if (error) throw error;
+        return data as VideoShare;
+      }
+      const { data, error } = await client
+        .from("app_video_review_shares")
+        .insert({ video_id: videoId, created_by: user?.id ?? null })
+        .select(SHARE_COLS)
+        .single();
+      if (error) throw error;
+      return data as VideoShare;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: shareKey(videoId) });
+    },
+  });
+}
+
+/** Toggles link settings (active / allow_download / require_name). */
+export function useUpdateShare(videoId: string | undefined) {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      id: string;
+      active?: boolean;
+      allow_download?: boolean;
+      require_name?: boolean;
+    }): Promise<void> => {
+      const patch: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+      };
+      if (input.active !== undefined) patch.active = input.active;
+      if (input.allow_download !== undefined)
+        patch.allow_download = input.allow_download;
+      if (input.require_name !== undefined)
+        patch.require_name = input.require_name;
+      const { error } = await loose(supabase)
+        .from("app_video_review_shares")
+        .update(patch)
+        .eq("id", input.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: shareKey(videoId) });
+    },
+  });
+}
+
+/** The visit sessions for a share — polls so new client visits surface live. */
+export function useVideoShareSessions(shareId: string | undefined, enabled = true) {
+  const supabase = useMemo(() => createClient(), []);
+  return useQuery({
+    queryKey: shareSessionsKey(shareId),
+    enabled: Boolean(shareId) && enabled,
+    refetchInterval: 20_000,
+    queryFn: async (): Promise<VideoShareSession[]> => {
+      const { data, error } = await loose(supabase)
+        .from("app_video_review_share_sessions")
+        .select(
+          "id, share_id, name, visitor_key, visit_count, first_seen_at, last_seen_at",
+        )
+        .eq("share_id", shareId as string)
+        .order("last_seen_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as VideoShareSession[];
     },
   });
 }
