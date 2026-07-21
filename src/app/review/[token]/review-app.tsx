@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import { createClient } from "@/lib/supabase/client";
+import { resolveVideoSource } from "@/features/app-video-review/media-source";
 
 dayjs.extend(relativeTime);
 
@@ -25,6 +26,8 @@ export interface ReviewRevision {
   revision: number;
   summary: string | null;
   has_source: boolean;
+  /** External link for URL-based revisions; null for uploaded files. */
+  source_url?: string | null;
 }
 export interface ReviewShareData {
   share: { allow_download: boolean; require_name: boolean; reviewer_name: string | null };
@@ -245,7 +248,12 @@ export function ReviewApp({ data, token }: { data: ReviewShareData; token: strin
   };
 
   const commentsForRev = (view.comments ?? []).filter((c) => c.revision === rev);
-  const videoSrc = `/api/review/${token}/video?rev=${rev}`;
+  // Uploaded revisions stream through the signed route; a pasted link resolves
+  // to a provider embed (iframe) or a direct file the <video> can play.
+  const media = resolveVideoSource(currentRev?.source_url ?? null);
+  const isEmbed = media?.kind === "embed";
+  const streamSrc = `/api/review/${token}/video?rev=${rev}`;
+  const fileSrc = media?.kind === "file" ? media.url : streamSrc;
 
   // ---- Name gate ---------------------------------------------------------
   // Only reached when the client IS asked for a name and hasn't given one yet;
@@ -338,9 +346,9 @@ export function ReviewApp({ data, token }: { data: ReviewShareData; token: strin
           </select>
         ) : null}
 
-        {view.share.allow_download && hasSource ? (
+        {view.share.allow_download && hasSource && !isEmbed ? (
           <a
-            href={videoSrc}
+            href={fileSrc}
             target="_blank"
             rel="noopener noreferrer"
             style={{
@@ -403,19 +411,28 @@ export function ReviewApp({ data, token }: { data: ReviewShareData; token: strin
               aspectRatio: "16 / 9",
             }}
           >
-            {hasSource ? (
+            {!hasSource ? (
+              <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 14 }}>
+                No video for this version.
+              </div>
+            ) : isEmbed && media ? (
+              <iframe
+                key={rev}
+                src={media.url}
+                title={view.video.title}
+                allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+                allowFullScreen
+                style={{ width: "100%", height: "100%", border: 0 }}
+              />
+            ) : (
               <video
                 key={rev}
                 ref={videoRef}
-                src={videoSrc}
+                src={fileSrc}
                 controls
                 onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
                 style={{ width: "100%", height: "100%", display: "block", objectFit: "contain" }}
               />
-            ) : (
-              <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 14 }}>
-                No video for this version.
-              </div>
             )}
           </div>
           {currentRev?.summary ? (

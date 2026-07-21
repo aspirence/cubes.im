@@ -58,6 +58,7 @@ import {
   type Drawing,
 } from "@/features/app-video-review/use-video-review";
 import { ShareReviewModal } from "@/features/app-video-review/share-modal";
+import { resolveVideoSource } from "@/features/app-video-review/media-source";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
 import { MemberSelect } from "@/features/team-members/member-select";
 import { errMsg } from "@/lib/err";
@@ -538,6 +539,13 @@ export default function VideoReviewScreen() {
   const [drawMode, setDrawMode] = useState(false);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const [displayDrawing, setDisplayDrawing] = useState<Drawing | null>(null);
+  // A pasted provider link (YouTube/Drive/Vimeo…) plays via an embed; uploads
+  // and direct files play in <video>. Track which URL failed so switching
+  // versions clears the "couldn't preview" fallback without an effect.
+  const [errorUrl, setErrorUrl] = useState<string | null>(null);
+  const media = resolveVideoSource(playUrl);
+  const isEmbed = media?.kind === "embed";
+  const playbackFailed = media?.kind === "file" && errorUrl === media.url;
   // Right panel (PlayPause-style)
   const [panelTab, setPanelTab] = useState<"comments" | "workflow">("comments");
   const [commentFilter, setCommentFilter] = useState<"all" | "open" | "done">("all");
@@ -746,14 +754,81 @@ export default function VideoReviewScreen() {
                 justifyContent: "center",
               }}
             >
-              {playUrl ? (
+              {!media ? (
+                <div
+                  style={{
+                    height: 320,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: VR.textTertiary,
+                  }}
+                >
+                  No video source for this version.
+                </div>
+              ) : isEmbed ? (
+                // Provider links (YouTube/Vimeo/Drive/Loom…) aren't media files —
+                // play them through the provider's embed instead of <video>.
+                <div style={{ position: "relative", width: "100%", aspectRatio: "16 / 9" }}>
+                  <iframe
+                    key={media.url}
+                    src={media.url}
+                    title={video.title}
+                    allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+                    allowFullScreen
+                    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
+                  />
+                </div>
+              ) : playbackFailed ? (
+                <div
+                  style={{
+                    minHeight: 260,
+                    width: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    padding: 24,
+                    textAlign: "center",
+                    color: "rgba(255,255,255,0.72)",
+                  }}
+                >
+                  <span className="material-symbols-rounded" style={{ fontSize: 34 }}>
+                    videocam_off
+                  </span>
+                  <div style={{ fontWeight: 600, color: "#fff" }}>Couldn’t preview this link</div>
+                  <div style={{ fontSize: 12.5, maxWidth: 380 }}>
+                    It isn’t a directly playable video file. Open it in a new tab, or
+                    upload the file / paste a YouTube, Vimeo or Google Drive link.
+                  </div>
+                  <a
+                    href={media.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      marginTop: 6,
+                      color: "#fff",
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      border: "1px solid rgba(255,255,255,0.3)",
+                      borderRadius: 8,
+                      padding: "5px 12px",
+                    }}
+                  >
+                    Open original ↗
+                  </a>
+                </div>
+              ) : (
                 // Wrapper hugs the video's intrinsic box so the drawing canvas
                 // aligns with the actual pixels (no letterbox offset).
                 <div style={{ position: "relative", display: "inline-block" }}>
                   <video
                     ref={videoRef}
-                    src={playUrl}
+                    key={media.url}
+                    src={media.url}
                     controls={!drawMode}
+                    onError={() => setErrorUrl(media.url)}
                     onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
                     style={{ maxWidth: "100%", maxHeight: "62vh", display: "block" }}
                   />
@@ -766,60 +841,62 @@ export default function VideoReviewScreen() {
                     />
                   ) : null}
                 </div>
-              ) : (
-                <div
-                  style={{
-                    height: 320,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: VR.textTertiary,
-                  }}
-                >
-                  No video source for this version.
-                </div>
               )}
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <Tag
-                style={{
-                  marginInlineEnd: 0,
-                  fontVariantNumeric: "tabular-nums",
-                  background: VR.accentSoft,
-                  color: VR.accent,
-                  borderColor: "transparent",
-                }}
-              >
-                @ {fmt(currentTime)}
-              </Tag>
-              <Button
-                size="small"
-                type={drawMode ? "primary" : "default"}
-                icon={<EditOutlined />}
-                onClick={() => {
-                  const next = !drawMode;
-                  setDrawMode(next);
-                  if (next) {
-                    videoRef.current?.pause();
-                    setDisplayDrawing(null);
-                  } else {
-                    setStrokes([]);
-                  }
-                }}
-              >
-                Draw
-              </Button>
-              {drawMode && strokes.length > 0 ? (
-                <Button size="small" type="text" onClick={() => setStrokes([])}>
-                  Clear
-                </Button>
-              ) : null}
-              {displayDrawing && !drawMode ? (
-                <Button size="small" type="text" onClick={() => setDisplayDrawing(null)}>
-                  Hide drawing
-                </Button>
-              ) : null}
+              {isEmbed ? (
+                // Embedded providers don't expose the playhead to us, so frame
+                // timestamps and drawing aren't available for those links.
+                <Text style={{ color: VR.textTertiary, fontSize: 12 }}>
+                  {media?.provider === "Google Drive"
+                    ? "Playing from Google Drive. If it stays blank, set the file’s sharing to “Anyone with the link”. "
+                    : ""}
+                  Comments on this {media?.provider ?? "linked"} video aren’t frame-timed —
+                  upload the file or paste a direct link for timestamped notes.
+                </Text>
+              ) : (
+                <>
+                  <Tag
+                    style={{
+                      marginInlineEnd: 0,
+                      fontVariantNumeric: "tabular-nums",
+                      background: VR.accentSoft,
+                      color: VR.accent,
+                      borderColor: "transparent",
+                    }}
+                  >
+                    @ {fmt(currentTime)}
+                  </Tag>
+                  <Button
+                    size="small"
+                    type={drawMode ? "primary" : "default"}
+                    icon={<EditOutlined />}
+                    onClick={() => {
+                      const next = !drawMode;
+                      setDrawMode(next);
+                      if (next) {
+                        videoRef.current?.pause();
+                        setDisplayDrawing(null);
+                      } else {
+                        setStrokes([]);
+                      }
+                    }}
+                  >
+                    Draw
+                  </Button>
+                  {drawMode && strokes.length > 0 ? (
+                    <Button size="small" type="text" onClick={() => setStrokes([])}>
+                      Clear
+                    </Button>
+                  ) : null}
+                  {displayDrawing && !drawMode ? (
+                    <Button size="small" type="text" onClick={() => setDisplayDrawing(null)}>
+                      Hide drawing
+                    </Button>
+                  ) : null}
+                </>
+              )}
               <span style={{ flex: 1 }} />
               {currentRevision?.summary ? (
                 <Text style={{ color: VR.textTertiary, fontSize: 12.5 }}>
