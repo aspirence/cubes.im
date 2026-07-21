@@ -33,7 +33,10 @@ import { useNotifyMentions } from "@/features/notifications/use-mention-notify";
 import { useAuth } from "@/features/auth/use-auth";
 import { useActiveTeam } from "@/features/teams/use-teams";
 import { InviteMemberModal } from "@/features/invitations/invite-member-modal";
-import { useTaskPriorities } from "@/features/tasks/use-task-statuses";
+import {
+  useTaskPriorities,
+  useTaskStatuses,
+} from "@/features/tasks/use-task-statuses";
 import { useUpdateTask } from "@/features/tasks/use-tasks";
 import {
   useTaskTemplates,
@@ -115,6 +118,8 @@ export function CreateTaskModal({
   const [templateId, setTemplateId] = useState<string | undefined>();
   const [description, setDescription] = useState("");
   const [priorityId, setPriorityId] = useState<string | undefined>();
+  // Explicit status choice; undefined falls back to the project's To Do status.
+  const [statusId, setStatusId] = useState<string | undefined>();
   const [assignees, setAssignees] = useState<string[]>([]);
   const [deliverableType, setDeliverableType] = useState<string | undefined>();
   const [due, setDue] = useState<Dayjs | null>(null);
@@ -131,6 +136,37 @@ export function CreateTaskModal({
     return m;
   }, [priorities]);
 
+  // Statuses for the chosen project. The default is the first "To Do" (Not
+  // Started) status, falling back to the first status by order.
+  const { data: statusList } = useTaskStatuses(projectId);
+  const defaultStatusId = useMemo(() => {
+    const list = statusList ?? [];
+    if (list.length === 0) return undefined;
+    return (list.find((s) => s.category?.is_todo) ?? list[0]).id;
+  }, [statusList]);
+  const effectiveStatusId = statusId ?? defaultStatusId;
+  const statusOptions = useMemo(
+    () =>
+      (statusList ?? []).map((s) => ({
+        value: s.id,
+        label: (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 999,
+                flex: "none",
+                background: s.category?.color_code ?? "#9a9da8",
+              }}
+            />
+            {s.name}
+          </span>
+        ),
+      })),
+    [statusList],
+  );
+
   // Reset the form each time the modal opens (render-time reset idiom).
   if (open && !seededOpen) {
     setSeededOpen(true);
@@ -139,6 +175,7 @@ export function CreateTaskModal({
     setTemplateId(undefined);
     setDescription("");
     setPriorityId(undefined);
+    setStatusId(undefined);
     setAssignees([]);
     setDeliverableType(undefined);
     setDue(defaultDue ?? null);
@@ -163,6 +200,9 @@ export function CreateTaskModal({
 
   const handleProjectChange = (id: string) => {
     setProjectId(id);
+    // Statuses are per-project — drop any prior choice so the new project's
+    // To Do default takes over.
+    setStatusId(undefined);
     const proj = projectList.find((p) => p.id === id);
     const defTpl = proj?.default_task_template_id ?? undefined;
     if (defTpl && !templateId) applyTemplate(defTpl);
@@ -190,6 +230,7 @@ export function CreateTaskModal({
         templateId: templateId ?? null,
         description: description.trim() || null,
         priorityId: priorityId ?? null,
+        statusId: effectiveStatusId ?? null,
         assignees,
       });
       if (due || deliverableType) {
@@ -325,6 +366,25 @@ export function CreateTaskModal({
           margin: "8px 0 0",
         }}
       >
+        <Property
+          icon={
+            <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
+              adjust
+            </span>
+          }
+        >
+          <Select
+            size="small"
+            variant="borderless"
+            placeholder="Status"
+            value={effectiveStatusId}
+            onChange={setStatusId}
+            style={{ minWidth: 120 }}
+            popupMatchSelectWidth={false}
+            disabled={!projectId || statusOptions.length === 0}
+            options={statusOptions}
+          />
+        </Property>
         <Property icon={<UserOutlined />}>
           <MemberSelect
             popupInParent
