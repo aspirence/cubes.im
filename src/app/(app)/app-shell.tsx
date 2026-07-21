@@ -46,6 +46,7 @@ import { isProjectScopedApp } from "@/features/apps-platform/app-scope";
 import { ProjectsSidebar } from "./projects/_components/projects-sidebar";
 import { AppCenterSidebar } from "./apps/_components/app-center-sidebar";
 import { ChatSidebar } from "./chat/_components/chat-sidebar";
+import { InstallPrompt } from "@/features/pwa/install-prompt";
 import { CreateTaskModal } from "@/features/tasks/create-task-modal";
 import { CelebrationOverlay } from "@/features/celebrations/celebration-overlay";
 
@@ -1297,6 +1298,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
+      <InstallPrompt />
     </div>
   );
 }
