@@ -106,6 +106,14 @@ export default function ChatThreadPage() {
 
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  // Whether the user is parked at the bottom — gates the follow-on auto-scroll
+  // so we never yank them down while they're reading older messages.
+  const stickRef = useRef(true);
+  const onMessagesScroll = () => {
+    const el = scrollRef.current;
+    if (el) stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
+  };
 
   // Mark read on open and whenever new messages arrive while the thread is open.
   const lastCount = useRef(0);
@@ -119,11 +127,39 @@ export default function ChatThreadPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelId, messages?.length]);
 
-  // Stick to the bottom as messages arrive.
+  // Opening a thread starts pinned to the newest message.
   useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    stickRef.current = true;
+    const id = requestAnimationFrame(() => {
+      const el = scrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(id);
+  }, [channelId]);
+
+  // Follow new messages when already parked at the bottom.
+  useEffect(() => {
+    if (!stickRef.current) return;
+    const id = requestAnimationFrame(() => {
+      const el = scrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(id);
   }, [messages?.length]);
+
+  // Re-pin when the content grows AFTER layout — images finishing loading are
+  // the usual reason a chat "won't scroll all the way to the bottom".
+  const hasMessages = (messages?.length ?? 0) > 0;
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      const el = scrollRef.current;
+      if (el && stickRef.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, [channelId, hasMessages]);
 
   const channel = info?.channel;
   const members = useMemo(() => info?.members ?? [], [info?.members]);
@@ -263,6 +299,8 @@ export default function ChatThreadPage() {
   const submit = () => {
     const text = draft.trim();
     if ((!text && attachments.length === 0) || send.isPending || uploading > 0) return;
+    // Sending always jumps to the newest message, even if you'd scrolled up.
+    stickRef.current = true;
     const sentAttachments = attachments;
     setDraft("");
     setAttachments([]);
@@ -502,7 +540,11 @@ export default function ChatThreadPage() {
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "14px 20px" }}>
+      <div
+        ref={scrollRef}
+        onScroll={onMessagesScroll}
+        style={{ flex: 1, overflowY: "auto", padding: "14px 20px" }}
+      >
         {msgsLoading ? (
           <Skeleton active paragraph={{ rows: 6 }} />
         ) : rows.length === 0 ? (
@@ -529,7 +571,8 @@ export default function ChatThreadPage() {
             </div>
           </div>
         ) : (
-          rows.map((m, i) => {
+          <div ref={contentRef}>
+          {rows.map((m, i) => {
             const prev = rows[i - 1];
             const grouped = isGrouped(prev, m);
             const newDay = !prev || !dayjs(m.created_at).isSame(prev.created_at, "day");
@@ -661,7 +704,8 @@ export default function ChatThreadPage() {
                 </div>
               </div>
             );
-          })
+          })}
+          </div>
         )}
       </div>
 
