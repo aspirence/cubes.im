@@ -252,6 +252,7 @@ export function ReviewApp({ data, token }: { data: ReviewShareData; token: strin
   // to a provider embed (iframe) or a direct file the <video> can play.
   const media = resolveVideoSource(currentRev?.source_url ?? null);
   const isEmbed = media?.kind === "embed";
+  const isUnsupported = media?.kind === "unsupported";
   const streamSrc = `/api/review/${token}/video?rev=${rev}`;
   const fileSrc = media?.kind === "file" ? media.url : streamSrc;
 
@@ -424,6 +425,39 @@ export function ReviewApp({ data, token }: { data: ReviewShareData; token: strin
                 allowFullScreen
                 style={{ width: "100%", height: "100%", border: 0 }}
               />
+            ) : isUnsupported && media ? (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: 24,
+                  textAlign: "center",
+                  color: "rgba(255,255,255,0.72)",
+                }}
+              >
+                <span className="material-symbols-rounded" style={{ fontSize: 32 }}>
+                  videocam_off
+                </span>
+                <div style={{ fontWeight: 600, color: "#fff" }}>Video isn’t available to play here</div>
+                <a
+                  href={media.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    marginTop: 4,
+                    color: "#fff",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    border: "1px solid rgba(255,255,255,0.3)",
+                    borderRadius: 8,
+                    padding: "6px 14px",
+                  }}
+                >
+                  Open link ↗
+                </a>
+              </div>
             ) : (
               <video
                 key={rev}

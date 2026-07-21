@@ -545,7 +545,9 @@ export default function VideoReviewScreen() {
   const [errorUrl, setErrorUrl] = useState<string | null>(null);
   const media = resolveVideoSource(playUrl);
   const isEmbed = media?.kind === "embed";
-  const playbackFailed = media?.kind === "file" && errorUrl === media.url;
+  const isUnsupported = media?.kind === "unsupported";
+  const playbackFailed =
+    (media?.kind === "file" && errorUrl === media.url) || isUnsupported;
   // Right panel (PlayPause-style)
   const [panelTab, setPanelTab] = useState<"comments" | "workflow">("comments");
   const [commentFilter, setCommentFilter] = useState<"all" | "open" | "done">("all");
@@ -818,10 +820,15 @@ export default function VideoReviewScreen() {
                   <span className="material-symbols-rounded" style={{ fontSize: 34 }}>
                     videocam_off
                   </span>
-                  <div style={{ fontWeight: 600, color: "#fff" }}>Couldn’t preview this link</div>
-                  <div style={{ fontSize: 12.5, maxWidth: 380 }}>
-                    It isn’t a directly playable video file. Open it in a new tab, or
-                    upload the file / paste a YouTube, Vimeo or Google Drive link.
+                  <div style={{ fontWeight: 600, color: "#fff" }}>
+                    {media && media.kind === "unsupported"
+                      ? "This link can’t be played here"
+                      : "Couldn’t preview this link"}
+                  </div>
+                  <div style={{ fontSize: 12.5, maxWidth: 420 }}>
+                    {media && media.kind === "unsupported"
+                      ? media.hint
+                      : "It isn’t a directly playable video file. Open it in a new tab, or upload the file / paste a YouTube, Vimeo or Google Drive link."}
                   </div>
                   <a
                     href={media.url}

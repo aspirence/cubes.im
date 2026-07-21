@@ -8,7 +8,10 @@
 
 export type MediaSource =
   | { kind: "file"; url: string }
-  | { kind: "embed"; url: string; provider: string };
+  | { kind: "embed"; url: string; provider: string }
+  // A recognised link that can't be played inline (e.g. a Drive FOLDER, not a
+  // file). `hint` tells the user exactly how to fix it.
+  | { kind: "unsupported"; url: string; provider: string; hint: string };
 
 /** Direct-media extensions that always play in a `<video>` element. */
 const FILE_EXT_RE = /\.(mp4|webm|ogg|ogv|mov|m4v|mkv|avi)(\?|#|$)/i;
@@ -68,6 +71,20 @@ export function resolveVideoSource(raw: string | null | undefined): MediaSource 
         : `https://player.vimeo.com/video/${id}`;
       return { kind: "embed", url: embed, provider: "Vimeo" };
     }
+  }
+
+  // A Google Drive FOLDER link points at many files — there's no single video
+  // to play. Guide the user to the specific file's link instead.
+  if (host === "drive.google.com" && parts[0] === "drive" && parts[1] === "folders") {
+    return {
+      kind: "unsupported",
+      url,
+      provider: "Google Drive",
+      hint:
+        "This is a Google Drive folder, not a video. Open it, then share the " +
+        "specific video file’s link (right-click the video → Share → Copy link) " +
+        "and add it as a new version.",
+    };
   }
 
   // Google Drive — share links, open?id=, uc?id=, the newer
