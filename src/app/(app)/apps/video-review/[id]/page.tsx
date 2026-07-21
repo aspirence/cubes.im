@@ -700,6 +700,27 @@ export default function VideoReviewScreen() {
           </Button>
           <Button
             size="small"
+            icon={
+              <span className="material-symbols-rounded" style={{ fontSize: 16 }}>
+                link
+              </span>
+            }
+            disabled={!(currentRevision?.url ?? playUrl)}
+            onClick={async () => {
+              const link = currentRevision?.url ?? playUrl;
+              if (!link) return;
+              try {
+                await navigator.clipboard.writeText(link);
+                message.success("Video link copied.");
+              } catch {
+                message.error("Couldn't copy the link.");
+              }
+            }}
+          >
+            Copy URL
+          </Button>
+          <Button
+            size="small"
             icon={<DownloadOutlined />}
             disabled={!playUrl}
             href={playUrl ?? undefined}

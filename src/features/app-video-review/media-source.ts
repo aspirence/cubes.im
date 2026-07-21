@@ -70,8 +70,13 @@ export function resolveVideoSource(raw: string | null | undefined): MediaSource 
     }
   }
 
-  // Google Drive (share links, open?id=, uc?id=, legacy docs.google.com) -----
-  if (host === "drive.google.com" || host === "docs.google.com") {
+  // Google Drive — share links, open?id=, uc?id=, the newer
+  // drive.usercontent.google.com/download?id=, and legacy docs.google.com.
+  if (
+    host === "drive.google.com" ||
+    host === "docs.google.com" ||
+    host === "drive.usercontent.google.com"
+  ) {
     const idFromPath = parts[0] === "file" && parts[1] === "d" ? parts[2] : null;
     const id = idFromPath || u.searchParams.get("id");
     if (id) return { kind: "embed", url: `https://drive.google.com/file/d/${id}/preview`, provider: "Google Drive" };
