@@ -9,6 +9,7 @@ import {
   Checkbox,
   DatePicker,
   Drawer,
+  Dropdown,
   Empty,
   Input,
   List,
@@ -49,6 +50,7 @@ import { useCelebrateTaskDone } from "@/features/celebrations/use-celebrations";
 import {
   useUpdateTask,
   useCreateTask,
+  useDeleteTask,
   useSubtasks,
   useTasks,
 } from "@/features/tasks/use-tasks";
@@ -450,7 +452,7 @@ function TaskDrawerContent({
   variant?: "drawer" | "page";
   onClose?: () => void;
 }) {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const { token } = theme.useToken();
   const DT = useDrawerTokens();
   const queryClient = useQueryClient();
@@ -477,6 +479,38 @@ function TaskDrawerContent({
   };
 
   const updateTask = useUpdateTask();
+  const deleteTask = useDeleteTask();
+
+  /**
+   * Permanently delete this task. Any project member can delete (RLS), so this
+   * is offered to everyone who can open the task; the confirm spells out that it
+   * takes the subtasks/comments/attachments with it and can't be undone.
+   */
+  const confirmDelete = () => {
+    if (!task) return;
+    const name = task.name?.trim() || "this task";
+    const backTo = task.project_id;
+    modal.confirm({
+      title: `Delete “${name}”?`,
+      icon: null,
+      content:
+        "This permanently removes the task along with its subtasks, comments and attachments. This can’t be undone.",
+      okText: "Delete task",
+      okButtonProps: { danger: true },
+      cancelText: "Cancel",
+      centered: true,
+      onOk: async () => {
+        try {
+          await deleteTask.mutateAsync(task.id);
+          message.success("Task deleted.");
+          onClose?.();
+          if (isPage) router.push(`/projects/${backTo}`);
+        } catch {
+          message.error("Couldn't delete the task.");
+        }
+      },
+    });
+  };
 
   // ---- Lookups -------------------------------------------------------------
   const { data: statusesRaw } = useTaskStatuses(projectId);
@@ -1069,34 +1103,58 @@ function TaskDrawerContent({
             }}
           />
         </div>
-        {!isPage ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 2, flex: "none", paddingTop: 2 }}>
-            <Tooltip title="Open in full page">
-              <button
-                type="button"
-                aria-label="Open in full page"
-                onClick={openFullView}
-                className="td-hdr-btn"
-              >
-                <span className="material-symbols-rounded" aria-hidden style={{ fontSize: 19 }}>
-                  open_in_full
-                </span>
-              </button>
-            </Tooltip>
-            <Tooltip title="Close">
-              <button
-                type="button"
-                aria-label="Close"
-                onClick={onClose}
-                className="td-hdr-btn"
-              >
-                <span className="material-symbols-rounded" aria-hidden style={{ fontSize: 20 }}>
-                  close
-                </span>
-              </button>
-            </Tooltip>
-          </div>
-        ) : null}
+        <div style={{ display: "flex", alignItems: "center", gap: 2, flex: "none", paddingTop: 2 }}>
+          {/* Task actions (⋯) — Delete is available to every project member. */}
+          <Dropdown
+            trigger={["click"]}
+            placement="bottomRight"
+            menu={{
+              items: [
+                {
+                  key: "delete",
+                  danger: true,
+                  icon: <DeleteOutlined />,
+                  label: "Delete task",
+                  onClick: confirmDelete,
+                },
+              ],
+            }}
+          >
+            <button type="button" aria-label="Task actions" className="td-hdr-btn">
+              <span className="material-symbols-rounded" aria-hidden style={{ fontSize: 20 }}>
+                more_horiz
+              </span>
+            </button>
+          </Dropdown>
+          {!isPage ? (
+            <>
+              <Tooltip title="Open in full page">
+                <button
+                  type="button"
+                  aria-label="Open in full page"
+                  onClick={openFullView}
+                  className="td-hdr-btn"
+                >
+                  <span className="material-symbols-rounded" aria-hidden style={{ fontSize: 19 }}>
+                    open_in_full
+                  </span>
+                </button>
+              </Tooltip>
+              <Tooltip title="Close">
+                <button
+                  type="button"
+                  aria-label="Close"
+                  onClick={onClose}
+                  className="td-hdr-btn"
+                >
+                  <span className="material-symbols-rounded" aria-hidden style={{ fontSize: 20 }}>
+                    close
+                  </span>
+                </button>
+              </Tooltip>
+            </>
+          ) : null}
+        </div>
       </div>
 
       {/* Workspace body -------------------------------------------------- */}
