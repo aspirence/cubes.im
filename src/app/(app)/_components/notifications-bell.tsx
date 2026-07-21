@@ -36,6 +36,11 @@ import {
   ACTION_NOTIFICATION_TYPES,
   type Notification,
 } from "@/features/notifications/use-notifications";
+import {
+  isNotificationSoundMuted,
+  setNotificationSoundMuted,
+  playNotificationChime,
+} from "@/features/notifications/notification-sound";
 import { useUIStore } from "@/store/ui-store";
 
 dayjs.extend(relativeTime);
@@ -152,6 +157,22 @@ const TYPE_ICON: Record<
     label: "Comment",
     tag: "Comment",
     verb: "New Reply",
+  },
+  status_change: {
+    icon: "swap_horiz",
+    bg: "#eaf3ee",
+    fg: "#2f8f5f",
+    label: "Status",
+    tag: "Team",
+    verb: "Status changed",
+  },
+  client_review: {
+    icon: "reviews",
+    bg: "#f3edfb",
+    fg: "#7a5af5",
+    label: "Client",
+    tag: "Client",
+    verb: "Client review",
   },
   info: {
     icon: "info",
@@ -640,6 +661,16 @@ export function NotificationsBell() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"action" | "general">("action");
+  const [soundMuted, setSoundMuted] = useState(false);
+  // Read the persisted mute preference once the drawer is opened (localStorage
+  // isn't available during SSR, so this stays out of the initial render).
+  const syncSoundMuted = () => setSoundMuted(isNotificationSoundMuted());
+  const toggleSound = () => {
+    const next = !soundMuted;
+    setNotificationSoundMuted(next);
+    setSoundMuted(next);
+    if (!next) playNotificationChime(); // preview the chime when turning it on
+  };
   const dark = useUIStore((s) => s.themeMode === "dark");
   const t = useMemo(() => cardTheme(dark), [dark]);
 
@@ -808,6 +839,24 @@ export function NotificationsBell() {
         width="min(440px, 100vw)"
         open={open}
         onClose={() => setOpen(false)}
+        afterOpenChange={(o) => {
+          if (o) syncSoundMuted();
+        }}
+        extra={
+          <Tooltip title={soundMuted ? "Notification sound is off" : "Notification sound is on"}>
+            <Button
+              type="text"
+              shape="circle"
+              aria-label={soundMuted ? "Turn notification sound on" : "Turn notification sound off"}
+              onClick={toggleSound}
+              icon={
+                <span className="material-symbols-rounded" style={{ fontSize: 20 }}>
+                  {soundMuted ? "notifications_off" : "notifications_active"}
+                </span>
+              }
+            />
+          </Tooltip>
+        }
         styles={{ body: { paddingTop: 4, paddingInline: 10 } }}
       >
         <Tabs

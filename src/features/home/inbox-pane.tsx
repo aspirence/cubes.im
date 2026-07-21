@@ -14,7 +14,11 @@ import {
   useSnoozeNotification,
   useMarkNotificationsReadByTypes,
   isActionNotification,
+  isTeamNotification,
+  isClientNotification,
   ACTION_NOTIFICATION_TYPES,
+  TEAM_NOTIFICATION_TYPES,
+  CLIENT_NOTIFICATION_TYPES,
   type Notification,
 } from "@/features/notifications/use-notifications";
 
@@ -46,6 +50,8 @@ const TYPE_META: Record<string, { label: string; icon: string }> = {
   mention: { label: "Mention", icon: "alternate_email" },
   comment: { label: "Comment", icon: "chat_bubble" },
   assignment: { label: "Assigned", icon: "assignment_ind" },
+  status_change: { label: "Status", icon: "swap_horiz" },
+  client_review: { label: "Client", icon: "reviews" },
   join_request: { label: "Join request", icon: "person_add" },
   member_joined: { label: "Member joined", icon: "group_add" },
   project_shared: { label: "Project shared", icon: "folder_shared" },
@@ -77,7 +83,7 @@ const SNOOZE_CHOICES: { key: string; label: string; hours: number }[] = [
   { key: "week", label: "Next week", hours: 24 * 7 },
 ];
 
-type InboxTab = "primary" | "other" | "later" | "cleared";
+type InboxTab = "primary" | "other" | "team" | "client" | "later" | "cleared";
 
 /** True while the row is snoozed into the future — the "Later" bucket. */
 function isSnoozed(n: Notification): boolean {
@@ -119,32 +125,48 @@ export function InboxPane({ title, description, types }: InboxPaneProps) {
   const buckets = useMemo(() => {
     const primary: Notification[] = [];
     const other: Notification[] = [];
+    const team: Notification[] = [];
+    const client: Notification[] = [];
     const later: Notification[] = [];
     const cleared: Notification[] = [];
     for (const n of universe) {
       if (isSnoozed(n)) later.push(n);
       else if (n.read) cleared.push(n);
+      else if (isTeamNotification(n.type)) team.push(n);
+      else if (isClientNotification(n.type)) client.push(n);
       else if (isActionNotification(n.type)) primary.push(n);
       else other.push(n);
     }
-    return { primary, other, later, cleared };
+    return { primary, other, team, client, later, cleared };
   }, [universe]);
 
-  // With a type filter every item is one family — a lone "Other" tab is noise.
-  const showOther = !types || types.length === 0
-    ? true
-    : types.some((t) => !isActionNotification(t));
+  // With a type filter every item is one family — hide category tabs that can't
+  // apply to it (e.g. Assigned Comments passes ['mention'], so no Team/Client).
+  const applies = (pred: (t: string) => boolean) =>
+    !types || types.length === 0 ? true : types.some(pred);
+  const showOther = applies((t) => !isActionNotification(t) && !isTeamNotification(t) && !isClientNotification(t));
+  const showTeam = applies(isTeamNotification);
+  const showClient = applies(isClientNotification);
 
   const TABS: { key: InboxTab; label: string; icon: string; count?: number }[] = [
     { key: "primary", label: "Primary", icon: "inbox", count: buckets.primary.length },
     ...(showOther
       ? [{ key: "other" as const, label: "Other", icon: "notifications", count: buckets.other.length }]
       : []),
+    ...(showTeam
+      ? [{ key: "team" as const, label: "Team", icon: "groups", count: buckets.team.length }]
+      : []),
+    ...(showClient
+      ? [{ key: "client" as const, label: "Client", icon: "reviews", count: buckets.client.length }]
+      : []),
     { key: "later", label: "Later", icon: "schedule", count: buckets.later.length },
     { key: "cleared", label: "Cleared", icon: "done_all" },
   ];
 
-  const activeList = buckets[showOther || tab !== "other" ? tab : "primary"];
+  // Fall back to Primary if the active tab was hidden by a type filter.
+  const visibleTabKeys = new Set(TABS.map((t) => t.key));
+  const activeTab = visibleTabKeys.has(tab) ? tab : "primary";
+  const activeList = buckets[activeTab];
 
   const groups = useMemo(() => {
     const out: { label: string; items: Notification[] }[] = [];
@@ -158,14 +180,26 @@ export function InboxPane({ title, description, types }: InboxPaneProps) {
   }, [activeList]);
 
   const clearAll = () => {
-    if (tab === "primary") {
+    if (activeTab === "primary") {
       markByTypes.mutate({
         types: types?.length
           ? types.filter((t) => isActionNotification(t))
           : [...ACTION_NOTIFICATION_TYPES],
       });
-    } else if (tab === "other") {
-      markByTypes.mutate({ types: [...ACTION_NOTIFICATION_TYPES], invert: true });
+    } else if (activeTab === "other") {
+      // Everything that isn't an action / team / client item.
+      markByTypes.mutate({
+        types: [
+          ...ACTION_NOTIFICATION_TYPES,
+          ...TEAM_NOTIFICATION_TYPES,
+          ...CLIENT_NOTIFICATION_TYPES,
+        ],
+        invert: true,
+      });
+    } else if (activeTab === "team") {
+      markByTypes.mutate({ types: [...TEAM_NOTIFICATION_TYPES] });
+    } else if (activeTab === "client") {
+      markByTypes.mutate({ types: [...CLIENT_NOTIFICATION_TYPES] });
     }
   };
 
@@ -223,14 +257,14 @@ export function InboxPane({ title, description, types }: InboxPaneProps) {
 
         {/* Hover actions — ClickUp-style: quiet icons + a prominent Clear. */}
         <div className="ib-actions" onClick={(e) => e.stopPropagation()}>
-          {tab === "cleared" ? (
+          {activeTab === "cleared" ? (
             <Tooltip title="Mark as unread">
               <button type="button" className="ib-act" aria-label="Mark as unread" onClick={() => markUnread.mutate(n.id)}>
                 <MIcon name="mark_email_unread" size={15} />
               </button>
             </Tooltip>
           ) : null}
-          {tab === "later" ? (
+          {activeTab === "later" ? (
             <Tooltip title="Remind now">
               <button
                 type="button"
@@ -242,7 +276,7 @@ export function InboxPane({ title, description, types }: InboxPaneProps) {
               </button>
             </Tooltip>
           ) : null}
-          {tab === "primary" || tab === "other" ? (
+          {activeTab !== "cleared" && activeTab !== "later" ? (
             <Dropdown menu={snoozeMenu} trigger={["click"]}>
               <Tooltip title="Snooze">
                 <button type="button" className="ib-act" aria-label="Snooze">
@@ -251,7 +285,7 @@ export function InboxPane({ title, description, types }: InboxPaneProps) {
               </Tooltip>
             </Dropdown>
           ) : null}
-          {tab !== "cleared" ? (
+          {activeTab !== "cleared" ? (
             <button
               type="button"
               className="ib-clear"
@@ -271,6 +305,8 @@ export function InboxPane({ title, description, types }: InboxPaneProps) {
   const emptyText: Record<InboxTab, string> = {
     primary: "Nothing needs your response — you're all caught up 🎉",
     other: "No new updates",
+    team: "No team activity — status changes across your projects show up here",
+    client: "No client activity — client reviews on shared links show up here",
     later: "Nothing snoozed",
     cleared: "Nothing cleared yet",
   };
@@ -286,7 +322,7 @@ export function InboxPane({ title, description, types }: InboxPaneProps) {
       {/* Tab bar + Clear all */}
       <div className="ib-tabs">
         {TABS.map((t) => {
-          const active = tab === t.key;
+          const active = activeTab === t.key;
           return (
             <button
               key={t.key}
@@ -301,7 +337,11 @@ export function InboxPane({ title, description, types }: InboxPaneProps) {
           );
         })}
         <div style={{ marginLeft: "auto" }}>
-          {(tab === "primary" || tab === "other") && activeList.length > 0 ? (
+          {(activeTab === "primary" ||
+            activeTab === "other" ||
+            activeTab === "team" ||
+            activeTab === "client") &&
+          activeList.length > 0 ? (
             <Button
               size="small"
               icon={<MIcon name="done_all" size={14} />}
@@ -319,7 +359,7 @@ export function InboxPane({ title, description, types }: InboxPaneProps) {
       ) : activeList.length === 0 ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={emptyText[tab]}
+          description={emptyText[activeTab]}
           style={{ margin: "48px 0" }}
         />
       ) : (

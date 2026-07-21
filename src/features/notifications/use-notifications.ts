@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/features/auth/use-auth";
+import { playNotificationChime } from "@/features/notifications/notification-sound";
 import type { Database } from "@/types/database";
 
 /** A per-user notification row (read flag, message, type, url, task/project ids). */
@@ -33,8 +34,22 @@ export const ACTION_NOTIFICATION_TYPES = [
   "join_request",
 ] as const;
 
+/** Team-activity notifications (status changes) — the Inbox "Team" tab. */
+export const TEAM_NOTIFICATION_TYPES = ["status_change"] as const;
+
+/** Client-activity notifications (review link comments) — the "Client" tab. */
+export const CLIENT_NOTIFICATION_TYPES = ["client_review"] as const;
+
 export function isActionNotification(type: string): boolean {
   return (ACTION_NOTIFICATION_TYPES as readonly string[]).includes(type);
+}
+
+export function isTeamNotification(type: string): boolean {
+  return (TEAM_NOTIFICATION_TYPES as readonly string[]).includes(type);
+}
+
+export function isClientNotification(type: string): boolean {
+  return (CLIENT_NOTIFICATION_TYPES as readonly string[]).includes(type);
 }
 
 export interface NotificationsResult {
@@ -299,14 +314,17 @@ export function useNotificationsRealtime(options?: { toast?: boolean }) {
         },
         (payload) => {
           invalidate();
-          // Heads-up toast so a new notification is noticed without opening
-          // the bell. Only the surface that opted in (the bell) toasts —
-          // several mounts of this hook would otherwise stack duplicates.
-          const text = (payload.new as Partial<Notification>)?.message;
-          if (toastRef.current && text) {
-            void import("antd").then(({ message }) =>
-              message.info({ content: text, duration: 4 }),
-            );
+          // Heads-up toast + chime so a new notification is noticed without
+          // opening the bell. Only the surface that opted in (the bell) does
+          // this — several mounts of this hook would otherwise stack duplicates.
+          if (toastRef.current) {
+            playNotificationChime();
+            const text = (payload.new as Partial<Notification>)?.message;
+            if (text) {
+              void import("antd").then(({ message }) =>
+                message.info({ content: text, duration: 4 }),
+              );
+            }
           }
         },
       )
