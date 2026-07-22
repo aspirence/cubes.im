@@ -73,6 +73,20 @@ export const APP_CATALOG: AppDescriptor[] = [
     featured: true,
   },
   {
+    key: "whiteboard",
+    name: "Whiteboard",
+    tagline: "An infinite canvas for sketches, diagrams, and brainstorms",
+    description:
+      "A full-featured whiteboard powered by Excalidraw — draw shapes, arrows, text and freehand sketches on an infinite canvas, drop in images, and keep multiple boards. Great for wireframes, flowcharts, and quick brainstorms. Boards autosave in your browser (shared, team-wide boards are on the roadmap).",
+    icon: "gesture",
+    color: "#7c5cff",
+    category: "Creative",
+    coreAccess: [],
+    route: "/apps/whiteboard",
+    status: "available",
+    featured: true,
+  },
+  {
     key: "files",
     name: "Files",
     tagline: "Internal file sharing with per-file permissions",
