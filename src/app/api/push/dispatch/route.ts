@@ -20,6 +20,7 @@ const TITLE: Record<string, string> = {
   video_uploaded: "New video for review",
   video_version: "New version uploaded",
   client_review: "Client review",
+  chat_message: "New message",
   join_request: "Join request",
   member_joined: "New member",
   project_shared: "Project shared",
@@ -90,8 +91,9 @@ export async function POST(request: NextRequest) {
     title: TITLE[notif.type as string] ?? "Cubes",
     body: notif.message,
     url: notif.url || "/home",
-    // Coalesce a burst of the same category into one OS notification.
-    tag: notif.type || "cubes",
+    // Coalesce on the device: chat groups per-conversation (its url is
+    // per-channel); everything else groups per-category.
+    tag: notif.type === "chat_message" ? `chat:${notif.url ?? ""}` : notif.type || "cubes",
   });
 
   let sent = 0;

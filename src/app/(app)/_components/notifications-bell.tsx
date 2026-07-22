@@ -158,6 +158,14 @@ const TYPE_ICON: Record<
     tag: "Comment",
     verb: "New Reply",
   },
+  chat_message: {
+    icon: "forum",
+    bg: "#e6f0fb",
+    fg: "#2f7bd6",
+    label: "Message",
+    tag: "Chat",
+    verb: "New message",
+  },
   status_change: {
     icon: "swap_horiz",
     bg: "#eaf3ee",

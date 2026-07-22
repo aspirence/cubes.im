@@ -49,6 +49,7 @@ function notificationHref(n: Notification): string | null {
 const TYPE_META: Record<string, { label: string; icon: string }> = {
   mention: { label: "Mention", icon: "alternate_email" },
   comment: { label: "Comment", icon: "chat_bubble" },
+  chat_message: { label: "Message", icon: "forum" },
   assignment: { label: "Assigned", icon: "assignment_ind" },
   status_change: { label: "Status", icon: "swap_horiz" },
   video_uploaded: { label: "New video", icon: "movie" },

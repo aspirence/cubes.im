@@ -101,6 +101,14 @@ const CATEGORIES: {
     bg: "#e6f0fb",
   },
   {
+    type: "chat_message",
+    title: "Chat messages",
+    description: "Direct messages and messages in your channels.",
+    icon: "forum",
+    tint: "#2f7bd6",
+    bg: "#e6f0fb",
+  },
+  {
     type: "info",
     title: "Updates & activity",
     description: "Automations, workflow steps, and other activity.",
