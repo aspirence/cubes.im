@@ -7,8 +7,10 @@ import {
   useTeamSubscription,
   useUpdateTeamStorage,
   computeMonthlyCents,
+  storageOverageCents,
   money,
 } from "@/features/billing/use-pricing";
+import { useTeamMembers } from "@/features/team-members/use-team-members";
 
 const { Title, Text } = Typography;
 
@@ -25,6 +27,7 @@ export default function AdminBillingPage() {
   const { message } = App.useApp();
   const { data: pricing, isLoading: pLoading } = usePlatformPricing();
   const { data: sub, isLoading: sLoading } = useTeamSubscription();
+  const { data: members } = useTeamMembers();
   const update = useUpdateTeamStorage();
 
   // Local edit (null until touched); until then show the saved value.
@@ -36,7 +39,13 @@ export default function AdminBillingPage() {
 
   const cur = pricing.currency;
   const storage = gbEdit ?? sub?.storage_gb ?? pricing.base_storage_gb;
-  const monthly = computeMonthlyCents(pricing, storage);
+  // Billable seats = active, non-guest members.
+  const seats = Math.max(
+    1,
+    (members ?? []).filter((m) => m.user && m.member_type !== "guest").length,
+  );
+  const monthly = computeMonthlyCents(pricing, storage, seats);
+  const seatsCents = seats * pricing.price_per_user_cents;
   const extraGb = Math.max(0, storage - pricing.base_storage_gb);
   const dirty = storage !== (sub?.storage_gb ?? pricing.base_storage_gb);
 
@@ -56,7 +65,8 @@ export default function AdminBillingPage() {
       <div>
         <Title level={4} style={{ margin: 0 }}>Billing</Title>
         <Text type="secondary">
-          One simple plan — unlimited team members. You only pay more as you need more storage.
+          Per-user pricing — {money(pricing.price_per_user_cents, cur)} per user / month, with{" "}
+          {pricing.base_storage_gb} GB storage included. Buy extra storage anytime.
         </Text>
       </div>
 
@@ -69,12 +79,12 @@ export default function AdminBillingPage() {
           </div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 4 }}>
             <span style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.02em" }}>
-              {money(pricing.base_price_cents, cur)}
+              {money(pricing.price_per_user_cents, cur)}
             </span>
-            <span style={{ color: token.colorTextTertiary }}>/ month base</span>
+            <span style={{ color: token.colorTextTertiary }}>/ user / month</span>
           </div>
           <Text type="secondary" style={{ fontSize: 12.5 }}>
-            Unlimited members · {pricing.base_storage_gb} GB included
+            {seats} {seats === 1 ? "member" : "members"} · {pricing.base_storage_gb} GB included
           </Text>
           <div style={{ borderTop: `1px solid ${token.colorBorderSecondary}`, margin: "14px 0" }} />
           <div style={{ display: "grid", gap: 9 }}>
@@ -120,10 +130,17 @@ export default function AdminBillingPage() {
               border: `1px solid ${token.colorBorderSecondary}`,
             }}
           >
-            <Row label={`Base (${pricing.base_storage_gb} GB, unlimited members)`} value={money(pricing.base_price_cents, cur)} token={token} />
+            {pricing.base_price_cents > 0 ? (
+              <Row label="Platform fee" value={money(pricing.base_price_cents, cur)} token={token} />
+            ) : null}
+            <Row
+              label={`Members (${seats} × ${money(pricing.price_per_user_cents, cur)})`}
+              value={money(seatsCents, cur)}
+              token={token}
+            />
             <Row
               label={`Extra storage (${extraGb} GB × ${money(pricing.price_per_gb_cents, cur)})`}
-              value={money(extraGb * pricing.price_per_gb_cents, cur)}
+              value={money(storageOverageCents(pricing, storage), cur)}
               token={token}
             />
             <div style={{ borderTop: `1px solid ${token.colorBorderSecondary}`, margin: "10px 0" }} />

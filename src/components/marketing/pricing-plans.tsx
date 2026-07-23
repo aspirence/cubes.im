@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePlatformPricing, computeMonthlyCents, money } from "@/features/billing/use-pricing";
+import { usePlatformPricing, storageOverageCents, money } from "@/features/billing/use-pricing";
 
 function MIcon({ name, size = 18 }: { name: string; size?: number }) {
   return (
@@ -27,7 +27,8 @@ export function PricingPlans() {
   const rate = p?.price_per_gb_cents ?? 0;
   const storage = gb ?? base;
   const extraGb = Math.max(0, storage - base);
-  const monthly = p ? computeMonthlyCents(p, storage) : 0;
+  const perUser = p?.price_per_user_cents ?? 100;
+  const addon = p ? storageOverageCents(p, storage) : 0;
   const cur = p?.currency ?? "USD";
   const maxGb = Math.max(1000, base * 10);
 
@@ -68,11 +69,12 @@ export function PricingPlans() {
             </div>
           </div>
           <div className="plan-price">
-            {p ? money(monthly, cur) : "—"}<span>/month</span>
+            {p ? money(perUser, cur) : "—"}<span>/user/month</span>
           </div>
           <p className="plan-desc">
-            One flat price for <b>unlimited team members</b>. It only grows when
-            you need more storage — slide to see exactly what you&apos;d pay.
+            Simple <b>per-seat pricing</b> — pay only for who&apos;s on your team.
+            Every workspace includes <b>{base} GB</b> of storage; add more whenever
+            you need it.
           </p>
 
           <div className="plan-slider">
@@ -89,9 +91,10 @@ export function PricingPlans() {
               onChange={(e) => setGb(Number(e.target.value))}
             />
             <div className="plan-math">
-              <div><span>Base — unlimited members + {base} GB</span><b>{money(p?.base_price_cents ?? 0, cur)}</b></div>
-              <div><span>Extra storage — {extraGb} GB × {money(rate, cur)}</span><b>{money(extraGb * rate, cur)}</b></div>
-              <div className="plan-math-total"><span>Your price</span><b>{money(monthly, cur)}/mo</b></div>
+              <div><span>Per user / month</span><b>{money(perUser, cur)}</b></div>
+              <div><span>{base} GB storage — included</span><b>{money(0, cur)}</b></div>
+              <div><span>Extra storage — {extraGb} GB × {money(rate, cur)}</span><b>{money(addon, cur)}</b></div>
+              <div className="plan-math-total"><span>Per user</span><b>{money(perUser, cur)}/mo{addon > 0 ? " + storage" : ""}</b></div>
             </div>
           </div>
 
@@ -100,8 +103,8 @@ export function PricingPlans() {
       </div>
       </div>
       <p className="plans-note">
-        No per-seat pricing, ever — invite your whole team on either plan. Cloud storage can be
-        changed anytime from Billing.
+        Cloud is {money(perUser, cur)} per user / month with {base} GB storage included —
+        buy extra storage anytime from Billing. Self-hosted stays free forever.
       </p>
     </>
   );

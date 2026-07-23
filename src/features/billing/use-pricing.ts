@@ -8,7 +8,10 @@ import { useActiveTeam } from "@/features/teams/use-teams";
 import { useAuth } from "@/features/auth/use-auth";
 
 export interface PlatformPricing {
+  /** Optional flat platform fee (default 0 under per-user pricing). */
   base_price_cents: number;
+  /** Per-seat monthly price. */
+  price_per_user_cents: number;
   base_storage_gb: number;
   price_per_gb_cents: number;
   currency: string;
@@ -16,7 +19,8 @@ export interface PlatformPricing {
 }
 
 export const DEFAULT_PRICING: PlatformPricing = {
-  base_price_cents: 1000,
+  base_price_cents: 0,
+  price_per_user_cents: 100, // $1 / user / month
   base_storage_gb: 100,
   price_per_gb_cents: 20,
   currency: "USD",
@@ -28,10 +32,25 @@ function loose(s: ReturnType<typeof createClient>) {
   return s as unknown as SupabaseClient;
 }
 
-/** Effective monthly price in cents for a given storage requirement. */
-export function computeMonthlyCents(p: PlatformPricing, storageGb: number): number {
-  const extra = Math.max(0, storageGb - p.base_storage_gb);
-  return p.base_price_cents + extra * p.price_per_gb_cents;
+/** Cost in cents for storage above the included allotment. */
+export function storageOverageCents(p: PlatformPricing, storageGb: number): number {
+  return Math.max(0, storageGb - p.base_storage_gb) * p.price_per_gb_cents;
+}
+
+/**
+ * Effective monthly price in cents: an optional flat base + per-seat charge for
+ * every member + extra-storage overage.
+ */
+export function computeMonthlyCents(
+  p: PlatformPricing,
+  storageGb: number,
+  members: number,
+): number {
+  return (
+    p.base_price_cents +
+    Math.max(0, members) * p.price_per_user_cents +
+    storageOverageCents(p, storageGb)
+  );
 }
 
 export function money(cents: number, currency = "USD"): string {
@@ -71,6 +90,7 @@ export function usePlatformPricing() {
       if (error || !data) return DEFAULT_PRICING;
       return {
         base_price_cents: Number(data.base_price_cents),
+        price_per_user_cents: Number(data.price_per_user_cents ?? 100),
         base_storage_gb: Number(data.base_storage_gb),
         price_per_gb_cents: Number(data.price_per_gb_cents),
         currency: data.currency ?? "USD",
@@ -91,6 +111,7 @@ export function useUpdatePlatformPricing() {
         {
           id: true,
           base_price_cents: p.base_price_cents,
+          price_per_user_cents: p.price_per_user_cents,
           base_storage_gb: p.base_storage_gb,
           price_per_gb_cents: p.price_per_gb_cents,
           currency: p.currency,

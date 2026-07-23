@@ -33,6 +33,7 @@ export default function PricingAdminPage() {
   // Local edits (null until touched); show the saved config until then.
   const [edit, setEdit] = useState<PlatformPricing | null>(null);
   const [previewGb, setPreviewGb] = useState(250);
+  const [previewMembers, setPreviewMembers] = useState(5);
   const form = edit ?? saved;
 
   if (adminLoading) return <Skeleton active paragraph={{ rows: 6 }} />;
@@ -81,8 +82,20 @@ export default function PricingAdminPage() {
         {/* Config */}
         <Card title="Plan configuration">
           <div style={field}>
-            <span style={label}>Base price / month</span>
-            <span style={hint}>Includes unlimited team members + the base storage below.</span>
+            <span style={label}>Price per user / month</span>
+            <span style={hint}>Charged for every active seat on a team.</span>
+            <InputNumber
+              addonBefore={cur}
+              min={0}
+              step={0.5}
+              value={form.price_per_user_cents / 100}
+              onChange={(v) => patch({ price_per_user_cents: Math.round((v ?? 0) * 100) })}
+              style={{ width: 220 }}
+            />
+          </div>
+          <div style={field}>
+            <span style={label}>Flat platform fee / month</span>
+            <span style={hint}>Optional fixed fee on top of per-user pricing. Usually 0.</span>
             <InputNumber
               addonBefore={cur}
               min={0}
@@ -127,15 +140,26 @@ export default function PricingAdminPage() {
 
         {/* Live calculator */}
         <Card title="Price calculator">
-          <div style={field}>
-            <span style={label}>Storage a team needs</span>
-            <InputNumber
-              addonAfter="GB"
-              min={0}
-              value={previewGb}
-              onChange={(v) => setPreviewGb(v ?? 0)}
-              style={{ width: "100%" }}
-            />
+          <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ ...field, flex: 1 }}>
+              <span style={label}>Team members</span>
+              <InputNumber
+                min={1}
+                value={previewMembers}
+                onChange={(v) => setPreviewMembers(v ?? 1)}
+                style={{ width: "100%" }}
+              />
+            </div>
+            <div style={{ ...field, flex: 1 }}>
+              <span style={label}>Storage</span>
+              <InputNumber
+                addonAfter="GB"
+                min={0}
+                value={previewGb}
+                onChange={(v) => setPreviewGb(v ?? 0)}
+                style={{ width: "100%" }}
+              />
+            </div>
           </div>
           <div
             style={{
@@ -148,11 +172,12 @@ export default function PricingAdminPage() {
             }}
           >
             <div style={{ fontSize: 34, fontWeight: 800, color: token.colorText, letterSpacing: "-0.02em" }}>
-              {money(computeMonthlyCents(form, previewGb), cur)}
+              {money(computeMonthlyCents(form, previewGb, previewMembers), cur)}
               <span style={{ fontSize: 14, fontWeight: 500, color: token.colorTextTertiary }}> /mo</span>
             </div>
             <div style={hint}>
-              {money(form.base_price_cents, cur)} base
+              {previewMembers} × {money(form.price_per_user_cents, cur)}
+              {form.base_price_cents > 0 ? ` + ${money(form.base_price_cents, cur)} fee` : ""}
               {previewGb > form.base_storage_gb
                 ? ` + ${previewGb - form.base_storage_gb} GB × ${money(form.price_per_gb_cents, cur)}`
                 : ""}
