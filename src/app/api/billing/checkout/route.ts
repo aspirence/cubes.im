@@ -81,10 +81,13 @@ export async function POST(request: NextRequest) {
     cart.push({ product_id: storageProduct, quantity: extraGb });
   }
 
+  const trialDays = Number(process.env.DODO_TRIAL_DAYS ?? 7) || 0;
+
   try {
     const session = await dodoClient().checkoutSessions.create({
       product_cart: cart,
       customer: { email: user.email ?? "", name: (user.user_metadata?.name as string) ?? "" },
+      subscription_data: trialDays > 0 ? { trial_period_days: trialDays } : undefined,
       metadata: {
         team_id: teamId,
         kind: "team_subscription",

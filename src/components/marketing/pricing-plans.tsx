@@ -103,8 +103,8 @@ export function PricingPlans() {
       </div>
       </div>
       <p className="plans-note">
-        Cloud is {money(perUser, cur)} per user / month with {base} GB storage included —
-        buy extra storage anytime from Billing. Self-hosted stays free forever.
+        Every Cloud plan starts with a <b>7-day free trial</b> — {money(perUser, cur)} per user /
+        month after, {base} GB storage included, buy extra anytime. Self-hosted stays free forever.
       </p>
     </>
   );
