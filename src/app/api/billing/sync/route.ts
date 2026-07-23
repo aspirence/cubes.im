@@ -9,6 +9,7 @@ import {
   dodoClient,
   DODO_PRODUCTS,
   billableSeats,
+  storageAddonQty,
 } from "@/lib/dodo/client";
 
 /**
@@ -91,7 +92,8 @@ export async function POST(request: NextRequest) {
   const extraGb = Math.max(0, storageGb - baseGb);
 
   const storageAddon = DODO_PRODUCTS.storageAddon();
-  const addons = extraGb > 0 && storageAddon ? [{ addon_id: storageAddon, quantity: extraGb }] : [];
+  const addonQty = storageAddonQty(extraGb);
+  const addons = addonQty > 0 && storageAddon ? [{ addon_id: storageAddon, quantity: addonQty }] : [];
 
   try {
     await dodoClient().subscriptions.changePlan(sub.dodo_subscription_id, {

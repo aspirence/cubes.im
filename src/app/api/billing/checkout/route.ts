@@ -6,6 +6,7 @@ import {
   dodoClient,
   DODO_PRODUCTS,
   billableSeats,
+  storageAddonQty,
   appOrigin,
 } from "@/lib/dodo/client";
 
@@ -71,9 +72,11 @@ export async function POST(request: NextRequest) {
 
   // Storage rides along as an ADDON on the seat product (one subscription with a
   // main product + addon, so both quantities can be updated together later).
+  // Sold in blocks (Dodo min-price), so quantity = blocks that cover extraGb.
   const storageAddon = DODO_PRODUCTS.storageAddon();
+  const addonQty = storageAddonQty(extraGb);
   const addons =
-    extraGb > 0 && storageAddon ? [{ addon_id: storageAddon, quantity: extraGb }] : undefined;
+    addonQty > 0 && storageAddon ? [{ addon_id: storageAddon, quantity: addonQty }] : undefined;
 
   const trialDays = Number(process.env.DODO_TRIAL_DAYS ?? 7) || 0;
 
