@@ -36,6 +36,7 @@ interface DodoData {
   customer?: { customer_id?: string };
   customer_id?: string;
   next_billing_date?: string;
+  cancel_at_next_billing_date?: boolean;
   metadata?: Record<string, string>;
 }
 
@@ -98,6 +99,7 @@ export async function POST(request: NextRequest) {
         dodo_subscription_id: data.subscription_id ?? null,
         dodo_customer_id: data.customer?.customer_id ?? data.customer_id ?? null,
         current_period_end: data.next_billing_date ?? null,
+        cancel_at_period_end: Boolean(data.cancel_at_next_billing_date),
         updated_at: new Date().toISOString(),
       };
       if (status) patch.status = status;

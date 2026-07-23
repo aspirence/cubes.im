@@ -132,6 +132,7 @@ export interface TeamSubscription {
   status: string;
   dodo_customer_id: string | null;
   current_period_end: string | null;
+  cancel_at_period_end: boolean;
 }
 
 /** The active team's subscription: chosen storage + Dodo status/period. */
@@ -145,18 +146,89 @@ export function useTeamSubscription() {
     queryFn: async (): Promise<TeamSubscription> => {
       const { data, error } = await loose(supabase)
         .from("team_subscriptions")
-        .select("storage_gb, status, dodo_customer_id, current_period_end")
+        .select("storage_gb, status, dodo_customer_id, current_period_end, cancel_at_period_end")
         .eq("team_id", teamId as string)
         .maybeSingle();
       if (error || !data)
-        return { storage_gb: 100, status: "active", dodo_customer_id: null, current_period_end: null };
+        return {
+          storage_gb: 100,
+          status: "active",
+          dodo_customer_id: null,
+          current_period_end: null,
+          cancel_at_period_end: false,
+        };
       return {
         storage_gb: Number(data.storage_gb),
         status: data.status ?? "active",
         dodo_customer_id: data.dodo_customer_id ?? null,
         current_period_end: data.current_period_end ?? null,
+        cancel_at_period_end: Boolean(data.cancel_at_period_end),
       };
     },
+  });
+}
+
+export interface SubscriptionDetails {
+  configured: boolean;
+  subscribed: boolean;
+  status?: string;
+  amount_cents?: number;
+  currency?: string;
+  next_billing_date?: string;
+  previous_billing_date?: string;
+  created_at?: string;
+  trial_period_days?: number;
+  cancel_at_period_end?: boolean;
+  payments?: { id: string; created_at: string; amount: number; currency: string; status: string }[];
+}
+
+/** Live subscription + payment history from Dodo (via our server route). */
+export function useSubscriptionDetails(teamId: string | undefined) {
+  return useQuery({
+    queryKey: ["subscription-details", teamId],
+    enabled: Boolean(teamId),
+    queryFn: async (): Promise<SubscriptionDetails> => {
+      const res = await fetch(`/api/billing/subscription?teamId=${teamId}`);
+      if (!res.ok) return { configured: true, subscribed: false };
+      return res.json();
+    },
+  });
+}
+
+async function billingPost(path: string, body: unknown): Promise<Record<string, unknown>> {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error((json?.error as string) || "Request failed");
+  return json;
+}
+
+/** Refetches subscription state after cancel / resume / reconcile. */
+function useBillingRefresh(teamId: string | undefined) {
+  const queryClient = useQueryClient();
+  return () => {
+    queryClient.invalidateQueries({ queryKey: ["team-subscription", teamId] });
+    queryClient.invalidateQueries({ queryKey: ["subscription-details", teamId] });
+  };
+}
+
+export function useReconcileSubscription(teamId: string | undefined) {
+  const refresh = useBillingRefresh(teamId);
+  return useMutation({
+    mutationFn: (subscriptionId: string) =>
+      billingPost("/api/billing/reconcile", { teamId, subscriptionId }),
+    onSuccess: refresh,
+  });
+}
+
+export function useCancelSubscription(teamId: string | undefined) {
+  const refresh = useBillingRefresh(teamId);
+  return useMutation({
+    mutationFn: (resume: boolean) => billingPost("/api/billing/cancel", { teamId, resume }),
+    onSuccess: refresh,
   });
 }
 
