@@ -50,15 +50,36 @@ function PayInner() {
     setState("paying");
     setErrorMsg("");
     try {
-      const res = await fetch("/api/early-access/pay", {
+      // Try the real Dodo checkout first; redirect there when it's configured.
+      const res = await fetch("/api/early-access/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: reqId }),
       });
       const data = await res.json();
-      if (!res.ok) {
+      if (res.ok && data.checkout_url) {
+        window.location.href = data.checkout_url;
+        return;
+      }
+      if (res.ok && data.alreadyPaid) {
+        setState("paid");
+        return;
+      }
+      if (data.error && data.error !== "not_configured") {
         setState("ready");
-        setErrorMsg(data.error || "Payment failed — please try again.");
+        setErrorMsg(data.error);
+        return;
+      }
+      // Payments not configured yet → built-in test checkout (no real charge).
+      const testRes = await fetch("/api/early-access/pay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: reqId }),
+      });
+      const testData = await testRes.json();
+      if (!testRes.ok) {
+        setState("ready");
+        setErrorMsg(testData.error || "Payment failed — please try again.");
         return;
       }
       setState("paid");

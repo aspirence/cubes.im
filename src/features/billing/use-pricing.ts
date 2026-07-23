@@ -127,7 +127,14 @@ export function useUpdatePlatformPricing() {
   });
 }
 
-/** The active team's chosen storage (drives its effective price). */
+export interface TeamSubscription {
+  storage_gb: number;
+  status: string;
+  dodo_customer_id: string | null;
+  current_period_end: string | null;
+}
+
+/** The active team's subscription: chosen storage + Dodo status/period. */
 export function useTeamSubscription() {
   const supabase = useMemo(() => createClient(), []);
   const { data: team } = useActiveTeam();
@@ -135,14 +142,20 @@ export function useTeamSubscription() {
   return useQuery({
     queryKey: ["team-subscription", teamId],
     enabled: Boolean(teamId),
-    queryFn: async (): Promise<{ storage_gb: number; status: string }> => {
+    queryFn: async (): Promise<TeamSubscription> => {
       const { data, error } = await loose(supabase)
         .from("team_subscriptions")
-        .select("storage_gb, status")
+        .select("storage_gb, status, dodo_customer_id, current_period_end")
         .eq("team_id", teamId as string)
         .maybeSingle();
-      if (error || !data) return { storage_gb: 100, status: "active" };
-      return { storage_gb: Number(data.storage_gb), status: data.status ?? "active" };
+      if (error || !data)
+        return { storage_gb: 100, status: "active", dodo_customer_id: null, current_period_end: null };
+      return {
+        storage_gb: Number(data.storage_gb),
+        status: data.status ?? "active",
+        dodo_customer_id: data.dodo_customer_id ?? null,
+        current_period_end: data.current_period_end ?? null,
+      };
     },
   });
 }
