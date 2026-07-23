@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { App, Button, Card, Slider, Skeleton, Tag, Typography, theme } from "antd";
+import { App, Button, Card, InputNumber, Slider, Skeleton, Tag, Typography, theme } from "antd";
 import {
   usePlatformPricing,
   useTeamSubscription,
@@ -85,7 +85,10 @@ export default function AdminBillingPage() {
   }
 
   const cur = pricing.currency;
-  const storage = gbEdit ?? sub?.storage_gb ?? pricing.base_storage_gb;
+  // Storage can never go below the included allotment — floor every source
+  // (slider, manual box, or stored value) at base_storage_gb.
+  const rawGb = gbEdit ?? sub?.storage_gb ?? pricing.base_storage_gb;
+  const storage = Math.max(pricing.base_storage_gb, Math.round(rawGb || pricing.base_storage_gb));
   const seats = Math.max(1, (members ?? []).filter((m) => m.user && m.member_type !== "guest").length);
   const monthly = computeMonthlyCents(pricing, storage, seats);
   const seatsCents = seats * pricing.price_per_user_cents;
@@ -261,24 +264,18 @@ export default function AdminBillingPage() {
             Set how much storage your team needs. {pricing.base_storage_gb} GB is included; extra is{" "}
             {money(pricing.price_per_gb_cents, cur)}/GB.
           </Text>
-          <div style={{ marginTop: 16, display: "flex", gap: 16, alignItems: "center" }}>
+          <div style={{ marginTop: 16, display: "flex", gap: 12, alignItems: "center" }}>
             <Slider min={pricing.base_storage_gb} max={maxGb} step={10} value={storage} onChange={(v) => setGbEdit(v)} style={{ flex: 1 }} />
-            <div
-              style={{
-                minWidth: 96,
-                textAlign: "center",
-                padding: "6px 12px",
-                borderRadius: 10,
-                fontWeight: 800,
-                fontSize: 15,
-                color: token.colorText,
-                background: token.colorFillQuaternary,
-                border: `1px solid ${token.colorBorderSecondary}`,
-                whiteSpace: "nowrap",
-              }}
-            >
-              {storage} GB
-            </div>
+            <InputNumber
+              addonAfter="GB"
+              min={pricing.base_storage_gb}
+              step={10}
+              value={rawGb}
+              onChange={(v) => setGbEdit(v ?? pricing.base_storage_gb)}
+              // Snap anything below the floor back up when the field loses focus.
+              onBlur={() => setGbEdit(storage)}
+              style={{ width: 140 }}
+            />
           </div>
 
           <div
