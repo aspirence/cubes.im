@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { App, Button, Card, InputNumber, Slider, Skeleton, Tag, Typography, theme } from "antd";
+import { App, Button, Card, Slider, Skeleton, Tag, Typography, theme } from "antd";
 import {
   usePlatformPricing,
   useTeamSubscription,
@@ -261,9 +261,24 @@ export default function AdminBillingPage() {
             Set how much storage your team needs. {pricing.base_storage_gb} GB is included; extra is{" "}
             {money(pricing.price_per_gb_cents, cur)}/GB.
           </Text>
-          <div style={{ marginTop: 16, display: "flex", gap: 10, alignItems: "center" }}>
+          <div style={{ marginTop: 16, display: "flex", gap: 16, alignItems: "center" }}>
             <Slider min={pricing.base_storage_gb} max={maxGb} step={10} value={storage} onChange={(v) => setGbEdit(v)} style={{ flex: 1 }} />
-            <InputNumber addonAfter="GB" min={0} value={storage} onChange={(v) => setGbEdit(v ?? 0)} style={{ width: 130 }} />
+            <div
+              style={{
+                minWidth: 96,
+                textAlign: "center",
+                padding: "6px 12px",
+                borderRadius: 10,
+                fontWeight: 800,
+                fontSize: 15,
+                color: token.colorText,
+                background: token.colorFillQuaternary,
+                border: `1px solid ${token.colorBorderSecondary}`,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {storage} GB
+            </div>
           </div>
 
           <div
