@@ -5,6 +5,7 @@ import {
   dodoConfigured,
   dodoClient,
   DODO_PRODUCTS,
+  billableSeats,
   appOrigin,
 } from "@/lib/dodo/client";
 
@@ -55,12 +56,7 @@ export async function POST(request: NextRequest) {
     .from("team_members")
     .select("user_id, active, member_type")
     .eq("team_id", teamId);
-  const seats = Math.max(
-    1,
-    (members ?? []).filter(
-      (m) => m.user_id && m.active !== false && m.member_type !== "guest",
-    ).length,
-  );
+  const seats = billableSeats(members ?? []);
 
   // Extra storage above the included allotment (platform_pricing is newer than
   // the generated types).
@@ -73,19 +69,17 @@ export async function POST(request: NextRequest) {
   const storageGb = Math.max(baseGb, Math.round(body.storageGb ?? baseGb));
   const extraGb = Math.max(0, storageGb - baseGb);
 
-  const cart: { product_id: string; quantity: number }[] = [
-    { product_id: seatProduct, quantity: seats },
-  ];
-  const storageProduct = DODO_PRODUCTS.storage();
-  if (extraGb > 0 && storageProduct) {
-    cart.push({ product_id: storageProduct, quantity: extraGb });
-  }
+  // Storage rides along as an ADDON on the seat product (one subscription with a
+  // main product + addon, so both quantities can be updated together later).
+  const storageAddon = DODO_PRODUCTS.storageAddon();
+  const addons =
+    extraGb > 0 && storageAddon ? [{ addon_id: storageAddon, quantity: extraGb }] : undefined;
 
   const trialDays = Number(process.env.DODO_TRIAL_DAYS ?? 7) || 0;
 
   try {
     const session = await dodoClient().checkoutSessions.create({
-      product_cart: cart,
+      product_cart: [{ product_id: seatProduct, quantity: seats, addons }],
       customer: { email: user.email ?? "", name: (user.user_metadata?.name as string) ?? "" },
       subscription_data: trialDays > 0 ? { trial_period_days: trialDays } : undefined,
       metadata: {

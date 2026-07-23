@@ -60,12 +60,30 @@ export default function AdminBillingPage() {
   const teamId = activeTeam?.id;
   const hasSubscription = Boolean(sub?.dodo_customer_id);
 
-  // Start a Dodo checkout for the chosen plan; if payments aren't configured yet
-  // fall back to saving the storage choice (illustrative, no charge).
+  // New team -> Dodo checkout. Existing subscription -> update quantities in
+  // place (seats + storage) with proration. If payments aren't configured yet,
+  // just save the storage choice (illustrative, no charge).
   const startCheckout = async () => {
     if (!teamId) return;
     setCheckingOut(true);
     try {
+      if (hasSubscription) {
+        // Persist the chosen storage first, then re-sync the subscription.
+        await update.mutateAsync(storage);
+        const res = await fetch("/api/billing/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ teamId }),
+        });
+        const json = await res.json();
+        if (res.ok && json.ok) {
+          message.success("Plan updated — billing adjusted for your usage.");
+          return;
+        }
+        message.error(json.error || "Couldn't update the plan.");
+        return;
+      }
+
       const res = await fetch("/api/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
