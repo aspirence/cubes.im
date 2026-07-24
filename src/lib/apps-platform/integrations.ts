@@ -136,8 +136,26 @@ export const INTEGRATIONS: Integration[] = [
   I("webhooks", "Webhooks", "automation", "Wh", "#2b2b31", "Send events to any URL, or receive them to create and update tasks.", { connectionProvider: "webhook" }),
 ];
 
-export const FEATURED_INTEGRATIONS = INTEGRATIONS.filter((i) => i.featured);
+/**
+ * An integration is "connectable" when it's backed by a real org connector
+ * (connectionProvider) or has a first-party setup route (manageRoute). The App
+ * Center only surfaces connectable integrations — the rest are directory-only
+ * placeholders that would just show "Request access", so they stay hidden until
+ * a real connect flow exists (add connectionProvider/manageRoute to reveal one).
+ */
+export const isConnectable = (i: Integration): boolean =>
+  Boolean(i.connectionProvider || i.manageRoute);
+
+/** The integrations actually shown in the App Center. */
+export const CONNECTABLE_INTEGRATIONS = INTEGRATIONS.filter(isConnectable);
+
+export const FEATURED_INTEGRATIONS = CONNECTABLE_INTEGRATIONS.filter((i) => i.featured);
+
+/** Categories that have at least one connectable integration. */
+export const CONNECTABLE_CATEGORIES = INTEGRATION_CATEGORIES.filter((c) =>
+  CONNECTABLE_INTEGRATIONS.some((i) => i.category === c.key),
+);
 
 export function integrationsByCategory(catKey: string): Integration[] {
-  return INTEGRATIONS.filter((i) => i.category === catKey);
+  return CONNECTABLE_INTEGRATIONS.filter((i) => i.category === catKey);
 }

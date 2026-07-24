@@ -25,8 +25,9 @@ import {
 import { useAppConnections, useIsOrgAdmin } from "@/features/apps/use-apps";
 import { APP_CATALOG, type AppDescriptor } from "@/lib/apps-platform/catalog";
 import {
-  INTEGRATIONS,
+  CONNECTABLE_INTEGRATIONS,
   INTEGRATION_CATEGORIES,
+  CONNECTABLE_CATEGORIES,
   FEATURED_INTEGRATIONS,
   integrationsByCategory,
   type Integration,
@@ -131,7 +132,7 @@ function AppCenterInner() {
   const searchResults: CardItem[] = useMemo(() => {
     if (!q) return [];
     const hits: CardItem[] = [];
-    for (const it of INTEGRATIONS) {
+    for (const it of CONNECTABLE_INTEGRATIONS) {
       if (it.name.toLowerCase().includes(q) || it.description.toLowerCase().includes(q)) {
         hits.push({ kind: "integration", it });
       }
@@ -275,7 +276,7 @@ function AppCenterInner() {
       <>
         {renderSection("featured", "Featured", featuredCards, "Our favorite and most popular integrations.")}
         {renderSection("cubes", "Cubes Apps", cubesCards)}
-        {INTEGRATION_CATEGORIES.map((c) =>
+        {CONNECTABLE_CATEGORIES.map((c) =>
           renderSection(
             c.key,
             c.label,

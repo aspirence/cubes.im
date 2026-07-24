@@ -3,7 +3,7 @@
 import { Suspense } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { theme } from "antd";
-import { INTEGRATION_CATEGORIES } from "@/lib/apps-platform/integrations";
+import { CONNECTABLE_CATEGORIES } from "@/lib/apps-platform/integrations";
 
 function MIcon({ name, size = 18, color }: { name: string; size?: number; color?: string }) {
   return (
@@ -122,7 +122,7 @@ function AppCenterSidebarInner() {
         </div>
         {RAIL_TOP.map((item) => renderRow(item))}
         <div style={{ height: 1, background: token.colorSplit, margin: "8px 6px" }} />
-        {INTEGRATION_CATEGORIES.map((c) =>
+        {CONNECTABLE_CATEGORIES.map((c) =>
           renderRow({ key: c.key, label: c.label, icon: c.icon }),
         )}
       </nav>
