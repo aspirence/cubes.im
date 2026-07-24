@@ -5,6 +5,7 @@ import {
   App as AntdApp,
   Button,
   Dropdown,
+  Segmented,
   Switch,
   Typography,
   theme,
@@ -41,6 +42,13 @@ import { TaskDrawer } from "@/app/(app)/projects/[id]/_components/task-drawer";
 import { useAnalyticsCapabilities } from "@/features/home/analytics-access";
 import type { CardPreset } from "@/features/home/card-presets";
 import { distinctFacets } from "@/features/home/dashboard-engine";
+import {
+  RANGE_OPTIONS,
+  rangeBounds,
+  taskInRange,
+  rangeStats,
+  type RangeKey,
+} from "@/features/home/date-range";
 import {
   type DashboardCard,
   defaultDashboardCards,
@@ -288,6 +296,27 @@ function SortableCard({
 
 type DashboardCardProps = Parameters<typeof DashboardCardView>[0];
 
+/** One compact metric in the period-summary strip beside the range filter. */
+function PeriodStat({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: number | string;
+  tone?: "default" | "success" | "error";
+}) {
+  const { token } = theme.useToken();
+  const color =
+    tone === "success" ? token.colorSuccess : tone === "error" ? token.colorError : token.colorText;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.15, minWidth: 46 }}>
+      <span style={{ fontSize: 16, fontWeight: 700, color }}>{value}</span>
+      <span style={{ fontSize: 11, fontWeight: 500, color: token.colorTextTertiary }}>{label}</span>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const { token } = theme.useToken();
   const { message } = AntdApp.useApp();
@@ -297,6 +326,15 @@ export default function HomePage() {
   const { data: members } = useTeamMembers();
   const { data: teamTasks, isLoading: tasksLoading } = useAllTeamTasks();
   const tasks = useMemo(() => teamTasks ?? [], [teamTasks]);
+
+  // Global time-range lens: narrows the task universe every card computes from.
+  const [range, setRange] = useState<RangeKey>("all");
+  const bounds = useMemo(() => rangeBounds(range), [range]);
+  const scopedTasks = useMemo(
+    () => (bounds ? tasks.filter((t) => taskInRange(t, bounds)) : tasks),
+    [tasks, bounds],
+  );
+  const stats = useMemo(() => rangeStats(scopedTasks, bounds), [scopedTasks, bounds]);
 
   const { data: cardsData } = useDashboardCards();
   const cards = useMemo(() => cardsData ?? defaultDashboardCards(), [cardsData]);
@@ -415,6 +453,38 @@ export default function HomePage() {
       {/* First-run checklist — only while the workspace is still fresh. */}
       <GettingStarted tasksCount={tasks.length} tasksLoading={tasksLoading} />
 
+      {/* Time-range filter + live period summary. The range narrows the task
+          universe every card computes from. */}
+      <div
+        className="wl-dash-filter"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 16,
+          flexWrap: "wrap",
+          padding: "10px 14px",
+          borderRadius: 12,
+          border: `1px solid ${token.colorBorderSecondary}`,
+          background: token.colorBgContainer,
+        }}
+      >
+        <div className="wl-range-scroll" style={{ overflowX: "auto", maxWidth: "100%" }}>
+          <Segmented
+            value={range}
+            onChange={(v) => setRange(v as RangeKey)}
+            options={RANGE_OPTIONS.map((o) => ({ label: o.label, value: o.key }))}
+          />
+        </div>
+        <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center" }}>
+          <PeriodStat label="In view" value={stats.total} />
+          <PeriodStat label={range === "all" ? "Total" : "Created"} value={stats.created} />
+          <PeriodStat label="Completed" value={stats.completed} tone="success" />
+          <PeriodStat label="Overdue" value={stats.overdue} tone={stats.overdue > 0 ? "error" : "default"} />
+          <PeriodStat label="Done" value={`${stats.donePct}%`} />
+        </div>
+      </div>
+
       {/* Cards grid */}
       {cards.length === 0 ? (
         <div style={{ textAlign: "center", padding: "48px 24px" }}>
@@ -469,7 +539,7 @@ export default function HomePage() {
                   key={card.id}
                   card={card}
                   editMode={editMode}
-                  tasks={tasks}
+                  tasks={scopedTasks}
                   tasksLoading={tasksLoading}
                   myTeamMemberId={myTeamMemberId}
                   onEdit={() => {
