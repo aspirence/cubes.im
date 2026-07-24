@@ -660,24 +660,39 @@ function TaskDrawerContent({
     setAiSelected(new Set());
   }
 
-  const memberOptions = useMemo(
-    () =>
-      (membersRaw ?? []).map((m) => {
-        const user = m.team_member?.user;
-        const name = user?.name ?? user?.email ?? "Unknown";
-        // Flag members with approved leave inside the task's window so the
-        // assign dropdown warns before the pick. Labels stay strings so
-        // `optionFilterProp="label"` search keeps working.
-        const onLeave = availability.leaveByMember.has(m.team_member_id);
-        return {
-          value: m.team_member_id,
-          label: onLeave ? `${name} · On leave` : name,
-          email: user?.email ?? null,
-          avatarUrl: user?.avatar_url ?? null,
-        };
-      }),
-    [membersRaw, availability],
-  );
+  // Who can be assigned. A `private` project is limited to its explicit members;
+  // `team` and `public` projects are accessible to the whole team, so everyone
+  // (bar external guests) is assignable. We union in any explicit project member
+  // too, so a guest client already added to a private→public project isn't lost.
+  const wholeTeam = (projectRow?.visibility ?? "team") !== "private";
+  const memberOptions = useMemo(() => {
+    const byId = new Map<string, { team_member_id: string; user: { name?: string; email?: string; avatar_url?: string | null } | null }>();
+    if (wholeTeam) {
+      for (const tm of teamMembersRaw ?? []) {
+        if (tm.user && tm.member_type !== "guest") {
+          byId.set(tm.id, { team_member_id: tm.id, user: tm.user });
+        }
+      }
+    }
+    for (const m of membersRaw ?? []) {
+      if (!byId.has(m.team_member_id)) {
+        byId.set(m.team_member_id, { team_member_id: m.team_member_id, user: m.team_member?.user ?? null });
+      }
+    }
+    return [...byId.values()].map((m) => {
+      const name = m.user?.name ?? m.user?.email ?? "Unknown";
+      // Flag members with approved leave inside the task's window so the
+      // assign dropdown warns before the pick. Labels stay strings so
+      // `optionFilterProp="label"` search keeps working.
+      const onLeave = availability.leaveByMember.has(m.team_member_id);
+      return {
+        value: m.team_member_id,
+        label: onLeave ? `${name} · On leave` : name,
+        email: m.user?.email ?? null,
+        avatarUrl: m.user?.avatar_url ?? null,
+      };
+    });
+  }, [wholeTeam, teamMembersRaw, membersRaw, availability]);
 
   // @mention options are keyed by *user id* (task_comments.mentions is a uuid[]
   // of users), so invited-but-not-joined membership rows (no user) are skipped.
