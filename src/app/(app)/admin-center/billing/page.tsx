@@ -58,7 +58,7 @@ export default function AdminBillingPage() {
   const update = useUpdateTeamStorage();
 
   const teamId = activeTeam?.id;
-  const { data: details } = useSubscriptionDetails(teamId);
+  const { data: details, isError: detailsError, refetch: refreshDetails } = useSubscriptionDetails(teamId);
   const reconcile = useReconcileSubscription(teamId);
   const cancelSub = useCancelSubscription(teamId);
 
@@ -95,25 +95,38 @@ export default function AdminBillingPage() {
   const extraGb = Math.max(0, storage - pricing.base_storage_gb);
   const maxGb = Math.max(1000, pricing.base_storage_gb * 10);
 
-  const subscribed = details?.subscribed ?? Boolean(sub?.dodo_customer_id);
+  // Fail-SAFE subscribed flag: only treat as NOT subscribed when Dodo positively
+  // says so. If we couldn't reach Dodo (undefined/error) but our DB has a Dodo
+  // customer, assume subscribed — never expose the "start trial" CTA to a payer.
+  const hasCustomer = Boolean(sub?.dodo_customer_id);
+  const detailsUnknown = details == null || detailsError;
+  const subscribed = details?.subscribed === true || (detailsUnknown && hasCustomer);
+  // We can't confirm live state (Dodo unreachable) yet the team is a customer.
+  const stateUnknown = detailsUnknown && hasCustomer;
+
   const inTrial =
     subscribed &&
     Boolean(details?.trial_period_days) &&
     (details?.payments ?? []).length === 0 &&
     !details?.previous_billing_date;
   const chip = statusChip(details, sub?.status ?? "active", inTrial);
-  const periodEnd = details?.next_billing_date ?? sub?.current_period_end ?? null;
   const canceling = Boolean(details?.cancel_at_period_end || sub?.cancel_at_period_end);
-  const dateLabel = inTrial
-    ? `Free trial ends ${fmtDate(periodEnd)}`
-    : canceling
-      ? `Access until ${fmtDate(periodEnd)}`
-      : periodEnd
-        ? `Renews ${fmtDate(periodEnd)}`
-        : "";
+  const dodoStatus = details?.status ?? sub?.status ?? "active";
+  const isDead = ["cancelled", "canceled", "failed", "expired"].includes(dodoStatus) && !canceling;
+  const pastDue = ["on_hold", "paused"].includes(dodoStatus);
+  // Prefer Dodo's live next-billing date; the stale DB mirror only backs a live sub.
+  const periodEnd = details?.next_billing_date ?? (isDead ? null : sub?.current_period_end) ?? null;
+  const periodStart = details?.previous_billing_date ?? null;
   // The real recurring amount from Dodo once subscribed; the estimate before.
   const amountCents = subscribed && details?.amount_cents != null ? details.amount_cents : monthly;
   const amountCur = subscribed && details?.currency ? details.currency : cur;
+  const taxNote = subscribed && details?.tax_inclusive === false ? " (excl. tax)" : "";
+  // Prefer the Dodo-mirrored billed seats; flag when the live team count differs.
+  const billedSeats = sub?.seats ?? seats;
+  const seatsMismatch = sub?.seats != null && sub.seats !== seats;
+  const savedStorage = Math.max(pricing.base_storage_gb, sub?.storage_gb ?? pricing.base_storage_gb);
+  const planLabel = subscribed ? "Cubes · Cloud" : "Cubes · Free";
+  const payments = details?.payments ?? [];
 
   const startCheckout = async () => {
     if (!teamId) return;
@@ -135,6 +148,13 @@ export default function AdminBillingPage() {
         message.error(json.error || "Couldn't update the plan.");
         return;
       }
+      // Guard against double-subscribing: if this team already has a Dodo
+      // customer, never start a fresh checkout — send them to manage billing.
+      if (hasCustomer) {
+        message.info("You already have a subscription — opening billing management.");
+        await openPortal();
+        return;
+      }
       const res = await fetch("/api/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -142,7 +162,7 @@ export default function AdminBillingPage() {
       });
       const json = await res.json();
       if (res.ok && json.checkout_url) {
-        window.location.href = json.checkout_url;
+        window.location.assign(json.checkout_url);
         return;
       }
       if (json.error === "not_configured") {
@@ -167,7 +187,7 @@ export default function AdminBillingPage() {
         body: JSON.stringify({ teamId }),
       });
       const json = await res.json();
-      if (res.ok && json.url) window.location.href = json.url;
+      if (res.ok && json.url) window.location.assign(json.url);
       else message.error(json.error || "Couldn't open the billing portal.");
     } catch {
       message.error("Couldn't open the billing portal.");
@@ -212,23 +232,103 @@ export default function AdminBillingPage() {
         </Text>
       </div>
 
+      {/* Past-due: needs an action, not just a chip. */}
+      {pastDue ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "12px 16px",
+            borderRadius: 12,
+            background: token.colorErrorBg,
+            border: `1px solid ${token.colorErrorBorder}`,
+          }}
+        >
+          <MIcon name="error" size={20} color={token.colorError} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, color: token.colorText }}>Payment past due</div>
+            <div style={{ fontSize: 12.5, color: token.colorTextSecondary }}>
+              Your last charge didn&apos;t go through. Update your payment method to keep your subscription active.
+            </div>
+          </div>
+          <Button danger type="primary" onClick={openPortal} icon={<MIcon name="credit_card" size={16} />}>
+            Update payment method
+          </Button>
+        </div>
+      ) : null}
+
+      {/* Couldn't confirm live state — keep the payer's controls, warn softly. */}
+      {stateUnknown ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "10px 14px",
+            borderRadius: 12,
+            background: token.colorWarningBg,
+            border: `1px solid ${token.colorWarningBorder}`,
+            fontSize: 12.5,
+            color: token.colorTextSecondary,
+          }}
+        >
+          <MIcon name="sync_problem" size={18} color={token.colorWarning} />
+          Couldn&apos;t reach the billing provider just now — showing your last known state. Refresh in a moment.
+        </div>
+      ) : null}
+
       <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: 16 }} className="bl-grid">
-        {/* Plan / current subscription */}
+        {/* Current subscription — a labeled summary of the FACTS. */}
         <Card>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-            <span style={{ fontSize: 18, fontWeight: 800, color: token.colorText }}>Cubes</span>
+            <span style={{ fontSize: 18, fontWeight: 800, color: token.colorText }}>{planLabel}</span>
             <Tag color={chip.color} style={{ margin: 0 }}>{chip.label}</Tag>
           </div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 2 }}>
             <span style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.02em" }}>
               {money(subscribed ? amountCents : pricing.price_per_user_cents, amountCur)}
             </span>
-            <span style={{ color: token.colorTextTertiary }}>{subscribed ? "/ month" : "/ user / month"}</span>
+            <span style={{ color: token.colorTextTertiary }}>
+              {subscribed ? `/ month${taxNote}` : "/ user / month"}
+            </span>
           </div>
-          <Text type="secondary" style={{ fontSize: 12.5 }}>
-            {seats} {seats === 1 ? "member" : "members"} · {storage} GB
-            {dateLabel ? ` · ${dateLabel}` : ""}
-          </Text>
+
+          {/* Fact grid — what you're actually billed for. */}
+          <div style={{ marginTop: 14, display: "grid", gap: 2 }}>
+            <FactRow label="Status" token={token}>
+              <Tag color={chip.color} style={{ margin: 0 }}>{chip.label}</Tag>
+            </FactRow>
+            <FactRow label="Billed seats" token={token}>
+              <span>
+                {billedSeats} {billedSeats === 1 ? "seat" : "seats"}
+                {seatsMismatch ? (
+                  <Text type="warning" style={{ fontSize: 11.5, marginLeft: 6 }}>
+                    · team now has {seats} (syncs on next change)
+                  </Text>
+                ) : null}
+              </span>
+            </FactRow>
+            <FactRow label="Storage" token={token}>{savedStorage} GB</FactRow>
+            {subscribed && periodStart && periodEnd ? (
+              <FactRow label="Current period" token={token}>
+                {fmtDate(periodStart)} – {fmtDate(periodEnd)}
+              </FactRow>
+            ) : null}
+            {subscribed && !isDead ? (
+              <FactRow label={canceling ? "Access until" : inTrial ? "Trial ends" : "Next charge"} token={token}>
+                {canceling || inTrial ? (
+                  fmtDate(periodEnd)
+                ) : periodEnd ? (
+                  <span>
+                    <b>{money(amountCents, amountCur)}</b> on {fmtDate(periodEnd)}
+                  </span>
+                ) : (
+                  "—"
+                )}
+              </FactRow>
+            ) : null}
+          </div>
 
           {subscribed ? (
             <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
@@ -238,6 +338,10 @@ export default function AdminBillingPage() {
               {canceling ? (
                 <Button type="primary" loading={cancelSub.isPending} onClick={doResume} icon={<MIcon name="autorenew" size={16} />}>
                   Resume subscription
+                </Button>
+              ) : isDead ? (
+                <Button type="primary" onClick={openPortal} icon={<MIcon name="autorenew" size={16} />}>
+                  Reactivate
                 </Button>
               ) : (
                 <Button danger loading={cancelSub.isPending} onClick={doCancel}>
@@ -258,8 +362,8 @@ export default function AdminBillingPage() {
           </div>
         </Card>
 
-        {/* Storage → price */}
-        <Card title="Storage">
+        {/* Change plan — storage → estimated price (NOT the billed amount) */}
+        <Card title={subscribed ? "Change plan" : "Choose your plan"}>
           <Text type="secondary" style={{ fontSize: 12.5 }}>
             Set how much storage your team needs. {pricing.base_storage_gb} GB is included; extra is{" "}
             {money(pricing.price_per_gb_cents, cur)}/GB.
@@ -298,11 +402,20 @@ export default function AdminBillingPage() {
             />
             <div style={{ borderTop: `1px solid ${token.colorBorderSecondary}`, margin: "10px 0" }} />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <span style={{ fontWeight: 700, color: token.colorText }}>Total</span>
+              <span style={{ fontWeight: 700, color: token.colorText }}>
+                {subscribed ? "Estimated total" : "Your monthly total"}
+              </span>
               <span style={{ fontSize: 22, fontWeight: 800, color: token.colorText }}>
                 {money(monthly, cur)}<span style={{ fontSize: 13, fontWeight: 500, color: token.colorTextTertiary }}> /mo</span>
               </span>
             </div>
+            {subscribed ? (
+              <Text type="secondary" style={{ fontSize: 11.5, display: "block", marginTop: 6 }}>
+                Estimate for the selected options. Your actual charge is{" "}
+                <b style={{ color: token.colorText }}>{money(amountCents, amountCur)}{taxNote}</b> — taxes and
+                proration are settled by the payment provider.
+              </Text>
+            ) : null}
           </div>
 
           <Button type="primary" block style={{ marginTop: 14 }} loading={checkingOut || update.isPending} onClick={startCheckout} icon={<MIcon name="credit_card" size={16} />}>
@@ -316,35 +429,94 @@ export default function AdminBillingPage() {
         </Card>
       </div>
 
-      {/* Payment history */}
-      {subscribed && (details?.payments ?? []).length > 0 ? (
-        <Card title="Payment history">
-          <div style={{ display: "grid", gap: 2 }}>
-            {(details?.payments ?? []).map((p) => (
-              <div
-                key={p.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  padding: "10px 4px",
-                  borderTop: `1px solid ${token.colorSplit}`,
-                  fontSize: 13.5,
-                }}
-              >
-                <MIcon
-                  name={p.status === "succeeded" ? "check_circle" : p.status === "failed" ? "cancel" : "schedule"}
-                  size={18}
-                  color={p.status === "succeeded" ? token.colorSuccess : p.status === "failed" ? token.colorError : token.colorTextTertiary}
-                />
-                <span style={{ flex: 1, color: token.colorText }}>{fmtDate(p.created_at)}</span>
-                <span style={{ color: token.colorTextTertiary, textTransform: "capitalize" }}>{p.status}</span>
-                <span style={{ fontWeight: 700, color: token.colorText, minWidth: 72, textAlign: "right" }}>
-                  {money(p.amount, p.currency)}
-                </span>
+      {/* Invoices & receipts — full transparency for the buyer. */}
+      {subscribed ? (
+        <Card
+          title={
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <MIcon name="receipt_long" size={18} /> Invoices & receipts
+            </span>
+          }
+          extra={
+            <Button size="small" onClick={openPortal} icon={<MIcon name="open_in_new" size={14} />}>
+              Billing portal
+            </Button>
+          }
+        >
+          {details?.payments_error ? (
+            <div style={{ padding: "20px 8px", textAlign: "center", color: token.colorTextSecondary }}>
+              <MIcon name="cloud_off" size={22} color={token.colorTextQuaternary} />
+              <div style={{ fontSize: 13, marginTop: 6 }}>Couldn&apos;t load your invoices right now.</div>
+              <Button size="small" style={{ marginTop: 10 }} onClick={() => refreshDetails()}>
+                Retry
+              </Button>
+            </div>
+          ) : payments.length === 0 ? (
+            <div style={{ padding: "24px 8px", textAlign: "center" }}>
+              <MIcon name="request_quote" size={26} color={token.colorTextQuaternary} />
+              <div style={{ fontSize: 13.5, color: token.colorText, fontWeight: 600, marginTop: 6 }}>
+                No invoices yet
               </div>
-            ))}
-          </div>
+              <Text type="secondary" style={{ fontSize: 12.5 }}>
+                Your first invoice appears here after your trial converts to a paid charge.
+              </Text>
+            </div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <div style={{ minWidth: 560 }}>
+                {/* header */}
+                <div className="bl-inv-row bl-inv-head" style={{ color: token.colorTextTertiary, borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+                  <span>Date</span>
+                  <span>Invoice</span>
+                  <span>Status</span>
+                  <span style={{ textAlign: "right" }}>Amount</span>
+                  <span style={{ textAlign: "right" }}>Receipt</span>
+                </div>
+                {payments.map((p) => {
+                  const ok = p.status === "succeeded";
+                  const failed = p.status === "failed";
+                  const href = p.invoice_url
+                    ? p.invoice_url
+                    : `/api/billing/invoice?teamId=${teamId}&paymentId=${encodeURIComponent(p.id)}`;
+                  return (
+                    <div
+                      key={p.id}
+                      className="bl-inv-row"
+                      style={{ borderBottom: `1px solid ${token.colorSplit}`, fontSize: 13.5 }}
+                    >
+                      <span style={{ color: token.colorText }}>{fmtDate(p.created_at)}</span>
+                      <span style={{ color: token.colorTextSecondary, fontFamily: "var(--font-geist-mono), monospace", fontSize: 12 }}>
+                        {p.invoice_id || "—"}
+                      </span>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                        <MIcon
+                          name={ok ? "check_circle" : failed ? "cancel" : "schedule"}
+                          size={16}
+                          color={ok ? token.colorSuccess : failed ? token.colorError : token.colorTextTertiary}
+                        />
+                        <span style={{ color: token.colorTextSecondary, textTransform: "capitalize" }}>{p.status || "—"}</span>
+                      </span>
+                      <span style={{ textAlign: "right", fontWeight: 700, color: token.colorText }}>
+                        {money(p.amount, p.currency)}
+                      </span>
+                      <span style={{ textAlign: "right" }}>
+                        {ok ? (
+                          <a href={href} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: token.colorPrimary, fontWeight: 600 }}>
+                            <MIcon name="download" size={15} /> PDF
+                          </a>
+                        ) : (
+                          <span style={{ color: token.colorTextQuaternary }}>—</span>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          <Text type="secondary" style={{ fontSize: 11.5, display: "block", marginTop: 12 }}>
+            Each receipt is the official invoice PDF. Amounts shown are the totals actually charged (incl. tax).
+          </Text>
         </Card>
       ) : null}
 
@@ -354,7 +526,11 @@ export default function AdminBillingPage() {
         </Text>
       ) : null}
 
-      <style>{`@media(max-width:820px){.bl-grid{grid-template-columns:1fr !important;}}`}</style>
+      <style>{`
+        @media(max-width:820px){.bl-grid{grid-template-columns:1fr !important;}}
+        .bl-inv-row{display:grid;grid-template-columns:1.2fr 1.4fr 1fr 0.9fr 0.8fr;gap:12px;align-items:center;padding:10px 4px;}
+        .bl-inv-head{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:8px 4px;}
+      `}</style>
     </div>
   );
 }
@@ -364,6 +540,34 @@ function Row({ label, value, token }: { label: string; value: string; token: { c
     <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "4px 0", fontSize: 13 }}>
       <span style={{ color: token.colorTextSecondary }}>{label}</span>
       <span style={{ color: token.colorText, fontWeight: 600 }}>{value}</span>
+    </div>
+  );
+}
+
+/** A labeled fact line in the current-subscription card (label left, value right). */
+function FactRow({
+  label,
+  children,
+  token,
+}: {
+  label: string;
+  children: React.ReactNode;
+  token: { colorTextTertiary: string; colorText: string; colorSplit: string };
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 12,
+        padding: "7px 0",
+        borderTop: `1px solid ${token.colorSplit}`,
+        fontSize: 13,
+      }}
+    >
+      <span style={{ color: token.colorTextTertiary }}>{label}</span>
+      <span style={{ color: token.colorText, fontWeight: 600, textAlign: "right" }}>{children}</span>
     </div>
   );
 }

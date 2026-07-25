@@ -39,8 +39,10 @@ export async function POST(request: NextRequest) {
   try {
     const s = await dodoClient().subscriptions.retrieve(subscriptionId);
     const meta = (s.metadata ?? {}) as Record<string, string>;
-    // Only attach a subscription that was created for THIS team.
-    if (meta.team_id && meta.team_id !== teamId) {
+    // Only attach a subscription that was created for THIS team. Fail CLOSED:
+    // every checkout stamps metadata.team_id, so a subscription without it (or
+    // with a different team) must never be reconciled onto the caller's team.
+    if (meta.team_id !== teamId) {
       return NextResponse.json({ error: "Subscription belongs to another team" }, { status: 403 });
     }
 

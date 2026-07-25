@@ -130,6 +130,8 @@ export function useUpdatePlatformPricing() {
 export interface TeamSubscription {
   storage_gb: number;
   status: string;
+  plan: string;
+  seats: number | null;
   dodo_customer_id: string | null;
   current_period_end: string | null;
   cancel_at_period_end: boolean;
@@ -146,13 +148,15 @@ export function useTeamSubscription() {
     queryFn: async (): Promise<TeamSubscription> => {
       const { data, error } = await loose(supabase)
         .from("team_subscriptions")
-        .select("storage_gb, status, dodo_customer_id, current_period_end, cancel_at_period_end")
+        .select("storage_gb, status, plan, seats, dodo_customer_id, current_period_end, cancel_at_period_end")
         .eq("team_id", teamId as string)
         .maybeSingle();
       if (error || !data)
         return {
           storage_gb: 100,
           status: "active",
+          plan: "free",
+          seats: null,
           dodo_customer_id: null,
           current_period_end: null,
           cancel_at_period_end: false,
@@ -160,6 +164,8 @@ export function useTeamSubscription() {
       return {
         storage_gb: Number(data.storage_gb),
         status: data.status ?? "active",
+        plan: data.plan ?? "free",
+        seats: data.seats == null ? null : Number(data.seats),
         dodo_customer_id: data.dodo_customer_id ?? null,
         current_period_end: data.current_period_end ?? null,
         cancel_at_period_end: Boolean(data.cancel_at_period_end),
@@ -168,30 +174,55 @@ export function useTeamSubscription() {
   });
 }
 
+export interface PaymentRecord {
+  id: string;
+  created_at: string;
+  amount: number; // tax-inclusive total charged
+  currency: string;
+  status: string;
+  invoice_id: string | null;
+  invoice_url: string | null; // Dodo's downloadable invoice/receipt PDF
+}
+
 export interface SubscriptionDetails {
   configured: boolean;
   subscribed: boolean;
   status?: string;
+  /** Recurring charge in cents, PRE-TAX (label accordingly in the UI). */
   amount_cents?: number;
+  tax_inclusive?: boolean | null;
   currency?: string;
   next_billing_date?: string;
   previous_billing_date?: string;
   created_at?: string;
   trial_period_days?: number;
   cancel_at_period_end?: boolean;
-  payments?: { id: string; created_at: string; amount: number; currency: string; status: string }[];
+  payments?: PaymentRecord[];
+  /** True when Dodo's payment list couldn't be fetched (vs genuinely empty). */
+  payments_error?: boolean;
 }
 
-/** Live subscription + payment history from Dodo (via our server route). */
+/**
+ * Live subscription + payment history from Dodo (via our server route).
+ *
+ * IMPORTANT: this THROWS on a non-OK response instead of returning a
+ * "not subscribed" sentinel. A transient failure (Dodo outage, 503) must surface
+ * as isError so react-query retries and KEEPS the last good data — never silently
+ * flip a paying customer to the free/checkout state (which risked double-billing).
+ */
 export function useSubscriptionDetails(teamId: string | undefined) {
   return useQuery({
     queryKey: ["subscription-details", teamId],
     enabled: Boolean(teamId),
     queryFn: async (): Promise<SubscriptionDetails> => {
       const res = await fetch(`/api/billing/subscription?teamId=${teamId}`);
-      if (!res.ok) return { configured: true, subscribed: false };
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Subscription lookup failed (${res.status})`);
+      }
       return res.json();
     },
+    retry: 2,
   });
 }
 

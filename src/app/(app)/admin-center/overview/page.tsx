@@ -127,7 +127,10 @@ export default function AdminOverviewPage() {
         </div>
         {!isLoading && !showForbidden ? (
           <Space size={8} wrap>
-            <SubscriptionTag status={data?.subscription_status} />
+            {/* Note: org-level subscription status is not a reliable billing
+                signal (the legacy organizations.subscription_status column is
+                never updated by the Dodo billing flow). Real per-workspace
+                billing/status lives on the Billing page. */}
             {data?.trial_in_progress ? <Tag color="gold">Trial in progress</Tag> : null}
           </Space>
         ) : null}
@@ -418,18 +421,3 @@ function EmptyHint({ text, loading }: { text: string; loading: boolean }) {
   );
 }
 
-function SubscriptionTag({ status }: { status?: string }) {
-  if (!status) return null;
-  const normalized = status.toLowerCase();
-  const color =
-    normalized === "active" || normalized === "paid"
-      ? "green"
-      : normalized === "trialing" || normalized === "trial"
-        ? "gold"
-        : normalized === "cancelled" ||
-            normalized === "canceled" ||
-            normalized === "past_due"
-          ? "red"
-          : "default";
-  return <Tag color={color}>{status}</Tag>;
-}

@@ -6,7 +6,9 @@ import {
   App as AntdApp,
   Button,
   Divider,
+  Drawer,
   Dropdown,
+  Empty,
   Input,
   Modal,
   Select,
@@ -64,6 +66,8 @@ import { ShareProjectModal } from "./share-project-modal";
 import { ShareSpaceModal } from "./share-space-modal";
 import { useNotifications } from "@/features/notifications/use-notifications";
 import { useMyTasks } from "@/features/home/use-home";
+import { useTeamFiles, humanSize, type FileWithMeta } from "@/features/app-files/use-files";
+import { mimeIcon } from "@/features/app-files/files-browser";
 import { ChatNavSections } from "@/app/(app)/chat/_components/chat-sidebar";
 import { TimerWidget } from "@/features/tasks/timer-widget";
 import {
@@ -759,6 +763,135 @@ function RenameTrackModal({
 }
 
 /* -------------------------------------------------------------------------- */
+/* Folder files peek drawer.                                                  */
+/* -------------------------------------------------------------------------- */
+
+function FolderFilesDrawer({
+  folder,
+  projects,
+  onClose,
+}: {
+  folder: ProjectFolder;
+  projects: ProjectWithRelations[];
+  onClose: () => void;
+}) {
+  const { token } = theme.useToken();
+  const { data: files } = useTeamFiles();
+  const projectIds = useMemo(() => new Set(projects.map((p) => p.id)), [projects]);
+  const folderFiles = useMemo(() => {
+    return (files ?? []).filter((f) => f.project_id && projectIds.has(f.project_id));
+  }, [files, projectIds]);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, ProjectWithRelations & { files: FileWithMeta[] }>();
+    for (const p of projects) {
+      map.set(p.id, { ...p, files: [] });
+    }
+    for (const f of folderFiles) {
+      const entry = map.get(f.project_id!);
+      if (entry) entry.files.push(f);
+    }
+    return Array.from(map.values()).filter((g) => g.files.length > 0);
+  }, [folderFiles, projects]);
+
+  return (
+    <Drawer
+      title={
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <MIcon
+            name="folder"
+            size={20}
+            color={folder.color_code || token.colorTextTertiary}
+          />
+          {folder.name}
+        </span>
+      }
+      placement="right"
+      width={560}
+      open={Boolean(folder)}
+      onClose={onClose}
+    >
+      {grouped.length === 0 ? (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description="No files in this space yet."
+        />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {grouped.map((g) => (
+            <div key={g.id}>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: token.colorTextSecondary,
+                  marginBottom: 6,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.4,
+                }}
+              >
+                {g.name}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {g.files.map((f) => (
+                  <div
+                    key={f.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "8px 10px",
+                      borderRadius: 8,
+                      background: token.colorBgContainer,
+                      border: `1px solid ${token.colorBorderSecondary}`,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 8,
+                        background: `${mimeIcon(f.mime, f.name).color}1f`,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flex: "none",
+                      }}
+                    >
+                      <MIcon
+                        name={mimeIcon(f.mime, f.name).icon}
+                        size={17}
+                        color={mimeIcon(f.mime, f.name).color}
+                      />
+                    </span>
+                    <span style={{ minWidth: 0, flex: 1 }}>
+                      <div
+                        style={{
+                          fontWeight: 500,
+                          fontSize: 13.5,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {f.name}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: token.colorTextTertiary }}>
+                        {humanSize(f.size_bytes)} · {f.mime ?? "unknown"}
+                      </div>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Drawer>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* Recursive folder (space) node.                                             */
 /* -------------------------------------------------------------------------- */
 
@@ -777,6 +910,7 @@ function SpaceNode({
   projectsByFolder,
   renderProject,
   spaceMenu,
+  onFolderIconClick,
 }: {
   node: FolderNode;
   depth: number;
@@ -790,6 +924,7 @@ function SpaceNode({
   projectsByFolder: Map<string, ProjectWithRelations[]>;
   renderProject: (p: ProjectWithRelations, indent: number) => React.ReactNode;
   spaceMenu: (folder: ProjectFolder, depth: number) => MenuProps["items"];
+  onFolderIconClick?: (folder: ProjectFolder, projects: ProjectWithRelations[]) => void;
 }) {
   const T = useSidebarTokens();
   // Accordion among this node's children: at most one expanded at a time.
@@ -849,11 +984,38 @@ function SpaceNode({
                     justifyContent: "center",
                   }}
                 >
-                  <MIcon
-                    name={isOpen ? "folder_open" : "folder"}
-                    size={17}
-                    color={node.folder.color_code || T.dotFallback}
-                  />
+                  <button
+                    type="button"
+                    aria-label={`Open files in ${node.folder.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onFolderIconClick?.(node.folder, projects);
+                    }}
+                    style={{
+                      width: 28,
+                      height: 28,
+                      border: "none",
+                      background: "transparent",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: node.folder.color_code || T.dotFallback,
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = T.rowHover;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "transparent";
+                    }}
+                  >
+                    <MIcon
+                      name={isOpen ? "folder_open" : "folder"}
+                      size={17}
+                      color={node.folder.color_code || T.dotFallback}
+                    />
+                  </button>
                 </span>
               </span>
             }
@@ -892,6 +1054,7 @@ function SpaceNode({
                 projectsByFolder={projectsByFolder}
                 renderProject={renderProject}
                 spaceMenu={spaceMenu}
+                onFolderIconClick={onFolderIconClick}
               />
             ) : null,
           )}
@@ -1929,6 +2092,10 @@ export function ProjectsSidebar() {
   const [newProjectSpaceId, setNewProjectSpaceId] = useState<string | null>(
     null,
   );
+  const [folderFilesDrawer, setFolderFilesDrawer] = useState<{
+    folder: ProjectFolder;
+    projects: ProjectWithRelations[];
+  } | null>(null);
 
   const projects = useMemo(
     () => projectsQuery.data ?? [],
@@ -2692,6 +2859,9 @@ export function ProjectsSidebar() {
                 projectsByFolder={visibleByFolder}
                 renderProject={renderProject}
                 spaceMenu={buildSpaceMenu}
+                onFolderIconClick={(folder, projects) =>
+                  setFolderFilesDrawer({ folder, projects })
+                }
               />
             ))}
 
@@ -2765,6 +2935,13 @@ export function ProjectsSidebar() {
         project={saveTemplateTarget}
         onClose={() => setSaveTemplateId(null)}
       />
+      {folderFilesDrawer && (
+        <FolderFilesDrawer
+          folder={folderFilesDrawer.folder}
+          projects={folderFilesDrawer.projects}
+          onClose={() => setFolderFilesDrawer(null)}
+        />
+      )}
     </div>
   );
 }

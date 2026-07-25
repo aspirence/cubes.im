@@ -6,6 +6,9 @@ import { useInstallPrompt } from "@/features/pwa/use-pwa";
 
 const DISMISS_KEY = "cubes.install.dismissed";
 const DISMISS_DAYS = 14;
+// Even when eligible, only surface to a random ~1 in 10 loads so the prompt stays
+// a gentle nudge to install rather than a nag on every visit.
+const SHOW_RATE = 0.1;
 
 function dismissedUntilNow(): boolean {
   try {
@@ -39,8 +42,11 @@ export function InstallPrompt() {
   const [dismissed, setDismissed] = useState(
     () => typeof window === "undefined" || dismissedUntilNow(),
   );
+  // Roll the 1-in-10 dice once per mount; a losing roll keeps the prompt hidden
+  // for this load even when it would otherwise be eligible to show.
+  const [rolledIn] = useState(() => Math.random() < SHOW_RATE);
 
-  const visible = !installed && !dismissed && (canInstall || isIOS);
+  const visible = rolledIn && !installed && !dismissed && (canInstall || isIOS);
   if (!visible) return null;
 
   const snooze = () => {

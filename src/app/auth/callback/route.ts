@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest, after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { sendWelcomeEmailSafely } from "@/lib/email/welcome";
+import { sendWelcomeEmailSafely, notifyAdminsOfSignupSafely } from "@/lib/email/welcome";
 
 /**
  * Auth callback route handler.
@@ -33,14 +33,17 @@ export async function GET(request: NextRequest) {
       const session = data?.session;
       if (session?.user?.email) {
         const user = session.user;
+        const name = (user.user_metadata?.name as string | undefined) ?? null;
         after(() =>
           sendWelcomeEmailSafely({
             userId: user.id,
             email: user.email ?? "",
-            name: (user.user_metadata?.name as string | undefined) ?? null,
+            name,
             accessToken: session.access_token,
           }),
         );
+        // Alert platform super-admins of the new signup (deduped, never throws).
+        after(() => notifyAdminsOfSignupSafely({ userId: user.id, email: user.email ?? "", name }));
       }
       return NextResponse.redirect(`${origin}${redirectPath}`);
     }

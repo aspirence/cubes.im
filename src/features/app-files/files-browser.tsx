@@ -66,7 +66,7 @@ function MIcon({ name, size = 16, color }: { name: string; size?: number; color?
   );
 }
 
-function mimeIcon(mime: string | null, name: string): { icon: string; color: string } {
+export function mimeIcon(mime: string | null, name: string): { icon: string; color: string } {
   const m = mime ?? "";
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   if (m.startsWith("video/")) return { icon: "movie", color: "#e0559b" };

@@ -1,10 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
 import { authorizePlatform, emailServiceClient } from "@/lib/email/server";
 import { invokeSendEmailEdge } from "@/lib/email/edge";
 import { runPlatformDispatch } from "@/lib/email/engine";
 import { composeEmail } from "@/lib/email/compose";
-import { welcomeVars } from "@/lib/email/welcome";
+import { welcomeVars, notifyAdminsOfSignupSafely } from "@/lib/email/welcome";
 
 /**
  * Sends the signup welcome email (account.signup_welcome) from the PLATFORM
@@ -35,6 +35,13 @@ export async function POST() {
   if (!admin) {
     return NextResponse.json({ error: "Email is not configured." }, { status: 500 });
   }
+
+  // Alert platform super-admins of this new signup (deduped, never throws).
+  // Runs after the response so it never delays the welcome send.
+  after(() =>
+    notifyAdminsOfSignupSafely({ userId: auth.userId, email: auth.email, name: profile?.name }),
+  );
+
   const rendered = await composeEmail(
     admin,
     "account.signup_welcome",

@@ -142,7 +142,13 @@ export const config = {
      * - PWA assets that must be served to everyone, signed in or not, or the
      *   app can't install / the service worker can't register (sw.js,
      *   offline.html, the web manifest).
+     * - SEO discovery files that crawlers/AI agents fetch without a session
+     *   (robots.txt, sitemap.xml, llms.txt) — otherwise they'd be redirected to
+     *   /login and never seen.
+     * - Generated social-preview images (opengraph-image, twitter-image) — these
+     *   have no file extension, so without an explicit exemption they'd 307 to
+     *   /login and social/rich previews would break for logged-out scrapers.
      */
-    "/((?!api|_next/static|_next/image|favicon.ico|sw.js|offline.html|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|sw.js|offline.html|manifest.webmanifest|robots.txt|sitemap.xml|llms.txt|opengraph-image|twitter-image|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

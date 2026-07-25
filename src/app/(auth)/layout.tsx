@@ -167,7 +167,9 @@ export default function AuthLayout({
             padding: "32px 0",
           }}
         >
-          <div style={{ width: "100%", maxWidth: 380 }}>{children}</div>
+          <div className="auth-form" style={{ width: "100%", maxWidth: 380 }}>
+            {children}
+          </div>
         </div>
 
         {/* Footer */}
@@ -198,6 +200,20 @@ export default function AuthLayout({
         @media (max-width: 900px) {
           .auth-hero { display: none !important; }
           .auth-mobile-brand { display: inline-flex !important; }
+        }
+        /* Chrome paints autofilled fields with a lavender tint. On Input.Password
+           (an affix wrapper) that tint only covers the inner <input>, leaving the
+           wrapper padding + eye-icon area white — a visible gap. Repaint autofill
+           to match the normal white input so both fields read as one clean fill. */
+        .auth-form input:-webkit-autofill,
+        .auth-form input:-webkit-autofill:hover,
+        .auth-form input:-webkit-autofill:focus,
+        .auth-form input:-webkit-autofill:active {
+          -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+          box-shadow: 0 0 0 1000px #ffffff inset !important;
+          -webkit-text-fill-color: #16203a !important;
+          caret-color: #16203a;
+          transition: background-color 600000s 0s, color 600000s 0s;
         }
       `}</style>
     </div>

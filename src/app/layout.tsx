@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
+import { GoogleAnalytics } from "@next/third-parties/google";
 import { Providers } from "./providers";
 import {
   SITE_URL,
@@ -76,6 +77,11 @@ export const viewport: Viewport = {
   ],
 };
 
+// GA4 Measurement ID (G-XXXXXXXXXX). Set NEXT_PUBLIC_GA_ID in the environment to
+// switch analytics on; left unset, no gtag script loads. Public by design — the
+// ID is exposed client-side, exactly as Google intends.
+const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -101,6 +107,9 @@ export default function RootLayout({
           <Providers>{children}</Providers>
         </AntdRegistry>
       </body>
+      {/* Google Analytics 4 — loads after hydration and auto-tracks App Router
+          route changes as page_views. Only mounted when the ID is configured. */}
+      {GA_ID ? <GoogleAnalytics gaId={GA_ID} /> : null}
     </html>
   );
 }

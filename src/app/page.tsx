@@ -233,6 +233,26 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* AI BRAIN */}
+      <section className="sec ai" id="ai">
+        <Reveal>
+          <div className="ai-head">
+            <h2 className="h2 ai-h">
+              The AI Brain
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/brand/brain_cubes.png" alt="" className="ai-brain-img" aria-hidden />
+              for your{" "}<span className="silver">whole workspace.</span>
+            </h2>
+          </div>
+        </Reveal>
+        <Reveal delay={90}>
+          <div className="ai-banner">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/sec_section_banner.jpg" alt="An AI brain for your workspace" />
+          </div>
+        </Reveal>
+      </section>
+
       {/* MEGA FOOTER */}
       <footer className="mfoot" id="cta">
         <Reveal>
@@ -349,6 +369,19 @@ const CSS = `
 .eyebrow{text-transform:uppercase;letter-spacing:.13em;font-size:12.5px;font-weight:800;color:${ACCENT};}
 .h2{font-size:clamp(27px,3.8vw,42px);font-weight:800;letter-spacing:-.03em;margin:10px 0 30px;}
 
+/* AI brain section */
+.ai{overflow:hidden;max-width:1360px;}
+.ai-head{text-align:center;max-width:none;margin:0 auto;user-select:none;-webkit-user-select:none;}
+/* One line across desktop — font scales with the viewport so the nowrap line
+   always fits; it drops to a normal wrap on small screens (below). */
+.ai-h{margin:0;font-size:clamp(26px,3.8vw,48px);line-height:1.1;white-space:nowrap;}
+@media(max-width:760px){.ai-h{white-space:normal;}}
+.ai-brain-img{display:inline-block;vertical-align:middle;width:1.3em;height:1.3em;object-fit:contain;margin:-.16em .04em 0 .14em;transition:transform .25s cubic-bezier(.2,.8,.3,1);}
+.ai-brain-img:hover{transform:rotate(30deg);}
+.ai-banner{margin:28px auto 0;max-width:1040px;border-radius:26px;overflow:hidden;border:1px solid #eaecf4;}
+.ai-banner img{display:block;width:100%;height:auto;}
+@media(max-width:600px){.ai-banner{border-radius:18px;margin-top:32px;}}
+
 /* bento */
 .bento{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
 .feat{position:relative;background:linear-gradient(180deg,#ffffff,#fbfbff);border:1px solid #ececf3;border-radius:20px;padding:22px;overflow:hidden;transition:transform .2s,border-color .2s,box-shadow .2s;display:flex;flex-direction:column;min-height:250px;box-shadow:0 14px 34px -30px rgba(90,70,190,.5), inset 0 1.5px 0 rgba(255,255,255,.95);}
@@ -415,7 +448,7 @@ const CSS = `
 
 /* cta */
 /* mega footer */
-.mfoot{position:relative;z-index:1;padding:110px 22px 26px;text-align:center;overflow:hidden;}
+.mfoot{position:relative;z-index:1;padding:55px 22px 26px;text-align:center;overflow:hidden;}
 .mfoot-h{font-size:clamp(26px,3.9vw,46px);font-weight:800;letter-spacing:-.03em;line-height:1.22;margin:0 0 34px;user-select:none;-webkit-user-select:none;}
 .mf-l1{color:#c9cfdd;}
 .mf-l2{color:#adb5c7;}
@@ -450,7 +483,7 @@ const CSS = `
   .feat.span-2 .feat-preview{margin-top:16px;}
   .rev-grid{grid-template-columns:1fr;}
   .metrics{grid-template-columns:repeat(2,1fr);row-gap:14px;}
-  .mfoot{padding-top:70px;}
+  .mfoot{padding-top:35px;}
   .mfoot-word{margin-top:44px;}
   .plans{grid-template-columns:1fr;}
 }
