@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Alert,
@@ -744,6 +744,15 @@ function useIsManager(employeeId: string | undefined): boolean {
 /* ========================================================================== */
 
 export default function HrAttendancePage() {
+  // useSearchParams requires a Suspense boundary for static generation.
+  return (
+    <Suspense fallback={null}>
+      <HrAttendancePageInner />
+    </Suspense>
+  );
+}
+
+function HrAttendancePageInner() {
   const { isHrAdmin, isLoading: accessLoading } = useHrAccess();
   const { data: myEmployee, isLoading: employeeLoading } = useMyEmployee();
   const searchParams = useSearchParams();

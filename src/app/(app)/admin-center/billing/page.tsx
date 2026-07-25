@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { App, Button, Card, InputNumber, Slider, Skeleton, Tag, Typography, theme } from "antd";
 import {
@@ -47,6 +47,16 @@ function statusChip(
 }
 
 export default function AdminBillingPage() {
+  // useSearchParams (below) forces a client bailout — it must sit under a
+  // Suspense boundary or the production static-generation pass errors out.
+  return (
+    <Suspense fallback={<Skeleton active paragraph={{ rows: 8 }} />}>
+      <AdminBillingPageInner />
+    </Suspense>
+  );
+}
+
+function AdminBillingPageInner() {
   const { token } = theme.useToken();
   const { message, modal } = App.useApp();
   const router = useRouter();

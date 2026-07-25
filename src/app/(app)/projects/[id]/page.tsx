@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   App,
@@ -213,6 +213,15 @@ function AddViewPicker({
 }
 
 export default function ProjectWorkspacePage() {
+  // useSearchParams requires a Suspense boundary for static generation.
+  return (
+    <Suspense fallback={null}>
+      <ProjectWorkspacePageInner />
+    </Suspense>
+  );
+}
+
+function ProjectWorkspacePageInner() {
   const params = useParams<{ id: string }>();
   const projectId = params?.id;
   const router = useRouter();
