@@ -215,6 +215,16 @@ export default function AuthLayout({
           caret-color: #16203a;
           transition: background-color 600000s 0s, color 600000s 0s;
         }
+        /* The dark submit button is disabled+loading during sign-in; AntD's
+           disabled styles fade the label/spinner to near-black on the dark fill,
+           making it invisible. Keep it solid dark with a white spinner + label. */
+        .auth-form .ant-btn-primary:disabled,
+        .auth-form .ant-btn-primary.ant-btn-loading {
+          background: #17171c !important;
+          border-color: #17171c !important;
+          color: #ffffff !important;
+          opacity: 1 !important;
+        }
       `}</style>
     </div>
   );

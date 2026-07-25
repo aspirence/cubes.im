@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Button, Form, Input, Result, Typography, App } from "antd";
 import { useAuth } from "@/features/auth/use-auth";
 import { AuthHeading, AUTH_DARK_BUTTON } from "../_components/auth-heading";
@@ -16,7 +15,6 @@ interface SignupValues {
 }
 
 export default function SignupPage() {
-  const router = useRouter();
   const { message } = App.useApp();
   const { signUp } = useAuth();
 
@@ -45,10 +43,13 @@ export default function SignupPage() {
 
     // Dev / confirmation disabled: user is signed in immediately. Fire the
     // platform welcome email — fire-and-forget, deduped server-side (the
-    // confirmation flow gets it in the auth callback instead).
-    void fetch("/api/email/welcome", { method: "POST" }).catch(() => {});
+    // confirmation flow gets it in the auth callback instead). `keepalive` lets
+    // it complete even though we hard-navigate away on the next line.
+    void fetch("/api/email/welcome", { method: "POST", keepalive: true }).catch(() => {});
     message.success("Account created.");
-    router.replace("/home");
+    // Hard navigation so the fresh auth cookies reach the server and the proxy
+    // lets us into /home instead of bouncing back to /login (or /setup).
+    window.location.assign("/home");
   };
 
   if (confirmEmail) {

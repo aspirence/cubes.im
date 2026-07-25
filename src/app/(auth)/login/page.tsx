@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Button, Form, Input, Typography, App } from "antd";
 import { useAuth } from "@/features/auth/use-auth";
 import { AuthHeading, AUTH_DARK_BUTTON } from "../_components/auth-heading";
@@ -15,7 +14,6 @@ interface LoginValues {
 }
 
 export default function LoginPage() {
-  const router = useRouter();
   const { message } = App.useApp();
   const { signIn } = useAuth();
 
@@ -24,13 +22,17 @@ export default function LoginPage() {
   const onFinish = async (values: LoginValues) => {
     setSubmitting(true);
     const { error } = await signIn(values.email, values.password);
-    setSubmitting(false);
     if (error) {
+      setSubmitting(false);
       message.error(error);
       return;
     }
+    // Hard navigation (not router.replace): a full request to /home carries the
+    // freshly-set auth cookies so the proxy authenticates instead of bouncing
+    // back to /login. Keep `submitting` true through the redirect so the button
+    // stays in its loading state until the page unloads.
     message.success("Signed in.");
-    router.replace("/home");
+    window.location.assign("/home");
   };
 
   return (
