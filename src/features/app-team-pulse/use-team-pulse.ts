@@ -32,11 +32,27 @@ export function useTeamPulse(enabled: boolean) {
   });
 }
 
+/** The member tiers, in canonical display order. */
+export const MEMBER_TIERS = [
+  "owner",
+  "admin",
+  "member",
+  "limited",
+  "guest",
+] as const;
+export type MemberTier = (typeof MEMBER_TIERS)[number];
+
 export interface TeamPulseConfig {
   /** Limited members keep ONE task In Progress at a time. Default on. */
   singleActive: boolean;
   /** Timer auto-starts/stops as tasks enter/leave the Active stage. Default on. */
   autoTimer: boolean;
+  /**
+   * Member tiers the auto-timer rule targets. Stored as `auto_timer_types`.
+   * Absent in config = every tier (the pre-targeting default), surfaced here as
+   * the full list so the UI shows all chips selected.
+   */
+  autoTimerTypes: string[];
   /** Show the running-timer widget in everyone's sidebar. Default on. */
   showTimerWidget: boolean;
 }
@@ -49,9 +65,14 @@ export function readTeamPulseConfig(config: Json | undefined): TeamPulseConfig {
       : {};
   const on = (v: Json | undefined) =>
     String(v ?? "true").toLowerCase() !== "false";
+  const rawTypes = rec.auto_timer_types;
+  const autoTimerTypes = Array.isArray(rawTypes)
+    ? MEMBER_TIERS.filter((t) => rawTypes.includes(t)) // canonical order, valid tiers only
+    : [...MEMBER_TIERS]; // absent = every tier
   return {
     singleActive: on(rec.single_active),
     autoTimer: on(rec.auto_timer),
+    autoTimerTypes,
     showTimerWidget: on(rec.show_timer_widget),
   };
 }
@@ -76,6 +97,8 @@ export function useSetTeamPulseConfig() {
         next.single_active = patch.singleActive ? "true" : "false";
       if (patch.autoTimer !== undefined)
         next.auto_timer = patch.autoTimer ? "true" : "false";
+      if (patch.autoTimerTypes !== undefined)
+        next.auto_timer_types = patch.autoTimerTypes as Json;
       if (patch.showTimerWidget !== undefined)
         next.show_timer_widget = patch.showTimerWidget ? "true" : "false";
       const { error } = await supabase

@@ -13,6 +13,7 @@ import {
   useSetTeamPulseConfig,
   readTeamPulseConfig,
   formatTracked,
+  MEMBER_TIERS,
   type PulseRow,
 } from "@/features/app-team-pulse/use-team-pulse";
 
@@ -458,11 +459,55 @@ export default function TeamPulsePage() {
                       setConfig.mutateAsync({ autoTimer: v }).catch(() => message.error("Couldn't save."))
                     }
                   />
-                  <div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>Auto timer</div>
                     <div style={{ fontSize: 11.5, color: token.colorTextTertiary, lineHeight: 1.5 }}>
-                      Moving a task into the Active stage starts the assignee&apos;s timer; moving it out stops and logs it.
+                      Moving a task into the Active stage starts the assignee&apos;s timer; moving
+                      it out stops and logs it. A second task can&apos;t go active while their timer
+                      is running — they get a heads-up to finish the current one first.
                     </div>
+                    {config.autoTimer ? (
+                      <div style={{ marginTop: 9 }}>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: token.colorTextSecondary,
+                            marginBottom: 6,
+                          }}
+                        >
+                          Applies to
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {MEMBER_TIERS.map((tier) => {
+                            const checked = config.autoTimerTypes.includes(tier);
+                            return (
+                              <Tag.CheckableTag
+                                key={tier}
+                                checked={checked}
+                                onChange={(next) => {
+                                  const chosen = MEMBER_TIERS.filter((t) =>
+                                    t === tier ? next : config.autoTimerTypes.includes(t),
+                                  );
+                                  if (chosen.length === 0) {
+                                    message.info(
+                                      "Pick at least one member type — or switch Auto timer off.",
+                                    );
+                                    return;
+                                  }
+                                  setConfig
+                                    .mutateAsync({ autoTimerTypes: chosen })
+                                    .catch(() => message.error("Couldn't save."));
+                                }}
+                                style={{ fontSize: 11.5, userSelect: "none", cursor: "pointer", margin: 0 }}
+                              >
+                                {MEMBER_TAG[tier]?.label ?? tier}
+                              </Tag.CheckableTag>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
