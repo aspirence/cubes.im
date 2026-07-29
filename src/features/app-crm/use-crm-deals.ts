@@ -12,8 +12,22 @@ import type { CrmDeal, CrmDealWithRefs } from "./types";
 
 const dealsKey = (teamId: string | undefined) => ["crm-deals", teamId] as const;
 
+/**
+ * Everything a deal write may carry. `amount`/`currency_code` are omitted on
+ * purpose: deals no longer track money, so the columns stay in the table
+ * (nullable / defaulted) but nothing may write to them again.
+ */
 export type CrmDealPatch = Partial<
-  Omit<CrmDeal, "id" | "team_id" | "created_at" | "updated_at" | "created_by">
+  Omit<
+    CrmDeal,
+    | "id"
+    | "team_id"
+    | "created_at"
+    | "updated_at"
+    | "created_by"
+    | "amount"
+    | "currency_code"
+  >
 >;
 
 /** All the active team's deals (soft-deleted included), board-ordered. */

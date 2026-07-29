@@ -7,7 +7,6 @@ import {
   DatePicker,
   Form,
   Input,
-  InputNumber,
   Modal,
   Select,
   Space,
@@ -20,10 +19,10 @@ import { useCreateCrmCompany, useCrmCompanies } from "@/features/app-crm/use-crm
 import { useCreateCrmPerson, useCrmPeople } from "@/features/app-crm/use-crm-people";
 import { useCreateCrmDeal, useCrmDeals } from "@/features/app-crm/use-crm-deals";
 import { useCrmStages } from "@/features/app-crm/use-crm-stages";
-import { CRM_CURRENCIES, crmPersonName } from "@/features/app-crm/types";
+import { crmPersonName } from "@/features/app-crm/types";
 import { errMsg } from "@/lib/err";
 import { MIcon } from "./m-icon";
-import { SoftChip } from "../_lib/ui";
+import { SoftChip, fallbackDealName } from "../_lib/ui";
 import {
   hasUsefulSignal,
   parsePastedDeal,
@@ -34,9 +33,9 @@ import {
 const CREATE_NEW = "__create_new__";
 
 type DealFormValues = {
-  name: string;
-  amount?: number | null;
-  currency_code?: string;
+  /** Optional — a blank one is filled in from the deal's relations on save. */
+  name?: string;
+  phone?: string;
   stage_id?: string | null;
   close_date?: Dayjs | null;
   company_id?: string | null;
@@ -69,8 +68,6 @@ function overlayOpen(): boolean {
 /** An untouched parse — what the dialog starts from when opened by a button. */
 const BLANK: ParsedDeal = {
   name: null,
-  amount: null,
-  currencyCode: null,
   closeDate: null,
   email: null,
   phone: null,
@@ -198,10 +195,11 @@ export function DealQuickCreate({
     if (!active) return undefined;
     return {
       name: active.name ?? "",
-      amount: active.amount,
-      currency_code: active.currencyCode ?? "USD",
+      phone: active.phone ?? undefined,
       stage_id: stages?.[0]?.id ?? null,
-      close_date: active.closeDate ? dayjs(active.closeDate) : null,
+      // A pasted date wins; otherwise today, since a lead captured now is
+      // usually being worked now.
+      close_date: active.closeDate ? dayjs(active.closeDate) : dayjs(),
       company_id: matchedCompany?.id ?? (canCreateCompany ? CREATE_NEW : null),
       contact_id: matchedPerson?.id ?? (canCreateContact ? CREATE_NEW : null),
       owner_id: user?.id ?? null,
@@ -277,6 +275,8 @@ export function DealQuickCreate({
         companyId = created.id;
       }
 
+      const phone = values.phone?.trim() || null;
+
       let contactId = values.contact_id ?? null;
       if (contactId === CREATE_NEW) {
         const [first, ...rest] = (active.personName ?? "").trim().split(/\s+/);
@@ -284,7 +284,7 @@ export function DealQuickCreate({
           first_name: first || (active.email?.split("@")[0] ?? "New"),
           last_name: rest.join(" "),
           email: active.email ?? null,
-          phone: active.phone ?? null,
+          phone,
           company_id: companyId,
         });
         contactId = created.id;
@@ -294,10 +294,22 @@ export function DealQuickCreate({
       const stageDeals = (deals ?? []).filter(
         (d) => !d.deleted_at && d.stage_id === stageId,
       );
+      // Name is optional — fall back to whoever the deal is attached to, so a
+      // one-tap capture still reads sensibly on the board.
+      const typedName = values.name?.trim();
       await createDeal.mutateAsync({
-        name: values.name.trim(),
-        amount: values.amount ?? null,
-        currency_code: values.currency_code || "USD",
+        name:
+          typedName ||
+          fallbackDealName({
+            company:
+              active.companyName ??
+              liveCompanies.find((c) => c.id === companyId)?.name,
+            contact:
+              active.personName ??
+              crmPersonName(livePeople.find((p) => p.id === contactId)),
+            phone,
+          }),
+        phone,
         stage_id: stageId,
         close_date: values.close_date ? values.close_date.format("YYYY-MM-DD") : null,
         company_id: companyId,
@@ -323,7 +335,6 @@ export function DealQuickCreate({
   const found = useMemo(() => {
     if (!parsed) return [];
     const chips: { icon: string; label: string; tone: "success" | "accent" }[] = [];
-    if (parsed.amount !== null) chips.push({ icon: "payments", label: "Amount", tone: "success" });
     if (parsed.closeDate) chips.push({ icon: "event", label: "Close date", tone: "success" });
     if (matchedCompany) {
       chips.push({ icon: "domain", label: `Matched ${matchedCompany.name}`, tone: "success" });
@@ -382,19 +393,14 @@ export function DealQuickCreate({
             <Form.Item
               name="name"
               label="Deal name"
-              rules={[{ required: true, message: "Deal name is required" }]}
+              extra="Leave blank and we'll name it after the company or contact."
             >
               <Input placeholder="e.g. Acme — Annual plan" autoFocus />
             </Form.Item>
 
-            <Space.Compact style={{ width: "100%" }}>
-              <Form.Item name="amount" label="Amount" style={{ flex: 1, marginRight: 8 }}>
-                <InputNumber style={{ width: "100%" }} min={0} placeholder="10000" />
-              </Form.Item>
-              <Form.Item name="currency_code" label="Currency" style={{ width: 110 }}>
-                <Select options={CRM_CURRENCIES.map((c) => ({ value: c, label: c }))} />
-              </Form.Item>
-            </Space.Compact>
+            <Form.Item name="phone" label="Mobile number">
+              <Input inputMode="tel" placeholder="+91 98765 43210" maxLength={40} />
+            </Form.Item>
 
             <Space.Compact style={{ width: "100%" }}>
               <Form.Item name="stage_id" label="Stage" style={{ flex: 1, marginRight: 8 }}>

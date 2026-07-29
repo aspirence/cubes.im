@@ -11,8 +11,8 @@ import type { CrmTargetType } from "@/features/app-crm/types";
 
 /**
  * Semantic accents shared by every stat tile in the module. A metric keeps its
- * colour across pages: "Pipeline value" is `money` on the dashboard *and* on
- * the deals board, "Closing in 30 days" is `deal`, not `person`.
+ * colour across pages: "Open deals" is `deal` on the dashboard *and* on the
+ * deals board, "Tasks completed" is `done`, not `person`.
  */
 export const CRM_ACCENT = {
   /** People / contacts. */
@@ -21,8 +21,6 @@ export const CRM_ACCENT = {
   company: "#6366f1",
   /** Deals / opportunities. */
   deal: "#14b8a6",
-  /** Money: pipeline value, average deal size, forecast. */
-  money: "#5a5ad6",
   /** Tasks completed / anything "done". */
   done: "#16a34a",
 } as const;

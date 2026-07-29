@@ -107,3 +107,23 @@ export function crmFromNow(
   const d = dayjs(value);
   return d.isValid() ? d.fromNow() : fallback;
 }
+
+/**
+ * A deal's title when the user left the name blank. Deal name is optional in
+ * the forms, but every board card, table row and search result needs SOMETHING
+ * to show — so the deal borrows its identity from whatever it does have, in
+ * descending order of usefulness, and falls back to the day it was captured.
+ */
+export function fallbackDealName(from: {
+  company?: string | null;
+  contact?: string | null;
+  phone?: string | null;
+}): string {
+  const company = from.company?.trim();
+  if (company) return `${company} deal`;
+  const contact = from.contact?.trim();
+  if (contact) return `${contact} deal`;
+  const phone = from.phone?.trim();
+  if (phone) return `Lead ${phone}`;
+  return `New deal · ${dayjs().format("D MMM")}`;
+}

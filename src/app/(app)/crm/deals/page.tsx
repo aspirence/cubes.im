@@ -9,7 +9,6 @@ import {
   Drawer,
   Form,
   Input,
-  InputNumber,
   Popconfirm,
   Segmented,
   Select,
@@ -50,7 +49,6 @@ import { useCrmCompanies } from "@/features/app-crm/use-crm-companies";
 import { useCrmPeople } from "@/features/app-crm/use-crm-people";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
 import {
-  CRM_CURRENCIES,
   type CrmDealWithRefs,
   type CrmStage,
   type CrmTargetRef,
@@ -64,6 +62,7 @@ import { DealCell } from "../_components/deal-glyph";
 import { CRM_ACCENT, NO_STAGE_COLOR } from "../_components/entity-meta";
 import { TILE_GRID } from "../_components/layout";
 import { FormSection } from "../_components/form-section";
+import { closingWithin } from "../_lib/deal-metrics";
 import {
   CRM_DRAWER_BODY_STYLE,
   CRM_DRAWER_FORM_STYLE,
@@ -84,9 +83,9 @@ import {
   StatTile,
   crmDate,
   crmDateShort,
-  crmMoney,
   crmPageStyle,
   crmPersonName,
+  fallbackDealName,
   tint,
 } from "../_lib/ui";
 
@@ -98,9 +97,9 @@ const colId = (stageId: string) => `col:${stageId}`;
 const DEAL_CARD_CLASS = "crm-deal-card";
 
 type DealFormValues = {
-  name: string;
-  amount?: number | null;
-  currency_code?: string;
+  /** Optional — a blank one is filled in from the deal's relations on save. */
+  name?: string;
+  phone?: string;
   stage_id?: string | null;
   close_date?: Dayjs | null;
   company_id?: string | null;
@@ -163,7 +162,6 @@ function DealCard({
   const contactName = crmPersonName(deal.contact);
   const overdue = isOverdue(deal.close_date);
   const hasMeta = Boolean(deal.company || contactName || deal.close_date);
-  const hasAmount = deal.amount !== null && deal.amount !== undefined;
 
   return (
     <div
@@ -199,18 +197,6 @@ function DealCard({
         }}
       >
         {deal.name}
-      </div>
-
-      <div
-        style={{
-          fontSize: 15,
-          fontWeight: 650,
-          lineHeight: 1.2,
-          letterSpacing: "-0.2px",
-          color: hasAmount ? token.colorText : token.colorTextQuaternary,
-        }}
-      >
-        {crmMoney(deal.amount, deal.currency_code)}
       </div>
 
       {hasMeta ? (
@@ -279,8 +265,6 @@ function BoardColumn({
 }) {
   const { token } = theme.useToken();
   const { setNodeRef, isOver } = useDroppable({ id });
-  const total = deals.reduce((sum, d) => sum + (d.amount ?? 0), 0);
-  const currency = deals.find((d) => d.amount !== null)?.currency_code ?? "USD";
   // A whisper of the stage colour over the standard column fill.
   const wash = tint(color, isOver ? 0.13 : 0.05);
 
@@ -337,6 +321,7 @@ function BoardColumn({
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
+            marginLeft: "auto",
             flex: "none",
             minWidth: 20,
             height: 18,
@@ -350,21 +335,6 @@ function BoardColumn({
           }}
         >
           {deals.length}
-        </span>
-        <span
-          style={{
-            marginLeft: "auto",
-            flex: "none",
-            fontSize: 12.5,
-            fontWeight: 600,
-            color:
-              deals.length === 0
-                ? token.colorTextQuaternary
-                : token.colorTextSecondary,
-            whiteSpace: "nowrap",
-          }}
-        >
-          {crmMoney(total, currency)}
         </span>
         {onAdd ? (
           <Tooltip title={`Add a deal in ${name}`}>
@@ -520,13 +490,8 @@ export default function CrmDealsPage() {
     return map;
   }, [stages]);
 
-  /** Board summary across every visible column (all live deals). */
-  const pipeline = useMemo(() => {
-    const total = liveDeals.reduce((sum, d) => sum + (d.amount ?? 0), 0);
-    const currency =
-      liveDeals.find((d) => d.amount !== null)?.currency_code ?? "USD";
-    return { count: liveDeals.length, total, currency };
-  }, [liveDeals]);
+  /** Board summary — same 30-day window the dashboard and reports tiles use. */
+  const closing30 = useMemo(() => closingWithin(liveDeals, 30), [liveDeals]);
 
   const stageColorOf = (stageId: string | null) =>
     (stageId ? stageById.get(stageId)?.color : null) ?? NO_STAGE_COLOR;
@@ -611,7 +576,12 @@ export default function CrmDealsPage() {
   const openCreate = (stageId?: string | null) => {
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ stage_id: stageId ?? stages?.[0]?.id ?? null });
+    form.setFieldsValue({
+      stage_id: stageId ?? stages?.[0]?.id ?? null,
+      // Most deals are captured for something happening now; today is the
+      // useful default and a wrong date is one click away.
+      close_date: dayjs(),
+    });
     setFormOpen(true);
   };
 
@@ -619,8 +589,7 @@ export default function CrmDealsPage() {
     setEditing(deal);
     form.setFieldsValue({
       name: deal.name,
-      amount: deal.amount,
-      currency_code: deal.currency_code,
+      phone: deal.phone ?? undefined,
       stage_id: deal.stage_id,
       close_date: deal.close_date ? dayjs(deal.close_date) : null,
       company_id: deal.company_id,
@@ -634,10 +603,22 @@ export default function CrmDealsPage() {
     const stageDeals = liveDeals.filter(
       (d) => d.stage_id === (values.stage_id ?? null),
     );
+    const phone = values.phone?.trim() || null;
+    // Name is optional — a blank one borrows the deal's identity from whatever
+    // it is attached to, so no card or row ever renders untitled.
+    const typedName = values.name?.trim();
     const patch = {
-      name: values.name.trim(),
-      amount: values.amount ?? null,
-      currency_code: values.currency_code || "USD",
+      name:
+        typedName ||
+        fallbackDealName({
+          company: (companies ?? []).find((c) => c.id === values.company_id)
+            ?.name,
+          contact: crmPersonName(
+            (people ?? []).find((p) => p.id === values.contact_id),
+          ),
+          phone,
+        }),
+      phone,
       stage_id: values.stage_id ?? null,
       close_date: values.close_date
         ? values.close_date.format("YYYY-MM-DD")
@@ -787,24 +768,20 @@ export default function CrmDealsPage() {
         <>
           <div style={TILE_GRID}>
             <StatTile
-              icon="target"
+              icon="handshake"
               color={CRM_ACCENT.deal}
               label="Open deals"
-              value={boardLoading ? "—" : pipeline.count}
-              hint={`${columns.length} ${
+              value={boardLoading ? "—" : liveDeals.length}
+              hint={`Across ${columns.length} ${
                 columns.length === 1 ? "column" : "columns"
               } on the board`}
             />
             <StatTile
-              icon="payments"
-              color={CRM_ACCENT.money}
-              label="Pipeline value"
-              value={
-                boardLoading
-                  ? "—"
-                  : crmMoney(pipeline.total, pipeline.currency)
-              }
-              hint="Summed across every visible column"
+              icon="event_upcoming"
+              color={CRM_ACCENT.deal}
+              label="Closing in 30 days"
+              value={boardLoading ? "—" : closing30}
+              hint="deals due to close"
             />
           </div>
 
@@ -897,7 +874,7 @@ export default function CrmDealsPage() {
             }}
             // Sum of the fixed column widths — anything smaller and AntD's
             // fixed table layout squeezes every column instead of scrolling.
-            scroll={{ x: 1130 }}
+            scroll={{ x: 1000 }}
             locale={{
               emptyText: isLoading ? (
                 <div style={{ height: 120 }} />
@@ -942,27 +919,6 @@ export default function CrmDealsPage() {
                   value: s.id,
                 })),
                 onFilter: (value, d) => d.stage_id === value,
-              },
-              {
-                title: "Amount",
-                key: "amount",
-                width: 130,
-                align: "right",
-                render: (_, d) => (
-                  <span
-                    style={{
-                      fontWeight: 500,
-                      color:
-                        d.amount === null || d.amount === undefined
-                          ? token.colorTextQuaternary
-                          : token.colorText,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {crmMoney(d.amount, d.currency_code)}
-                  </span>
-                ),
-                sorter: (a, b) => (a.amount ?? 0) - (b.amount ?? 0),
               },
               {
                 title: "Contact",
@@ -1159,33 +1115,17 @@ export default function CrmDealsPage() {
               <Form.Item
                 name="name"
                 label="Deal name"
-                rules={[{ required: true, message: "Deal name is required" }]}
+                extra="Leave blank and we'll name it after the company or contact."
               >
                 <Input placeholder="e.g. Acme — Annual plan" />
               </Form.Item>
-              <div style={{ display: "flex", gap: 12 }}>
-                <Form.Item
-                  name="amount"
-                  label="Amount"
-                  style={{ flex: 1, minWidth: 0 }}
-                >
-                  <InputNumber
-                    style={{ width: "100%" }}
-                    min={0}
-                    placeholder="10000"
-                  />
-                </Form.Item>
-                <Form.Item
-                  name="currency_code"
-                  label="Currency"
-                  initialValue="USD"
-                  style={{ width: 110, flex: "none" }}
-                >
-                  <Select
-                    options={CRM_CURRENCIES.map((c) => ({ value: c, label: c }))}
-                  />
-                </Form.Item>
-              </div>
+              <Form.Item name="phone" label="Mobile number">
+                <Input
+                  inputMode="tel"
+                  placeholder="+91 98765 43210"
+                  maxLength={40}
+                />
+              </Form.Item>
             </FormSection>
 
             <FormSection label="Pipeline">

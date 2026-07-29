@@ -33,6 +33,7 @@ export {
   crmDateShort,
   crmDateTime,
   crmFromNow,
+  fallbackDealName,
 } from "./format";
 export { crmMoney, crmPersonName } from "@/features/app-crm/types";
 

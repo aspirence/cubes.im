@@ -362,11 +362,6 @@ export function RecordDrawer({
     const stage = (stages ?? []).find((s) => s.id === d.stage_id);
     return [
       {
-        key: "amount",
-        label: "Amount",
-        children: crmMoney(d.amount, d.currency_code),
-      },
-      {
         key: "stage",
         label: "Stage",
         children: stage ? (
@@ -381,6 +376,11 @@ export function RecordDrawer({
         key: "close",
         label: "Close date",
         children: crmDate(d.close_date),
+      },
+      {
+        key: "phone",
+        label: "Mobile number",
+        children: d.phone ? <a href={`tel:${d.phone}`}>{d.phone}</a> : "—",
       },
       { key: "company", label: "Company", children: d.company?.name || "—" },
       {
@@ -435,7 +435,7 @@ export function RecordDrawer({
       ? (record as CrmPersonWithCompany | null)?.avatar_url ?? null
       : null;
 
-  /** The line under the record name: stage + amount for deals, context else. */
+  /** The line under the record name: stage for deals, context else. */
   const headerSubtitle = (): React.ReactNode => {
     if (!target || !record) return null;
     if (target.type === "deal") {
@@ -458,16 +458,6 @@ export function RecordDrawer({
           ) : (
             <SoftChip>No stage</SoftChip>
           )}
-          <span
-            style={{
-              fontSize: 13,
-              fontWeight: 600,
-              color: token.colorText,
-              lineHeight: 1,
-            }}
-          >
-            {crmMoney(d.amount, d.currency_code)}
-          </span>
           {d.company?.name ? (
             <span
               style={{

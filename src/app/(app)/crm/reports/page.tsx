@@ -14,12 +14,12 @@ import { useCrmTasks } from "@/features/app-crm/use-crm-tasks";
 import { MIcon } from "../_components/m-icon";
 import { CRM_ACCENT } from "../_components/entity-meta";
 import { CONTENT_GRID, TILE_GRID } from "../_components/layout";
+import { closingWithin } from "../_lib/deal-metrics";
 import {
   CrmPageHeader,
   EmptyState,
   Panel,
   StatTile,
-  crmMoney,
   crmPageStyle,
 } from "../_lib/ui";
 
@@ -66,20 +66,6 @@ export default function CrmReportsPage() {
     [deals],
   );
 
-  const mainCurrency = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const d of liveDeals)
-      counts.set(d.currency_code, (counts.get(d.currency_code) ?? 0) + 1);
-    let best = "USD";
-    let bestCount = 0;
-    for (const [code, count] of counts)
-      if (count > bestCount) {
-        best = code;
-        bestCount = count;
-      }
-    return best;
-  }, [liveDeals]);
-
   /* ------------------------------------------------------------------ KPIs */
 
   const now = dayjs();
@@ -89,25 +75,10 @@ export default function CrmReportsPage() {
     () => liveDeals.filter((d) => dayjs(d.created_at).isAfter(monthStart)).length,
     [liveDeals, monthStart],
   );
-  const avgDealSize = useMemo(() => {
-    const withAmount = liveDeals.filter((d) => (d.amount ?? 0) > 0);
-    if (withAmount.length === 0) return 0;
-    return (
-      withAmount.reduce((sum, d) => sum + (d.amount ?? 0), 0) /
-      withAmount.length
-    );
-  }, [liveDeals]);
-  const closing30 = useMemo(() => {
-    const cutoff = now.add(30, "day");
-    return liveDeals
-      .filter(
-        (d) =>
-          d.close_date &&
-          dayjs(d.close_date).isAfter(now.subtract(1, "day")) &&
-          dayjs(d.close_date).isBefore(cutoff),
-      )
-      .reduce((sum, d) => sum + (d.amount ?? 0), 0);
-  }, [liveDeals, now]);
+  const closing30 = useMemo(
+    () => closingWithin(liveDeals, 30, now),
+    [liveDeals, now],
+  );
   const tasksDone = useMemo(
     () => (tasks ?? []).filter((t) => t.status === "DONE").length,
     [tasks],
@@ -177,18 +148,16 @@ export default function CrmReportsPage() {
     };
   }, [stages, liveDeals, chartTooltip]);
 
-  // Expected revenue by close month (open deals, next 6 months) — forecast.
-  const forecastOption = useMemo(() => {
+  // How many deals land in each close month (open deals, next 6 months).
+  const closeMonthOption = useMemo(() => {
     const months = Array.from({ length: MONTHS_FORWARD }, (_, i) =>
       monthStart.add(i, "month"),
     );
-    const values = months.map((m) =>
-      liveDeals
-        .filter(
-          (d) =>
-            d.close_date && dayjs(d.close_date).isSame(m, "month"),
-        )
-        .reduce((sum, d) => sum + (d.amount ?? 0), 0),
+    const values = months.map(
+      (m) =>
+        liveDeals.filter(
+          (d) => d.close_date && dayjs(d.close_date).isSame(m, "month"),
+        ).length,
     );
     return {
       grid: { left: 8, right: 8, top: 24, bottom: 4, containLabel: true },
@@ -201,7 +170,8 @@ export default function CrmReportsPage() {
       },
       yAxis: {
         type: "value" as const,
-        axisLabel: { ...axisText, formatter: (v: number) => crmMoney(v, mainCurrency) },
+        minInterval: 1,
+        axisLabel: axisText,
         splitLine: recessiveSplit,
       },
       tooltip: {
@@ -210,7 +180,7 @@ export default function CrmReportsPage() {
         formatter: (params: unknown) => {
           const p = Array.isArray(params) ? params[0] : params;
           const { name, value } = p as { name: string; value: number };
-          return `${name}: ${crmMoney(value, mainCurrency)}`;
+          return `${name}: ${value} deal${value === 1 ? "" : "s"}`;
         },
       },
       series: [
@@ -222,7 +192,7 @@ export default function CrmReportsPage() {
         },
       ],
     };
-  }, [liveDeals, monthStart, mainCurrency, axisText, recessiveSplit, chartTooltip]);
+  }, [liveDeals, monthStart, axisText, recessiveSplit, chartTooltip]);
 
   // New records per month (People vs Companies) — two series, legend + fixed hues.
   const growthOption = useMemo(() => {
@@ -275,14 +245,14 @@ export default function CrmReportsPage() {
     };
   }, [people, companies, monthStart, axisText, recessiveSplit, chartTooltip, token.colorTextSecondary]);
 
-  // Pipeline by owner — magnitude across owners, one hue, direct labels.
+  // Deals per owner — magnitude across owners, one hue, direct labels.
   const ownerOption = useMemo(() => {
     const nameById = new Map<string, string>();
     for (const m of members ?? []) if (m.user) nameById.set(m.user.id, m.user.name);
     const totals = new Map<string, number>();
     for (const d of liveDeals) {
       const key = d.owner_id ? (nameById.get(d.owner_id) ?? "Unknown") : "Unassigned";
-      totals.set(key, (totals.get(key) ?? 0) + (d.amount ?? 0));
+      totals.set(key, (totals.get(key) ?? 0) + 1);
     }
     const rows = [...totals.entries()]
       .sort((a, b) => b[1] - a[1])
@@ -290,7 +260,7 @@ export default function CrmReportsPage() {
     return {
       rows,
       option: {
-        grid: { left: 8, right: 90, top: 8, bottom: 8, containLabel: true },
+        grid: { left: 8, right: 28, top: 8, bottom: 8, containLabel: true },
         xAxis: {
           type: "value" as const,
           axisLabel: { show: false },
@@ -309,7 +279,8 @@ export default function CrmReportsPage() {
           trigger: "item" as const,
           formatter: (params: unknown) => {
             const p = params as { name?: string; value?: number };
-            return `${p.name}: ${crmMoney(p.value ?? 0, mainCurrency)}`;
+            const count = p.value ?? 0;
+            return `${p.name}: ${count} deal${count === 1 ? "" : "s"}`;
           },
         },
         series: [
@@ -323,17 +294,21 @@ export default function CrmReportsPage() {
               position: "right" as const,
               color: token.colorTextSecondary,
               fontFamily: CHART_FONT,
-              formatter: (params: unknown) =>
-                crmMoney((params as { value?: number }).value ?? 0, mainCurrency),
+              formatter: "{c}",
             },
           },
         ],
       },
     };
-  }, [liveDeals, members, mainCurrency, axisText, chartTooltip, token.colorTextSecondary]);
+  }, [liveDeals, members, axisText, chartTooltip, token.colorTextSecondary]);
 
   const hasDeals = liveDeals.length > 0;
-  /** Funnel + forecast + owner charts all wait on deals (and stages). */
+  /** The close-month chart needs dates, not just deals, or it plots zeroes. */
+  const hasCloseDates = useMemo(
+    () => liveDeals.some((d) => d.close_date),
+    [liveDeals],
+  );
+  /** Funnel + close-month + owner charts all wait on deals (and stages). */
   const pipelineLoading = dealsLoading || stagesLoading;
   const growthLoading = peopleLoading || companiesLoading;
   const hasRecords =
@@ -370,7 +345,7 @@ export default function CrmReportsPage() {
     <div style={crmPageStyle()}>
       <CrmPageHeader
         title="CRM Reports"
-        subtitle="Pipeline health, forecast, and team performance for this workspace."
+        subtitle="Pipeline health, upcoming closes, and team performance for this workspace."
         right={
           <Button
             icon={<MIcon name="dashboard" size={16} />}
@@ -390,22 +365,18 @@ export default function CrmReportsPage() {
           hint={now.format("MMMM YYYY")}
         />
         <StatTile
-          icon="payments"
-          color={CRM_ACCENT.money}
-          label="Average deal size"
-          value={dealsLoading ? "—" : crmMoney(avgDealSize, mainCurrency)}
-          hint={
-            dealsLoading
-              ? undefined
-              : `across ${liveDeals.length} open deal${liveDeals.length === 1 ? "" : "s"}`
-          }
+          icon="handshake"
+          color={CRM_ACCENT.deal}
+          label="Open deals"
+          value={dealsLoading ? "—" : liveDeals.length}
+          hint="everything currently in the pipeline"
         />
         <StatTile
           icon="event_upcoming"
-          color={CRM_ACCENT.money}
+          color={CRM_ACCENT.deal}
           label="Closing in 30 days"
-          value={dealsLoading ? "—" : crmMoney(closing30, mainCurrency)}
-          hint="value of deals due to close"
+          value={dealsLoading ? "—" : closing30}
+          hint="deals due to close"
         />
         <StatTile
           icon="task_alt"
@@ -417,7 +388,7 @@ export default function CrmReportsPage() {
       </div>
 
       <div style={CONTENT_GRID}>
-        <Panel title="Stage funnel (deal count)">
+        <Panel title="Stage funnel">
           {caption("How many open deals sit in each stage of the pipeline.")}
           {pipelineLoading ? (
             panelSpin
@@ -434,27 +405,27 @@ export default function CrmReportsPage() {
           )}
         </Panel>
 
-        <Panel title="Forecast — value by close month">
+        <Panel title="Deals by close month">
           {caption(
-            "What the open deals are worth in the month they are set to close.",
+            "How many open deals are set to close in each of the next six months.",
           )}
           {dealsLoading ? (
             panelSpin
-          ) : hasDeals ? (
-            <EChart option={forecastOption} height={260} />
+          ) : hasCloseDates ? (
+            <EChart option={closeMonthOption} height={260} />
           ) : (
             <EmptyState
               compact
               icon="event_upcoming"
-              title="Nothing to forecast"
-              description="Add close dates to your deals to project expected revenue over the next six months."
+              title="No close dates yet"
+              description="Add close dates to your deals to see how many are due to land over the next six months."
               action={goToDeals}
             />
           )}
         </Panel>
 
-        <Panel title="Pipeline value by owner">
-          {caption("Who is carrying the pipeline — open value per deal owner.")}
+        <Panel title="Deals by owner">
+          {caption("Who is carrying the pipeline — open deals per owner.")}
           {dealsLoading ? (
             panelSpin
           ) : ownerOption.rows.length > 0 ? (
@@ -467,7 +438,7 @@ export default function CrmReportsPage() {
               compact
               icon="group"
               title="No owners to compare"
-              description="Assign owners to deals and this chart ranks the team by the value each person is carrying."
+              description="Assign owners to deals and this chart ranks the team by how many deals each person is carrying."
               action={goToDeals}
             />
           )}

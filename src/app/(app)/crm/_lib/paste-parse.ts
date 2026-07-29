@@ -4,7 +4,7 @@
  * blob and guesses the deal's fields so the create dialog opens pre-filled.
  *
  * Deliberately conservative: a field is only claimed on a strong signal (an
- * explicit label, a currency marker, an @, a parseable date). A wrong guess
+ * explicit label, an @, a parseable date). A wrong guess
  * costs the user an edit, so silence beats invention — everything lands in an
  * editable form anyway.
  */
@@ -17,9 +17,6 @@ dayjs.extend(customParseFormat);
 export interface ParsedDeal {
   /** Deal title — the first line that isn't another field in disguise. */
   name: string | null;
-  amount: number | null;
-  /** ISO 4217, only when the text actually said so. */
-  currencyCode: string | null;
   /** YYYY-MM-DD. */
   closeDate: string | null;
   email: string | null;
@@ -36,8 +33,6 @@ type ParsedFields = Omit<ParsedDeal, "raw">;
 
 const EMPTY: ParsedFields = {
   name: null,
-  amount: null,
-  currencyCode: null,
   closeDate: null,
   email: null,
   phone: null,
@@ -142,7 +137,11 @@ function isMostly(line: string, re: RegExp): boolean {
   return Boolean(hit && hit[0].length >= line.trim().length * 0.6);
 }
 
-/** The first money-looking value in `text`, with its currency when stated. */
+/**
+ * The first money-looking value in `text`, with its currency when stated.
+ * Deals carry no money — this survives purely as a *detector*, so a price is
+ * never mistaken for a phone number, a deal name or a company.
+ */
 export function parseMoney(
   text: string,
 ): { amount: number; currencyCode: string | null } | null {
@@ -241,11 +240,16 @@ export function companyFromDomain(domain: string): string {
 
 /* ------------------------------------------------------------- label pass */
 
-const LABELS: { keys: string[]; field: keyof ParsedFields }[] = [
+/** A label we recognise but deliberately drop — see the money entry below. */
+type LabelField = keyof ParsedFields | "ignore";
+
+const LABELS: { keys: string[]; field: LabelField }[] = [
   { keys: ["deal", "opportunity", "title", "subject", "deal name", "project"], field: "name" },
   {
+    // Deals carry no money, so the value is thrown away — but the line still
+    // has to be *recognised*, or "Budget: 250000" gets picked as the deal name.
     keys: ["amount", "value", "budget", "price", "deal size", "deal value", "revenue", "quote"],
-    field: "amount",
+    field: "ignore",
   },
   {
     keys: ["company", "account", "organisation", "organization", "org", "client", "customer"],
@@ -279,7 +283,7 @@ const LABELS: { keys: string[]; field: keyof ParsedFields }[] = [
 
 const LABEL_LINE_RE = /^\s*[*\-•]?\s*([A-Za-z][A-Za-z ./_-]{1,24}?)\s*[:\-–—]\s*(.+?)\s*$/;
 
-function labelField(label: string): keyof ParsedFields | null {
+function labelField(label: string): LabelField | null {
   const key = label.trim().toLowerCase().replace(/\s+/g, " ");
   return LABELS.find((entry) => entry.keys.includes(key))?.field ?? null;
 }
@@ -310,20 +314,6 @@ export function parsePastedDeal(raw: string, now: Dayjs = dayjs()): ParsedDeal {
     if (!field || !value) return;
     consumed.add(i);
     switch (field) {
-      case "amount": {
-        // A labelled amount needs no currency marker to be believable.
-        const money =
-          parseMoney(value) ??
-          (() => {
-            const n = toNumber(value.replace(/[^\d.,\s]/g, ""));
-            return n === null ? null : { amount: n, currencyCode: null };
-          })();
-        if (money) {
-          out.amount ??= money.amount;
-          out.currencyCode ??= money.currencyCode;
-        }
-        break;
-      }
       case "closeDate":
         out.closeDate ??= parseDate(value, now);
         break;
@@ -355,14 +345,8 @@ export function parsePastedDeal(raw: string, now: Dayjs = dayjs()): ParsedDeal {
         out.email = EMAIL_RE.exec(cell)![0];
         continue;
       }
-      if (out.amount === null) {
-        const money = parseMoney(cell);
-        if (money) {
-          out.amount = money.amount;
-          out.currencyCode ??= money.currencyCode;
-          continue;
-        }
-      }
+      // A price cell is neither the deal name nor the company — skip it.
+      if (parseMoney(cell)) continue;
       if (!out.closeDate) {
         const d = parseDate(cell, now);
         if (d) {
@@ -377,13 +361,6 @@ export function parsePastedDeal(raw: string, now: Dayjs = dayjs()): ParsedDeal {
 
   // (3) Freeform scan for whatever is still missing.
   out.email ??= EMAIL_RE.exec(text)?.[0] ?? null;
-  if (out.amount === null) {
-    const money = parseMoney(text);
-    if (money) {
-      out.amount = money.amount;
-      out.currencyCode ??= money.currencyCode;
-    }
-  }
   if (!out.phone) {
     // Blank out money and dates first, or a price or 2026-08-15 reads as one.
     const scrubbed = text
@@ -446,5 +423,5 @@ export function parsePastedDeal(raw: string, now: Dayjs = dayjs()): ParsedDeal {
 
 /** True when the blob yielded enough to be worth opening the dialog for. */
 export function hasUsefulSignal(parsed: ParsedDeal): boolean {
-  return Boolean(parsed.name || parsed.email || parsed.amount !== null || parsed.companyName);
+  return Boolean(parsed.name || parsed.email || parsed.companyName);
 }

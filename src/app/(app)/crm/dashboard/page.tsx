@@ -21,6 +21,7 @@ import { DealGlyph } from "../_components/deal-glyph";
 import { CRM_ACCENT, NO_STAGE_COLOR } from "../_components/entity-meta";
 import { CONTENT_GRID, TILE_GRID } from "../_components/layout";
 import { CrmListRow } from "../_components/list-row";
+import { closingWithin } from "../_lib/deal-metrics";
 import {
   CrmPageHeader,
   EmptyState,
@@ -31,7 +32,6 @@ import {
   crmDate,
   crmDateTime,
   crmFromNow,
-  crmMoney,
   crmPageStyle,
   crmPersonName,
   type SoftChipTone,
@@ -149,45 +149,16 @@ export default function CrmDashboardPage() {
   const addedThisMonth = (rows: { created_at: string }[]) =>
     rows.filter((r) => dayjs(r.created_at).isAfter(monthStart)).length;
 
-  const pipelineValue = useMemo(
-    () => liveDeals.reduce((sum, d) => sum + (d.amount ?? 0), 0),
-    [liveDeals],
-  );
-  const mainCurrency = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const d of liveDeals) {
-      counts.set(d.currency_code, (counts.get(d.currency_code) ?? 0) + 1);
-    }
-    let best = "USD";
-    let bestCount = 0;
-    for (const [code, count] of counts) {
-      if (count > bestCount) {
-        best = code;
-        bestCount = count;
-      }
-    }
-    return best;
-  }, [liveDeals]);
-  const avgDealSize = useMemo(() => {
-    const withAmount = liveDeals.filter((d) => (d.amount ?? 0) > 0);
-    if (withAmount.length === 0) return 0;
-    return (
-      withAmount.reduce((sum, d) => sum + (d.amount ?? 0), 0) /
-      withAmount.length
-    );
-  }, [liveDeals]);
+  // Close-date pressure, as a count over the same 30-day horizon Reports uses.
+  const closing30 = useMemo(() => closingWithin(liveDeals, 30), [liveDeals]);
 
   // One row per stage (board order), plus "No stage" only when needed.
   const stageRows = useMemo(() => {
-    const rows = (stages ?? []).map((s) => {
-      const stageDeals = liveDeals.filter((d) => d.stage_id === s.id);
-      return {
-        name: s.name,
-        color: s.color,
-        count: stageDeals.length,
-        value: stageDeals.reduce((sum, d) => sum + (d.amount ?? 0), 0),
-      };
-    });
+    const rows = (stages ?? []).map((s) => ({
+      name: s.name,
+      color: s.color,
+      count: liveDeals.filter((d) => d.stage_id === s.id).length,
+    }));
     const orphans = liveDeals.filter(
       (d) => !d.stage_id || !(stages ?? []).some((s) => s.id === d.stage_id),
     );
@@ -196,7 +167,6 @@ export default function CrmDashboardPage() {
         name: "No stage",
         color: NO_STAGE_COLOR,
         count: orphans.length,
-        value: orphans.reduce((sum, d) => sum + (d.amount ?? 0), 0),
       });
     }
     return rows;
@@ -252,10 +222,10 @@ export default function CrmDashboardPage() {
   );
 
   // Horizontal bars: stage identity comes from the axis label (color is the
-  // stage's own entity color, mirrored from the board); values direct-labeled.
+  // stage's own entity color, mirrored from the board); counts direct-labeled.
   const chartOption = useMemo(
     () => ({
-      grid: { left: 8, right: 90, top: 8, bottom: 8, containLabel: true },
+      grid: { left: 8, right: 28, top: 8, bottom: 8, containLabel: true },
       xAxis: {
         type: "value" as const,
         axisLabel: { show: false },
@@ -280,14 +250,14 @@ export default function CrmDashboardPage() {
           const idx = (p as { dataIndex?: number }).dataIndex ?? 0;
           const row = stageRows[idx];
           if (!row) return "";
-          return `${row.name}: ${crmMoney(row.value, mainCurrency)} · ${row.count} deal${row.count === 1 ? "" : "s"}`;
+          return `${row.name}: ${row.count} deal${row.count === 1 ? "" : "s"}`;
         },
       },
       series: [
         {
           type: "bar" as const,
           data: stageRows.map((r) => ({
-            value: r.value,
+            value: r.count,
             itemStyle: { color: r.color, borderRadius: [0, 4, 4, 0] },
           })),
           barWidth: 16,
@@ -296,17 +266,12 @@ export default function CrmDashboardPage() {
             position: "right" as const,
             color: token.colorTextSecondary,
             fontFamily: CHART_FONT,
-            formatter: (params: unknown) => {
-              const idx = (params as { dataIndex?: number }).dataIndex ?? 0;
-              const row = stageRows[idx];
-              if (!row) return "";
-              return `${crmMoney(row.value, mainCurrency)} (${row.count})`;
-            },
+            formatter: "{c}",
           },
         },
       ],
     }),
-    [stageRows, mainCurrency, token.colorTextSecondary, chartTooltip],
+    [stageRows, token.colorTextSecondary, chartTooltip],
   );
 
   const mutedLine: React.CSSProperties = {
@@ -379,7 +344,7 @@ export default function CrmDashboardPage() {
           onClick={() => router.push("/crm/companies")}
         />
         <StatTile
-          icon="target"
+          icon="handshake"
           color={CRM_ACCENT.deal}
           label="Open deals"
           value={dealsLoading ? "—" : liveDeals.length}
@@ -389,16 +354,12 @@ export default function CrmDashboardPage() {
           onClick={() => router.push("/crm/deals")}
         />
         <StatTile
-          icon="payments"
-          color={CRM_ACCENT.money}
-          label="Pipeline value"
-          value={dealsLoading ? "—" : crmMoney(pipelineValue, mainCurrency)}
-          hint={
-            !dealsLoading && avgDealSize > 0
-              ? `avg ${crmMoney(avgDealSize, mainCurrency)} per deal`
-              : undefined
-          }
-          onClick={() => router.push("/crm/reports")}
+          icon="event_upcoming"
+          color={CRM_ACCENT.deal}
+          label="Closing in 30 days"
+          value={dealsLoading ? "—" : closing30}
+          hint="deals due to close"
+          onClick={() => router.push("/crm/deals")}
         />
       </div>
 
@@ -408,7 +369,7 @@ export default function CrmDashboardPage() {
           extra={
             pipelineLoading ? null : (
               <span style={panelExtraText}>
-                {crmMoney(pipelineValue, mainCurrency)} total
+                {liveDeals.length} deal{liveDeals.length === 1 ? "" : "s"} total
               </span>
             )
           }
@@ -421,7 +382,7 @@ export default function CrmDashboardPage() {
               compact
               icon="flag"
               title="No stages yet"
-              description="Set up the pipeline in CRM Settings and every deal's value shows up here by stage."
+              description="Set up the pipeline in CRM Settings and every deal shows up here by stage."
               action={
                 <Button
                   type="primary"
@@ -503,30 +464,15 @@ export default function CrmDashboardPage() {
                       </span>
                     </div>
                   </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      flex: "none",
-                    }}
-                  >
-                    {overdue ? (
-                      <SoftChip tone="danger" icon="schedule">
-                        Overdue
-                      </SoftChip>
-                    ) : null}
-                    <span
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 600,
-                        color: token.colorText,
-                        whiteSpace: "nowrap",
-                      }}
+                  {overdue ? (
+                    <SoftChip
+                      tone="danger"
+                      icon="schedule"
+                      style={{ flex: "none" }}
                     >
-                      {crmMoney(d.amount, d.currency_code)}
-                    </span>
-                  </div>
+                      Overdue
+                    </SoftChip>
+                  ) : null}
                 </CrmListRow>
               );
             })
