@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import { Card, Col, Empty, Row, Statistic, Typography, theme } from "antd";
+import { Button, Spin, theme } from "antd";
+import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import { EChart, CHART_FONT, CHART_PALETTE } from "@/features/home/echart";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
@@ -10,7 +11,17 @@ import { useCrmDeals } from "@/features/app-crm/use-crm-deals";
 import { useCrmPeople } from "@/features/app-crm/use-crm-people";
 import { useCrmStages } from "@/features/app-crm/use-crm-stages";
 import { useCrmTasks } from "@/features/app-crm/use-crm-tasks";
-import { crmMoney } from "@/features/app-crm/types";
+import { MIcon } from "../_components/m-icon";
+import { CRM_ACCENT } from "../_components/entity-meta";
+import { CONTENT_GRID, TILE_GRID } from "../_components/layout";
+import {
+  CrmPageHeader,
+  EmptyState,
+  Panel,
+  StatTile,
+  crmMoney,
+  crmPageStyle,
+} from "../_lib/ui";
 
 const MONTHS_BACK = 6;
 const MONTHS_FORWARD = 6;
@@ -18,13 +29,36 @@ const MONTHS_FORWARD = 6;
 /** Magnitude charts use ONE hue (the shared chart palette's first slot). */
 const MAG = CHART_PALETTE[0];
 
+/**
+ * Pick black or white for a label sitting *on* an entity colour. The stage
+ * palette includes amber (#ca8a04), where white text only clears ~2.6:1.
+ */
+function labelOn(hex: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return "#fff";
+  const n = parseInt(m[1], 16);
+  const channel = (v: number) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance =
+    0.2126 * channel((n >> 16) & 255) +
+    0.7152 * channel((n >> 8) & 255) +
+    0.0722 * channel(n & 255);
+  // Contrast against white vs against near-black, whichever wins.
+  return 1.05 / (luminance + 0.05) >= (luminance + 0.05) / 0.05
+    ? "#fff"
+    : "#111827";
+}
+
 export default function CrmReportsPage() {
   const { token } = theme.useToken();
-  const { data: deals } = useCrmDeals();
-  const { data: stages } = useCrmStages();
-  const { data: people } = useCrmPeople();
-  const { data: companies } = useCrmCompanies();
-  const { data: tasks } = useCrmTasks();
+  const router = useRouter();
+  const { data: deals, isLoading: dealsLoading } = useCrmDeals();
+  const { data: stages, isLoading: stagesLoading } = useCrmStages();
+  const { data: people, isLoading: peopleLoading } = useCrmPeople();
+  const { data: companies, isLoading: companiesLoading } = useCrmCompanies();
+  const { data: tasks, isLoading: tasksLoading } = useCrmTasks();
   const { data: members } = useTeamMembers();
 
   const liveDeals = useMemo(
@@ -96,6 +130,19 @@ export default function CrmReportsPage() {
     }),
     [token.colorSplit],
   );
+  // Tooltip chrome tracks the theme so dark mode stays legible.
+  const chartTooltip = useMemo(
+    () => ({
+      backgroundColor: token.colorBgElevated,
+      borderColor: token.colorBorderSecondary,
+      textStyle: {
+        color: token.colorText,
+        fontFamily: CHART_FONT,
+        fontSize: 12,
+      },
+    }),
+    [token.colorBgElevated, token.colorBorderSecondary, token.colorText],
+  );
 
   // Stage funnel — pipeline order, count per stage, stage entity colors.
   const funnelOption = useMemo(() => {
@@ -103,9 +150,11 @@ export default function CrmReportsPage() {
       name: s.name,
       value: liveDeals.filter((d) => d.stage_id === s.id).length,
       itemStyle: { color: s.color },
+      // Per-slice so an amber stage gets dark text instead of unreadable white.
+      label: { color: labelOn(s.color) },
     }));
     return {
-      tooltip: { trigger: "item" as const },
+      tooltip: { ...chartTooltip, trigger: "item" as const },
       series: [
         {
           type: "funnel" as const,
@@ -119,7 +168,6 @@ export default function CrmReportsPage() {
           label: {
             show: true,
             position: "inside" as const,
-            color: "#fff",
             fontFamily: CHART_FONT,
             formatter: "{b}: {c}",
           },
@@ -127,7 +175,7 @@ export default function CrmReportsPage() {
         },
       ],
     };
-  }, [stages, liveDeals]);
+  }, [stages, liveDeals, chartTooltip]);
 
   // Expected revenue by close month (open deals, next 6 months) — forecast.
   const forecastOption = useMemo(() => {
@@ -157,6 +205,7 @@ export default function CrmReportsPage() {
         splitLine: recessiveSplit,
       },
       tooltip: {
+        ...chartTooltip,
         trigger: "item" as const,
         formatter: (params: unknown) => {
           const p = Array.isArray(params) ? params[0] : params;
@@ -173,7 +222,7 @@ export default function CrmReportsPage() {
         },
       ],
     };
-  }, [liveDeals, monthStart, mainCurrency, axisText, recessiveSplit]);
+  }, [liveDeals, monthStart, mainCurrency, axisText, recessiveSplit, chartTooltip]);
 
   // New records per month (People vs Companies) — two series, legend + fixed hues.
   const growthOption = useMemo(() => {
@@ -204,7 +253,7 @@ export default function CrmReportsPage() {
         axisLabel: axisText,
         splitLine: recessiveSplit,
       },
-      tooltip: { trigger: "axis" as const },
+      tooltip: { ...chartTooltip, trigger: "axis" as const },
       series: [
         {
           name: "People",
@@ -224,7 +273,7 @@ export default function CrmReportsPage() {
         },
       ],
     };
-  }, [people, companies, monthStart, axisText, recessiveSplit, token.colorTextSecondary]);
+  }, [people, companies, monthStart, axisText, recessiveSplit, chartTooltip, token.colorTextSecondary]);
 
   // Pipeline by owner — magnitude across owners, one hue, direct labels.
   const ownerOption = useMemo(() => {
@@ -256,6 +305,7 @@ export default function CrmReportsPage() {
           axisLabel: axisText,
         },
         tooltip: {
+          ...chartTooltip,
           trigger: "item" as const,
           formatter: (params: unknown) => {
             const p = params as { name?: string; value?: number };
@@ -280,85 +330,175 @@ export default function CrmReportsPage() {
         ],
       },
     };
-  }, [liveDeals, members, mainCurrency, axisText, token.colorTextSecondary]);
+  }, [liveDeals, members, mainCurrency, axisText, chartTooltip, token.colorTextSecondary]);
 
   const hasDeals = liveDeals.length > 0;
+  /** Funnel + forecast + owner charts all wait on deals (and stages). */
+  const pipelineLoading = dealsLoading || stagesLoading;
+  const growthLoading = peopleLoading || companiesLoading;
+  const hasRecords =
+    (people ?? []).length + (companies ?? []).length > 0;
+
+  /** In-panel loading treatment — same shape in every panel on the page. */
+  const panelSpin = (
+    <div style={{ display: "grid", placeItems: "center", padding: 40 }}>
+      <Spin size="small" />
+    </div>
+  );
+
+  /** One-line answer the panel's chart gives, sitting above the plot. */
+  const caption = (text: string) => (
+    <p
+      style={{
+        margin: "0 0 12px",
+        fontSize: 12,
+        lineHeight: 1.5,
+        color: token.colorTextTertiary,
+      }}
+    >
+      {text}
+    </p>
+  );
+
+  const goToDeals = (
+    <Button type="primary" onClick={() => router.push("/crm/deals")}>
+      Open the pipeline
+    </Button>
+  );
 
   return (
-    <div style={{ padding: 24, maxWidth: 1200, margin: "0 auto" }}>
-      <Typography.Title level={3} style={{ marginBottom: 4 }}>
-        CRM Reports
-      </Typography.Title>
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-        Pipeline health, forecast, and team performance for this workspace.
-      </Typography.Paragraph>
+    <div style={crmPageStyle()}>
+      <CrmPageHeader
+        title="CRM Reports"
+        subtitle="Pipeline health, forecast, and team performance for this workspace."
+        right={
+          <Button
+            icon={<MIcon name="dashboard" size={16} />}
+            onClick={() => router.push("/crm/dashboard")}
+          >
+            Dashboard
+          </Button>
+        }
+      />
 
-      <Row gutter={[16, 16]}>
-        <Col xs={12} md={6}>
-          <Card size="small">
-            <Statistic title="New deals this month" value={newDealsThisMonth} />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card size="small">
-            <Statistic
-              title="Average deal size"
-              value={crmMoney(avgDealSize, mainCurrency)}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card size="small">
-            <Statistic
-              title="Closing in 30 days"
-              value={crmMoney(closing30, mainCurrency)}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card size="small">
-            <Statistic title="Tasks completed" value={tasksDone} />
-          </Card>
-        </Col>
-      </Row>
+      <div style={TILE_GRID}>
+        <StatTile
+          icon="target"
+          color={CRM_ACCENT.deal}
+          label="New deals this month"
+          value={dealsLoading ? "—" : newDealsThisMonth}
+          hint={now.format("MMMM YYYY")}
+        />
+        <StatTile
+          icon="payments"
+          color={CRM_ACCENT.money}
+          label="Average deal size"
+          value={dealsLoading ? "—" : crmMoney(avgDealSize, mainCurrency)}
+          hint={
+            dealsLoading
+              ? undefined
+              : `across ${liveDeals.length} open deal${liveDeals.length === 1 ? "" : "s"}`
+          }
+        />
+        <StatTile
+          icon="event_upcoming"
+          color={CRM_ACCENT.money}
+          label="Closing in 30 days"
+          value={dealsLoading ? "—" : crmMoney(closing30, mainCurrency)}
+          hint="value of deals due to close"
+        />
+        <StatTile
+          icon="task_alt"
+          color={CRM_ACCENT.done}
+          label="Tasks completed"
+          value={tasksLoading ? "—" : tasksDone}
+          hint="all CRM tasks marked done"
+        />
+      </div>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} lg={12}>
-          <Card size="small" title="Stage funnel (deal count)">
-            {hasDeals ? (
-              <EChart option={funnelOption} height={260} />
-            ) : (
-              <Empty description="No deals yet." />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card size="small" title="Forecast — value by close month">
-            {hasDeals ? (
-              <EChart option={forecastOption} height={260} />
-            ) : (
-              <Empty description="Add close dates to deals to see the forecast." />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card size="small" title="Pipeline value by owner">
-            {ownerOption.rows.length > 0 ? (
-              <EChart
-                option={ownerOption.option}
-                height={Math.max(200, ownerOption.rows.length * 40)}
-              />
-            ) : (
-              <Empty description="Assign owners to deals to compare the team." />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card size="small" title="New records per month">
+      <div style={CONTENT_GRID}>
+        <Panel title="Stage funnel (deal count)">
+          {caption("How many open deals sit in each stage of the pipeline.")}
+          {pipelineLoading ? (
+            panelSpin
+          ) : hasDeals ? (
+            <EChart option={funnelOption} height={260} />
+          ) : (
+            <EmptyState
+              compact
+              icon="filter_alt"
+              title="No deals yet"
+              description="Add deals to the pipeline and the funnel shows how they spread across your stages."
+              action={goToDeals}
+            />
+          )}
+        </Panel>
+
+        <Panel title="Forecast — value by close month">
+          {caption(
+            "What the open deals are worth in the month they are set to close.",
+          )}
+          {dealsLoading ? (
+            panelSpin
+          ) : hasDeals ? (
+            <EChart option={forecastOption} height={260} />
+          ) : (
+            <EmptyState
+              compact
+              icon="event_upcoming"
+              title="Nothing to forecast"
+              description="Add close dates to your deals to project expected revenue over the next six months."
+              action={goToDeals}
+            />
+          )}
+        </Panel>
+
+        <Panel title="Pipeline value by owner">
+          {caption("Who is carrying the pipeline — open value per deal owner.")}
+          {dealsLoading ? (
+            panelSpin
+          ) : ownerOption.rows.length > 0 ? (
+            <EChart
+              option={ownerOption.option}
+              height={Math.max(200, ownerOption.rows.length * 40)}
+            />
+          ) : (
+            <EmptyState
+              compact
+              icon="group"
+              title="No owners to compare"
+              description="Assign owners to deals and this chart ranks the team by the value each person is carrying."
+              action={goToDeals}
+            />
+          )}
+        </Panel>
+
+        <Panel title="New records per month">
+          {caption(
+            "How fast the database is growing — people and companies added each month.",
+          )}
+          {growthLoading ? (
+            panelSpin
+          ) : hasRecords ? (
             <EChart option={growthOption} height={260} />
-          </Card>
-        </Col>
-      </Row>
+          ) : (
+            <EmptyState
+              compact
+              icon="trending_up"
+              title="Nothing to chart yet"
+              description="Add people and companies and this chart tracks how fast the database is growing."
+              action={
+                <Button
+                  type="primary"
+                  onClick={() => router.push("/crm/people")}
+                >
+                  Add your first person
+                </Button>
+              }
+            />
+          )}
+        </Panel>
+      </div>
     </div>
   );
 }

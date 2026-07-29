@@ -3,22 +3,17 @@
 import { useMemo, useState } from "react";
 import {
   App,
-  Avatar,
   Button,
-  Descriptions,
   Drawer,
-  Empty,
   Input,
-  List,
   Popconfirm,
   Select,
-  Space,
+  Spin,
   Tabs,
-  Tag,
+  Tooltip,
   Typography,
+  theme,
 } from "antd";
-import dayjs from "dayjs";
-import relativeTime from "dayjs/plugin/relativeTime";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
 import { useCrmCompanies } from "@/features/app-crm/use-crm-companies";
 import { useCrmDeals } from "@/features/app-crm/use-crm-deals";
@@ -49,18 +44,21 @@ import {
 } from "@/features/app-crm/types";
 import { errMsg } from "@/lib/err";
 import { MIcon } from "./m-icon";
-
-// `relativeTime` powers the "x ago" labels in the Timeline tab.
-dayjs.extend(relativeTime);
-
-const TYPE_META: Record<
-  CrmTargetRef["type"],
-  { label: string; icon: string; color: string }
-> = {
-  person: { label: "Person", icon: "person", color: "#0ea5e9" },
-  company: { label: "Company", icon: "domain", color: "#6366f1" },
-  deal: { label: "Deal", icon: "target", color: "#14b8a6" },
-};
+import { DealGlyph } from "./deal-glyph";
+import { ENTITY_META } from "./entity-meta";
+import { CrmListRow } from "./list-row";
+import {
+  EmptyState,
+  EntityAvatar,
+  Panel,
+  RowActions,
+  SoftChip,
+  crmDate,
+  crmDateTime,
+  crmFromNow,
+  tint,
+  useCrmStyles,
+} from "../_lib/ui";
 
 const ACTIVITY_ICONS: Record<string, string> = {
   created: "add_circle",
@@ -102,6 +100,73 @@ function activityText(activity: CrmActivity): string {
   }
 }
 
+/** One field of the Overview definition grid. */
+type OverviewItem = {
+  key: string;
+  label: string;
+  children: React.ReactNode;
+  /** Full-width fields (addresses, URLs) span both columns. */
+  span?: number;
+};
+
+const ELLIPSIS: React.CSSProperties = {
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+/** Tab label with the linked-record count as a quiet pill. */
+function TabLabel({
+  children,
+  count,
+}: {
+  children: React.ReactNode;
+  count?: number;
+}) {
+  const { token } = theme.useToken();
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      {children}
+      {count ? (
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            height: 18,
+            padding: "0 6px",
+            borderRadius: 999,
+            background: token.colorFillTertiary,
+            color: token.colorTextSecondary,
+            fontSize: 11,
+            fontWeight: 600,
+            lineHeight: 1,
+          }}
+        >
+          {count}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** The compact quick-add shell pinned under the tab header. */
+function Composer({ children }: { children: React.ReactNode }) {
+  const { token } = theme.useToken();
+  return (
+    <div
+      style={{
+        padding: 8,
+        borderRadius: 10,
+        background: token.colorFillQuaternary,
+        border: `1px solid ${token.colorBorderSecondary}`,
+        marginBottom: 10,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 /**
  * The shared record side panel (Twenty's record page, drawer-sized): Overview
  * fields, the trigger-written Timeline, and the record's linked Tasks / Notes
@@ -115,9 +180,11 @@ export function RecordDrawer({
   onClose: () => void;
 }) {
   const { message } = App.useApp();
-  const { data: people } = useCrmPeople();
-  const { data: companies } = useCrmCompanies();
-  const { data: deals } = useCrmDeals();
+  const { token } = theme.useToken();
+  useCrmStyles();
+  const { data: people, isLoading: peopleLoading } = useCrmPeople();
+  const { data: companies, isLoading: companiesLoading } = useCrmCompanies();
+  const { data: deals, isLoading: dealsLoading } = useCrmDeals();
   const { data: stages } = useCrmStages();
   const { data: members } = useTeamMembers();
   const { data: activities, isLoading: activitiesLoading } =
@@ -133,6 +200,8 @@ export function RecordDrawer({
   const [newTask, setNewTask] = useState("");
   const [newNoteTitle, setNewNoteTitle] = useState("");
   const [newNoteBody, setNewNoteBody] = useState("");
+  const [confirmTaskId, setConfirmTaskId] = useState<string | null>(null);
+  const [confirmNoteId, setConfirmNoteId] = useState<string | null>(null);
 
   const userName = useMemo(() => {
     const map = new Map<string, string>();
@@ -151,6 +220,19 @@ export function RecordDrawer({
       return (companies ?? []).find((c) => c.id === target.id) ?? null;
     return (deals ?? []).find((d) => d.id === target.id) ?? null;
   }, [target, people, companies, deals]);
+
+  /**
+   * The list this record lives in may still be in flight — deep links and
+   * dashboard clicks can open the drawer before the cache is warm. Without
+   * this we'd flash "This record no longer exists" at a record that exists.
+   */
+  const recordLoading = target
+    ? target.type === "person"
+      ? peopleLoading
+      : target.type === "company"
+        ? companiesLoading
+        : dealsLoading
+    : false;
 
   const title = useMemo(() => {
     if (!target || !record) return "";
@@ -185,7 +267,7 @@ export function RecordDrawer({
     [notes, target],
   );
 
-  const overviewItems = useMemo(() => {
+  const overviewItems = useMemo<OverviewItem[]>(() => {
     if (!target || !record) return [];
     if (target.type === "person") {
       const p = record as CrmPersonWithCompany;
@@ -196,8 +278,14 @@ export function RecordDrawer({
         { key: "company", label: "Company", children: p.company?.name || "—" },
         { key: "city", label: "City", children: p.city || "—" },
         {
+          key: "created",
+          label: "Created",
+          children: crmDate(p.created_at),
+        },
+        {
           key: "li",
           label: "LinkedIn",
+          span: 2,
           children: p.linkedin_url ? (
             <a href={p.linkedin_url} target="_blank" rel="noreferrer">
               {p.linkedin_url}
@@ -205,11 +293,6 @@ export function RecordDrawer({
           ) : (
             "—"
           ),
-        },
-        {
-          key: "created",
-          label: "Created",
-          children: dayjs(p.created_at).format("DD MMM YYYY"),
         },
       ];
     }
@@ -242,17 +325,29 @@ export function RecordDrawer({
         {
           key: "icp",
           label: "ICP",
-          children: c.icp ? <Tag color="green">Ideal customer</Tag> : "—",
+          children: c.icp ? (
+            <SoftChip tone="success" icon="star">
+              Ideal customer
+            </SoftChip>
+          ) : (
+            "—"
+          ),
         },
         {
           key: "owner",
           label: "Account owner",
           children: c.account_owner_id ? userName(c.account_owner_id) : "—",
         },
-        { key: "address", label: "Address", children: address || "—" },
+        {
+          key: "created",
+          label: "Created",
+          children: crmDate(c.created_at),
+        },
+        { key: "address", label: "Address", span: 2, children: address || "—" },
         {
           key: "li",
           label: "LinkedIn",
+          span: 2,
           children: c.linkedin_url ? (
             <a href={c.linkedin_url} target="_blank" rel="noreferrer">
               {c.linkedin_url}
@@ -260,11 +355,6 @@ export function RecordDrawer({
           ) : (
             "—"
           ),
-        },
-        {
-          key: "created",
-          label: "Created",
-          children: dayjs(c.created_at).format("DD MMM YYYY"),
         },
       ];
     }
@@ -280,15 +370,17 @@ export function RecordDrawer({
         key: "stage",
         label: "Stage",
         children: stage ? (
-          <Tag color={stage.color}>{stage.name}</Tag>
+          <SoftChip tone="custom" color={stage.color}>
+            {stage.name}
+          </SoftChip>
         ) : (
-          <Tag>No stage</Tag>
+          <SoftChip>No stage</SoftChip>
         ),
       },
       {
         key: "close",
         label: "Close date",
-        children: d.close_date ? dayjs(d.close_date).format("DD MMM YYYY") : "—",
+        children: crmDate(d.close_date),
       },
       { key: "company", label: "Company", children: d.company?.name || "—" },
       {
@@ -304,7 +396,7 @@ export function RecordDrawer({
       {
         key: "created",
         label: "Created",
-        children: dayjs(d.created_at).format("DD MMM YYYY"),
+        children: crmDate(d.created_at),
       },
     ];
   }, [target, record, stages, userName]);
@@ -336,7 +428,91 @@ export function RecordDrawer({
     }
   };
 
-  const meta = target ? TYPE_META[target.type] : null;
+  const meta = target ? ENTITY_META[target.type] : null;
+
+  const avatarSrc =
+    target?.type === "person"
+      ? (record as CrmPersonWithCompany | null)?.avatar_url ?? null
+      : null;
+
+  /** The line under the record name: stage + amount for deals, context else. */
+  const headerSubtitle = (): React.ReactNode => {
+    if (!target || !record) return null;
+    if (target.type === "deal") {
+      const d = record as CrmDealWithRefs;
+      const stage = (stages ?? []).find((s) => s.id === d.stage_id);
+      return (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginTop: 4,
+            minWidth: 0,
+          }}
+        >
+          {stage ? (
+            <SoftChip tone="custom" color={stage.color}>
+              {stage.name}
+            </SoftChip>
+          ) : (
+            <SoftChip>No stage</SoftChip>
+          )}
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: token.colorText,
+              lineHeight: 1,
+            }}
+          >
+            {crmMoney(d.amount, d.currency_code)}
+          </span>
+          {d.company?.name ? (
+            <span
+              style={{
+                fontSize: 12.5,
+                fontWeight: 400,
+                color: token.colorTextTertiary,
+                ...ELLIPSIS,
+              }}
+            >
+              · {d.company.name}
+            </span>
+          ) : null}
+        </div>
+      );
+    }
+    const line =
+      target.type === "person"
+        ? [
+            (record as CrmPersonWithCompany).job_title,
+            (record as CrmPersonWithCompany).company?.name,
+            (record as CrmPersonWithCompany).email,
+          ]
+            .filter(Boolean)
+            .join(" · ")
+        : [
+            (record as CrmCompany).domain,
+            (record as CrmCompany).address_city,
+          ]
+            .filter(Boolean)
+            .join(" · ");
+    if (!line) return null;
+    return (
+      <div
+        style={{
+          marginTop: 3,
+          fontSize: 12.5,
+          fontWeight: 400,
+          color: token.colorTextTertiary,
+          ...ELLIPSIS,
+        }}
+      >
+        {line}
+      </div>
+    );
+  };
 
   return (
     <Drawer
@@ -344,246 +520,519 @@ export function RecordDrawer({
       onClose={onClose}
       width={560}
       destroyOnHidden
+      styles={{ header: { padding: "14px 20px" }, body: { padding: "8px 20px 20px" } }}
       title={
         meta ? (
-          <Space>
-            <Avatar
-              size={28}
-              style={{ backgroundColor: meta.color }}
-              icon={<MIcon name={meta.icon} size={16} color="#fff" />}
-            />
-            <span>{title || "Record"}</span>
-            <Tag>{meta.label}</Tag>
-          </Space>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              minWidth: 0,
+            }}
+          >
+            {target?.type === "deal" ? (
+              <DealGlyph name={title || meta.label} size={40} />
+            ) : (
+              <EntityAvatar
+                name={title || meta.label}
+                kind={target?.type === "person" ? "person" : "company"}
+                src={avatarSrc}
+                size={40}
+              />
+            )}
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  minWidth: 0,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 16,
+                    fontWeight: 600,
+                    letterSpacing: "-0.2px",
+                    lineHeight: 1.3,
+                    color: token.colorText,
+                    ...ELLIPSIS,
+                  }}
+                >
+                  {title || "Record"}
+                </span>
+                <SoftChip
+                  tone="custom"
+                  color={meta.color}
+                  icon={meta.icon}
+                  style={{ flex: "none" }}
+                >
+                  {meta.label}
+                </SoftChip>
+              </div>
+              {headerSubtitle()}
+            </div>
+          </div>
         ) : null
       }
     >
-      {!record ? (
-        <Empty description="This record no longer exists." />
+      {recordLoading ? (
+        <div style={{ display: "grid", placeItems: "center", padding: 64 }}>
+          <Spin size="large" />
+        </div>
+      ) : !record ? (
+        <EmptyState
+          icon="search_off"
+          title="This record no longer exists"
+          description="It may have been deleted or permanently removed from this workspace."
+        />
       ) : (
         <Tabs
           defaultActiveKey="overview"
+          tabBarStyle={{ marginBottom: 14 }}
           items={[
             {
               key: "overview",
               label: "Overview",
               children: (
-                <Descriptions
-                  column={1}
-                  size="small"
-                  bordered
-                  items={overviewItems}
-                />
+                <Panel padding={14}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: "14px 18px",
+                    }}
+                  >
+                    {overviewItems.map((item) => {
+                      const empty = item.children === "—";
+                      return (
+                        <div
+                          key={item.key}
+                          style={{
+                            minWidth: 0,
+                            gridColumn: item.span === 2 ? "1 / -1" : undefined,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 12,
+                              lineHeight: 1.4,
+                              color: token.colorTextTertiary,
+                              marginBottom: 2,
+                            }}
+                          >
+                            {item.label}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 13,
+                              lineHeight: 1.5,
+                              color: empty
+                                ? token.colorTextQuaternary
+                                : token.colorText,
+                              wordBreak: "break-word",
+                            }}
+                          >
+                            {item.children}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Panel>
               ),
             },
             {
               key: "timeline",
               label: "Timeline",
-              children: (
-                <List
-                  loading={activitiesLoading}
-                  dataSource={activities ?? []}
-                  locale={{ emptyText: "No activity yet." }}
-                  renderItem={(a) => (
-                    <List.Item style={{ paddingInline: 0 }}>
-                      <List.Item.Meta
-                        avatar={
+              children: activitiesLoading ? (
+                <div
+                  style={{ display: "grid", placeItems: "center", padding: 40 }}
+                >
+                  <Spin size="small" />
+                </div>
+              ) : (activities ?? []).length === 0 ? (
+                <EmptyState
+                  compact
+                  icon="history"
+                  title="No activity yet"
+                  description="Edits, stage moves, notes and tasks for this record show up here."
+                />
+              ) : (
+                <Panel padding={0}>
+                  {(activities ?? []).map((a, index) => {
+                    const accent =
+                      a.event === "created"
+                        ? token.colorSuccess
+                        : a.event === "deleted"
+                          ? token.colorError
+                          : a.event === "restored"
+                            ? token.colorWarning
+                            : a.event === "stage_changed"
+                              ? token.colorPrimary
+                              : token.colorTextTertiary;
+                    const actor = userName(a.actor_id);
+                    return (
+                      <CrmListRow
+                        key={a.id}
+                        first={index === 0}
+                        align="flex-start"
+                      >
+                        <div
+                          style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: 8,
+                            flex: "none",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            background: tint(accent, 0.12),
+                          }}
+                        >
                           <MIcon
                             name={ACTIVITY_ICONS[a.event] ?? "history"}
-                            size={20}
-                            color="#8c8c8c"
-                            style={{ marginTop: 4 }}
+                            size={16}
+                            color={accent}
                           />
-                        }
-                        title={
-                          <Typography.Text style={{ fontWeight: 500 }}>
-                            {userName(a.actor_id)}{" "}
-                            <Typography.Text type="secondary">
+                        </div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                              flexWrap: "wrap",
+                              fontSize: 13,
+                              lineHeight: 1.45,
+                            }}
+                          >
+                            <EntityAvatar
+                              name={actor}
+                              kind="person"
+                              size={18}
+                            />
+                            <span
+                              style={{
+                                fontWeight: 500,
+                                color: token.colorText,
+                              }}
+                            >
+                              {actor}
+                            </span>
+                            <span style={{ color: token.colorTextSecondary }}>
                               {activityText(a)}
-                            </Typography.Text>
-                          </Typography.Text>
-                        }
-                        description={dayjs(a.created_at).fromNow()}
-                      />
-                    </List.Item>
-                  )}
-                />
+                            </span>
+                          </div>
+                          <Tooltip title={crmDateTime(a.created_at)}>
+                            <span
+                              style={{
+                                display: "inline-block",
+                                marginTop: 2,
+                                fontSize: 11.5,
+                                color: token.colorTextTertiary,
+                              }}
+                            >
+                              {crmFromNow(a.created_at)}
+                            </span>
+                          </Tooltip>
+                        </div>
+                      </CrmListRow>
+                    );
+                  })}
+                </Panel>
               ),
             },
             {
               key: "tasks",
-              label: `Tasks (${linkedTasks.length})`,
+              label: <TabLabel count={linkedTasks.length}>Tasks</TabLabel>,
               children: (
                 <div>
-                  <Space.Compact style={{ width: "100%", marginBottom: 12 }}>
-                    <Input
-                      placeholder="Add a task for this record…"
-                      value={newTask}
-                      onChange={(e) => setNewTask(e.target.value)}
-                      onPressEnter={handleAddTask}
-                    />
-                    <Button
-                      type="primary"
-                      onClick={handleAddTask}
-                      loading={createTask.isPending}
+                  <Composer>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
                     >
-                      Add
-                    </Button>
-                  </Space.Compact>
-                  <List
-                    dataSource={linkedTasks}
-                    locale={{ emptyText: "No tasks linked to this record." }}
-                    renderItem={(t) => (
-                      <List.Item
-                        style={{ paddingInline: 0 }}
-                        actions={[
-                          <Select
-                            key="status"
-                            size="small"
-                            value={t.status as CrmTaskStatus}
-                            style={{ width: 130 }}
-                            onChange={async (status) => {
-                              try {
-                                await updateTask.mutateAsync({
-                                  id: t.id,
-                                  patch: { status },
-                                });
-                              } catch (err) {
-                                message.error(
-                                  errMsg(err, "Failed to update task."),
-                                );
-                              }
-                            }}
-                            options={CRM_TASK_STATUSES.map((s) => ({
-                              value: s.value,
-                              label: s.label,
-                            }))}
-                          />,
-                          <Popconfirm
-                            key="delete"
-                            title="Delete this task?"
-                            onConfirm={async () => {
-                              try {
-                                await deleteTask.mutateAsync(t.id);
-                              } catch (err) {
-                                message.error(
-                                  errMsg(err, "Failed to delete task."),
-                                );
-                              }
-                            }}
-                          >
-                            <Button
-                              type="text"
-                              size="small"
-                              icon={<MIcon name="delete" size={16} />}
-                            />
-                          </Popconfirm>,
-                        ]}
+                      <Input
+                        variant="borderless"
+                        placeholder="Add a task for this record…"
+                        value={newTask}
+                        onChange={(e) => setNewTask(e.target.value)}
+                        onPressEnter={handleAddTask}
+                        style={{ flex: 1, minWidth: 0, paddingInline: 4 }}
+                      />
+                      <Button
+                        type="primary"
+                        size="small"
+                        onClick={handleAddTask}
+                        loading={createTask.isPending}
+                        disabled={!newTask.trim()}
+                        icon={<MIcon name="add" size={16} />}
                       >
-                        <List.Item.Meta
-                          title={
-                            <Typography.Text
-                              delete={t.status === "DONE"}
-                              style={{ fontWeight: 500 }}
+                        Add
+                      </Button>
+                    </div>
+                  </Composer>
+
+                  {linkedTasks.length === 0 ? (
+                    <EmptyState
+                      compact
+                      icon="task_alt"
+                      title="No tasks yet"
+                      description="Anything you add above stays linked to this record and shows up on the CRM Tasks page."
+                    />
+                  ) : (
+                    <Panel padding={0}>
+                      {linkedTasks.map((t, index) => {
+                        const done = t.status === "DONE";
+                        return (
+                          <CrmListRow
+                            key={t.id}
+                            first={index === 0}
+                            align="flex-start"
+                          >
+                            <div
+                              style={{
+                                minWidth: 0,
+                                flex: 1,
+                                paddingTop: 2,
+                              }}
                             >
-                              {t.title}
-                            </Typography.Text>
-                          }
-                          description={
-                            t.due_at
-                              ? `Due ${dayjs(t.due_at).format("DD MMM YYYY")} · ${userName(t.assignee_id)}`
-                              : userName(t.assignee_id)
-                          }
-                        />
-                      </List.Item>
-                    )}
-                  />
+                              <div
+                                style={{
+                                  fontWeight: 500,
+                                  fontSize: 13,
+                                  lineHeight: 1.45,
+                                  color: done
+                                    ? token.colorTextTertiary
+                                    : token.colorText,
+                                  textDecoration: done
+                                    ? "line-through"
+                                    : undefined,
+                                  wordBreak: "break-word",
+                                }}
+                              >
+                                {t.title}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  lineHeight: 1.45,
+                                  color: token.colorTextTertiary,
+                                }}
+                              >
+                                {t.due_at
+                                  ? `Due ${crmDate(t.due_at)} · ${userName(t.assignee_id)}`
+                                  : userName(t.assignee_id)}
+                              </div>
+                            </div>
+                            <Select
+                              size="small"
+                              value={t.status as CrmTaskStatus}
+                              style={{ width: 124, flex: "none" }}
+                              onChange={async (status) => {
+                                try {
+                                  await updateTask.mutateAsync({
+                                    id: t.id,
+                                    patch: { status },
+                                  });
+                                } catch (err) {
+                                  message.error(
+                                    errMsg(err, "Failed to update task."),
+                                  );
+                                }
+                              }}
+                              options={CRM_TASK_STATUSES.map((s) => ({
+                                value: s.value,
+                                label: s.label,
+                              }))}
+                            />
+                            <RowActions
+                              open={confirmTaskId === t.id}
+                              style={{ flex: "none" }}
+                            >
+                              <Popconfirm
+                                title="Delete this task?"
+                                description="This cannot be undone — tasks have no Deleted bin."
+                                okText="Delete"
+                                okButtonProps={{ danger: true }}
+                                onOpenChange={(open) =>
+                                  setConfirmTaskId(open ? t.id : null)
+                                }
+                                onConfirm={async () => {
+                                  try {
+                                    await deleteTask.mutateAsync(t.id);
+                                  } catch (err) {
+                                    message.error(
+                                      errMsg(err, "Failed to delete task."),
+                                    );
+                                  }
+                                }}
+                              >
+                                <Tooltip title="Delete">
+                                  <Button
+                                    type="text"
+                                    size="small"
+                                    aria-label="Delete task"
+                                    icon={<MIcon name="delete" size={16} />}
+                                  />
+                                </Tooltip>
+                              </Popconfirm>
+                            </RowActions>
+                          </CrmListRow>
+                        );
+                      })}
+                    </Panel>
+                  )}
                 </div>
               ),
             },
             {
               key: "notes",
-              label: `Notes (${linkedNotes.length})`,
+              label: <TabLabel count={linkedNotes.length}>Notes</TabLabel>,
               children: (
                 <div>
-                  <Space
-                    direction="vertical"
-                    style={{ width: "100%", marginBottom: 12 }}
-                  >
+                  <Composer>
                     <Input
+                      variant="borderless"
                       placeholder="Note title"
                       value={newNoteTitle}
                       onChange={(e) => setNewNoteTitle(e.target.value)}
+                      style={{
+                        paddingInline: 4,
+                        fontWeight: 500,
+                      }}
                     />
                     <Input.TextArea
+                      variant="borderless"
                       placeholder="Write a note…"
                       value={newNoteBody}
                       onChange={(e) => setNewNoteBody(e.target.value)}
                       autoSize={{ minRows: 2, maxRows: 6 }}
+                      style={{ paddingInline: 4 }}
                     />
-                    <Button
-                      type="primary"
-                      onClick={handleAddNote}
-                      loading={createNote.isPending}
-                      disabled={!newNoteTitle.trim()}
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "flex-end",
+                        marginTop: 6,
+                      }}
                     >
-                      Add note
-                    </Button>
-                  </Space>
-                  <List
-                    dataSource={linkedNotes}
-                    locale={{ emptyText: "No notes linked to this record." }}
-                    renderItem={(n) => (
-                      <List.Item
-                        style={{ paddingInline: 0 }}
-                        actions={[
-                          <Popconfirm
-                            key="delete"
-                            title="Delete this note?"
-                            onConfirm={async () => {
-                              try {
-                                await deleteNote.mutateAsync(n.id);
-                              } catch (err) {
-                                message.error(
-                                  errMsg(err, "Failed to delete note."),
-                                );
-                              }
-                            }}
-                          >
-                            <Button
-                              type="text"
-                              size="small"
-                              icon={<MIcon name="delete" size={16} />}
-                            />
-                          </Popconfirm>,
-                        ]}
+                      <Button
+                        type="primary"
+                        size="small"
+                        onClick={handleAddNote}
+                        loading={createNote.isPending}
+                        disabled={!newNoteTitle.trim()}
+                        icon={<MIcon name="add" size={16} />}
                       >
-                        <List.Item.Meta
-                          title={n.title || "Untitled note"}
-                          description={
-                            <div>
-                              {n.body ? (
-                                <Typography.Paragraph
-                                  type="secondary"
-                                  ellipsis={{ rows: 3, expandable: true }}
-                                  style={{ marginBottom: 4 }}
-                                >
-                                  {n.body}
-                                </Typography.Paragraph>
-                              ) : null}
-                              <Typography.Text
-                                type="secondary"
-                                style={{ fontSize: 12 }}
-                              >
-                                {userName(n.created_by)} ·{" "}
-                                {dayjs(n.created_at).fromNow()}
-                              </Typography.Text>
+                        Add note
+                      </Button>
+                    </div>
+                  </Composer>
+
+                  {linkedNotes.length === 0 ? (
+                    <EmptyState
+                      compact
+                      icon="sticky_note_2"
+                      title="No notes yet"
+                      description="Capture a call recap or a decision — notes written here stay attached to this record."
+                    />
+                  ) : (
+                    <Panel padding={0}>
+                      {linkedNotes.map((n, index) => (
+                        <CrmListRow
+                          key={n.id}
+                          first={index === 0}
+                          align="flex-start"
+                        >
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div
+                              style={{
+                                fontWeight: 500,
+                                fontSize: 13,
+                                lineHeight: 1.45,
+                                color: token.colorText,
+                                wordBreak: "break-word",
+                              }}
+                            >
+                              {n.title || "Untitled note"}
                             </div>
-                          }
-                        />
-                      </List.Item>
-                    )}
-                  />
+                            {n.body ? (
+                              <Typography.Paragraph
+                                type="secondary"
+                                ellipsis={{ rows: 3, expandable: true }}
+                                style={{
+                                  margin: "4px 0 0",
+                                  fontSize: 12.5,
+                                  lineHeight: 1.55,
+                                }}
+                              >
+                                {n.body}
+                              </Typography.Paragraph>
+                            ) : null}
+                            <div
+                              style={{
+                                marginTop: 4,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                                fontSize: 11.5,
+                                color: token.colorTextTertiary,
+                              }}
+                            >
+                              <EntityAvatar
+                                name={userName(n.created_by)}
+                                kind="person"
+                                size={16}
+                              />
+                              <span>{userName(n.created_by)}</span>
+                              <span>·</span>
+                              <Tooltip title={crmDateTime(n.created_at)}>
+                                <span>{crmFromNow(n.created_at)}</span>
+                              </Tooltip>
+                            </div>
+                          </div>
+                          <RowActions
+                            open={confirmNoteId === n.id}
+                            style={{ flex: "none" }}
+                          >
+                            <Popconfirm
+                              title="Delete this note?"
+                              description="This cannot be undone — notes have no Deleted bin."
+                              okText="Delete"
+                              okButtonProps={{ danger: true }}
+                              onOpenChange={(open) =>
+                                setConfirmNoteId(open ? n.id : null)
+                              }
+                              onConfirm={async () => {
+                                try {
+                                  await deleteNote.mutateAsync(n.id);
+                                } catch (err) {
+                                  message.error(
+                                    errMsg(err, "Failed to delete note."),
+                                  );
+                                }
+                              }}
+                            >
+                              <Tooltip title="Delete">
+                                <Button
+                                  type="text"
+                                  size="small"
+                                  aria-label="Delete note"
+                                  icon={<MIcon name="delete" size={16} />}
+                                />
+                              </Tooltip>
+                            </Popconfirm>
+                          </RowActions>
+                        </CrmListRow>
+                      ))}
+                    </Panel>
+                  )}
                 </div>
               ),
             },

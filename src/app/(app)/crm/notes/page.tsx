@@ -4,18 +4,14 @@ import { useMemo, useState } from "react";
 import {
   App,
   Button,
-  Card,
   Drawer,
-  Empty,
   Form,
   Input,
   Popconfirm,
-  Space,
-  Tag,
-  Typography,
+  Spin,
+  Tooltip,
+  theme,
 } from "antd";
-import dayjs from "dayjs";
-import relativeTime from "dayjs/plugin/relativeTime";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
 import {
   useCreateCrmNote,
@@ -39,8 +35,30 @@ import {
   decodeTarget,
   encodeTarget,
 } from "../_components/target-picker";
-
-dayjs.extend(relativeTime);
+import { entityMeta } from "../_components/entity-meta";
+import { FormSection } from "../_components/form-section";
+import {
+  CRM_DRAWER_BODY_STYLE,
+  CRM_DRAWER_FORM_STYLE,
+  CRM_DRAWER_WIDTH,
+  CrmDrawerFields,
+  CrmDrawerFooter,
+} from "../_components/drawer-footer";
+import {
+  CRM_HOVER_ROW_CLASS,
+  CrmPageHeader,
+  CrmSearch,
+  CrmToolbar,
+  EmptyState,
+  EntityAvatar,
+  Panel,
+  RowActions,
+  SoftChip,
+  crmDateTime,
+  crmFromNow,
+  crmPageStyle,
+  useCrmStyles,
+} from "../_lib/ui";
 
 type NoteFormValues = {
   title: string;
@@ -50,6 +68,8 @@ type NoteFormValues = {
 
 export default function CrmNotesPage() {
   const { message } = App.useApp();
+  const { token } = theme.useToken();
+  useCrmStyles();
   const { data: notes, isLoading } = useCrmNotes();
   const { data: people } = useCrmPeople();
   const { data: companies } = useCrmCompanies();
@@ -63,6 +83,7 @@ export default function CrmNotesPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CrmNoteWithTargets | null>(null);
   const [viewTarget, setViewTarget] = useState<CrmTargetRef | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
   const [form] = Form.useForm<NoteFormValues>();
 
   const recordName = useMemo(() => {
@@ -74,10 +95,15 @@ export default function CrmNotesPage() {
     return (type: string, id: string) => map.get(`${type}:${id}`) ?? null;
   }, [people, companies, deals]);
 
-  const memberName = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const m of members ?? []) if (m.user) map.set(m.user.id, m.user.name);
-    return (id: string | null) => (id && map.get(id)) || "Someone";
+  const author = useMemo(() => {
+    const map = new Map<string, { name: string; avatar: string | null }>();
+    for (const m of members ?? [])
+      if (m.user)
+        map.set(m.user.id, { name: m.user.name, avatar: m.user.avatar_url });
+    return (id: string | null) => {
+      const found = id ? map.get(id) : undefined;
+      return found ?? { name: "Someone", avatar: null };
+    };
   }, [members]);
 
   const rows = useMemo(() => {
@@ -134,137 +160,325 @@ export default function CrmNotesPage() {
     }
   };
 
-  return (
-    <div style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
-      <Space
+  const newNoteButton = (
+    <Button
+      type="primary"
+      icon={<MIcon name="add" size={16} />}
+      onClick={openCreate}
+    >
+      New note
+    </Button>
+  );
+
+  const renderTargets = (note: CrmNoteWithTargets) => {
+    const chips = note.targets
+      .map((x) => {
+        const name = recordName(x.target_type, x.target_id);
+        if (!name) return null;
+        const meta = entityMeta(x.target_type);
+        const open = () =>
+          setViewTarget({
+            type: x.target_type as CrmTargetRef["type"],
+            id: x.target_id,
+          });
+        return (
+          <span
+            key={x.id}
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              open();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                open();
+              }
+            }}
+            style={{ cursor: "pointer", display: "inline-flex", maxWidth: 220 }}
+          >
+            <SoftChip tone="custom" color={meta.color} icon={meta.icon}>
+              {name}
+            </SoftChip>
+          </span>
+        );
+      })
+      .filter(Boolean);
+    if (chips.length === 0) return null;
+    return (
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>{chips}</div>
+    );
+  };
+
+  const body = (() => {
+    if (isLoading) {
+      return (
+        <Panel padding={0}>
+          <div style={{ display: "grid", placeItems: "center", padding: 64 }}>
+            <Spin size="large" />
+          </div>
+        </Panel>
+      );
+    }
+
+    if ((notes ?? []).length === 0) {
+      return (
+        <Panel padding={0}>
+          <EmptyState
+            icon="sticky_note_2"
+            accent={token.colorPrimary}
+            title="No notes yet"
+            description="Capture the first call summary, meeting recap or piece of research — link it to a person, company or deal and it shows up on that record too."
+            action={newNoteButton}
+          />
+        </Panel>
+      );
+    }
+
+    if (rows.length === 0) {
+      return (
+        <Panel padding={0}>
+          <EmptyState
+            icon="search_off"
+            title="No notes match your search"
+            description={`Nothing here mentions “${search.trim()}”. Try a different word, or clear the search to see all ${(notes ?? []).length} notes.`}
+            action={<Button onClick={() => setSearch("")}>Clear search</Button>}
+          />
+        </Panel>
+      );
+    }
+
+    return (
+      <div
         style={{
-          width: "100%",
-          justifyContent: "space-between",
-          marginBottom: 16,
-          flexWrap: "wrap",
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+          alignItems: "start",
+          gap: 12,
         }}
       >
-        <Typography.Title level={3} style={{ margin: 0 }}>
-          Notes
-        </Typography.Title>
-        <Space wrap>
-          <Input
-            allowClear
-            prefix={<MIcon name="search" size={16} />}
-            placeholder="Search notes…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ width: 220 }}
-          />
-          <Button
-            type="primary"
-            icon={<MIcon name="add" size={16} />}
-            onClick={openCreate}
-          >
-            New note
-          </Button>
-        </Space>
-      </Space>
-
-      {isLoading ? null : rows.length === 0 ? (
-        <Empty description="No notes yet. Capture the first call summary, meeting recap, or research." />
-      ) : (
-        <Space direction="vertical" size={12} style={{ width: "100%" }}>
-          {rows.map((n) => (
-            <Card
-              key={n.id}
-              size="small"
-              title={n.title || "Untitled note"}
-              extra={
-                <Space>
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<MIcon name="edit" size={16} />}
-                    onClick={() => openEdit(n)}
-                  />
-                  <Popconfirm
-                    title="Delete this note?"
-                    onConfirm={async () => {
-                      try {
-                        await deleteNote.mutateAsync(n.id);
-                        message.success("Note deleted.");
-                      } catch (err) {
-                        message.error(errMsg(err, "Failed to delete note."));
-                      }
+        {rows.map((n) => {
+          const who = author(n.created_by);
+          const chips = renderTargets(n);
+          return (
+            <Panel key={n.id} hover padding={16}>
+              <div
+                className={CRM_HOVER_ROW_CLASS}
+                onClick={() => openEdit(n)}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                  cursor: "pointer",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 8,
+                    minHeight: 24,
+                  }}
+                >
+                  <div
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      fontSize: 14,
+                      fontWeight: 600,
+                      lineHeight: 1.4,
+                      letterSpacing: "-0.1px",
+                      color: token.colorText,
+                      display: "-webkit-box",
+                      WebkitBoxOrient: "vertical",
+                      WebkitLineClamp: 2,
+                      overflow: "hidden",
                     }}
                   >
-                    <Button
-                      type="text"
-                      size="small"
-                      danger
-                      icon={<MIcon name="delete" size={16} />}
-                    />
-                  </Popconfirm>
-                </Space>
-              }
-            >
-              {n.body ? (
-                <Typography.Paragraph
-                  style={{ whiteSpace: "pre-wrap", marginBottom: 8 }}
-                >
-                  {n.body}
-                </Typography.Paragraph>
-              ) : null}
-              <Space size={4} wrap>
-                {n.targets.map((x) => {
-                  const name = recordName(x.target_type, x.target_id);
-                  if (!name) return null;
-                  return (
-                    <Tag
-                      key={x.id}
-                      style={{ cursor: "pointer" }}
-                      onClick={() =>
-                        setViewTarget({
-                          type: x.target_type as CrmTargetRef["type"],
-                          id: x.target_id,
-                        })
+                    {n.title || "Untitled note"}
+                  </div>
+                  <RowActions
+                    open={confirmId === n.id}
+                    style={{ marginTop: -2 }}
+                  >
+                    <Tooltip title="Edit">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<MIcon name="edit" size={16} />}
+                        onClick={() => openEdit(n)}
+                      />
+                    </Tooltip>
+                    <Popconfirm
+                      title="Delete this note?"
+                      description="This cannot be undone — notes have no Deleted bin."
+                      okText="Delete"
+                      okButtonProps={{ danger: true }}
+                      onOpenChange={(open) =>
+                        setConfirmId((current) =>
+                          open ? n.id : current === n.id ? null : current,
+                        )
                       }
+                      onConfirm={async () => {
+                        try {
+                          await deleteNote.mutateAsync(n.id);
+                          message.success("Note deleted.");
+                        } catch (err) {
+                          message.error(errMsg(err, "Failed to delete note."));
+                        }
+                      }}
                     >
-                      {name}
-                    </Tag>
-                  );
-                })}
-              </Space>
-              <div style={{ marginTop: 8 }}>
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {memberName(n.created_by)} · {dayjs(n.created_at).fromNow()}
-                </Typography.Text>
+                      <Tooltip title="Delete">
+                        <Button
+                          type="text"
+                          size="small"
+                          danger
+                          icon={<MIcon name="delete" size={16} />}
+                        />
+                      </Tooltip>
+                    </Popconfirm>
+                  </RowActions>
+                </div>
+
+                {n.body ? (
+                  <div
+                    style={{
+                      fontSize: 13,
+                      lineHeight: 1.55,
+                      color: token.colorTextSecondary,
+                      whiteSpace: "pre-wrap",
+                      display: "-webkit-box",
+                      WebkitBoxOrient: "vertical",
+                      WebkitLineClamp: 4,
+                      overflow: "hidden",
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {n.body}
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      fontSize: 12.5,
+                      color: token.colorTextQuaternary,
+                      fontStyle: "italic",
+                    }}
+                  >
+                    No details
+                  </div>
+                )}
+
+                {chips}
+
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginTop: "auto",
+                    paddingTop: 10,
+                    borderTop: `1px solid ${token.colorSplit}`,
+                    minWidth: 0,
+                  }}
+                >
+                  <EntityAvatar
+                    name={who.name}
+                    kind="person"
+                    src={who.avatar}
+                    size={22}
+                  />
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: token.colorTextSecondary,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      minWidth: 0,
+                    }}
+                  >
+                    {who.name}
+                  </span>
+                  <Tooltip title={crmDateTime(n.created_at)}>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: token.colorTextTertiary,
+                        marginLeft: "auto",
+                        flex: "none",
+                      }}
+                    >
+                      {crmFromNow(n.created_at)}
+                    </span>
+                  </Tooltip>
+                </div>
               </div>
-            </Card>
-          ))}
-        </Space>
-      )}
+            </Panel>
+          );
+        })}
+      </div>
+    );
+  })();
+
+  return (
+    <div style={crmPageStyle()}>
+      <CrmPageHeader
+        title="Notes"
+        subtitle="Call recaps, meeting summaries and research, filed against the records they belong to."
+        count={isLoading ? null : rows.length}
+      />
+
+      <CrmToolbar>
+        <CrmSearch
+          value={search}
+          onChange={setSearch}
+          placeholder="Search notes…"
+        />
+        <div style={{ marginLeft: "auto" }}>{newNoteButton}</div>
+      </CrmToolbar>
+
+      {body}
 
       <Drawer
         open={formOpen}
         onClose={() => setFormOpen(false)}
         title={editing ? "Edit note" : "New note"}
-        width={420}
+        width={CRM_DRAWER_WIDTH}
         destroyOnHidden
+        styles={{ body: CRM_DRAWER_BODY_STYLE }}
       >
-        <Form form={form} layout="vertical" onFinish={handleSubmit}>
-          <Form.Item
-            name="title"
-            label="Title"
-            rules={[{ required: true, message: "Note title is required" }]}
-          >
-            <Input placeholder="e.g. Discovery call recap" />
-          </Form.Item>
-          <Form.Item name="body" label="Note">
-            <Input.TextArea autoSize={{ minRows: 4, maxRows: 12 }} />
-          </Form.Item>
-          {!editing && (
-            <Form.Item name="targets" label="Linked records">
-              <TargetPicker />
-            </Form.Item>
-          )}
-          <Space style={{ justifyContent: "flex-end", width: "100%" }}>
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleSubmit}
+          style={CRM_DRAWER_FORM_STYLE}
+        >
+          <CrmDrawerFields>
+            <FormSection label="Note" first>
+              <Form.Item
+                name="title"
+                label="Title"
+                rules={[{ required: true, message: "Note title is required" }]}
+              >
+                <Input placeholder="e.g. Discovery call recap" />
+              </Form.Item>
+              <Form.Item name="body" label="Note">
+                <Input.TextArea autoSize={{ minRows: 4, maxRows: 12 }} />
+              </Form.Item>
+            </FormSection>
+
+            {!editing && (
+              <FormSection label="Relations">
+                <Form.Item name="targets" label="Linked records">
+                  <TargetPicker />
+                </Form.Item>
+              </FormSection>
+            )}
+          </CrmDrawerFields>
+
+          <CrmDrawerFooter>
             <Button onClick={() => setFormOpen(false)}>Cancel</Button>
             <Button
               type="primary"
@@ -273,7 +487,7 @@ export default function CrmNotesPage() {
             >
               {editing ? "Save changes" : "Add note"}
             </Button>
-          </Space>
+          </CrmDrawerFooter>
         </Form>
       </Drawer>
 

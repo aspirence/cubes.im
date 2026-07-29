@@ -3,19 +3,16 @@
 import { useMemo, useState } from "react";
 import {
   App,
-  Avatar,
   Button,
   Drawer,
   Form,
   Input,
   Popconfirm,
   Select,
-  Space,
-  Switch,
   Table,
-  Typography,
+  Tooltip,
+  theme,
 } from "antd";
-import dayjs from "dayjs";
 import {
   useCreateCrmPerson,
   useCrmPeople,
@@ -32,6 +29,26 @@ import {
 import { errMsg } from "@/lib/err";
 import { MIcon } from "../_components/m-icon";
 import { RecordDrawer } from "../_components/record-drawer";
+import { CrmToggle } from "../_components/crm-toggle";
+import { FormSection } from "../_components/form-section";
+import {
+  CRM_DRAWER_BODY_STYLE,
+  CRM_DRAWER_FORM_STYLE,
+  CRM_DRAWER_WIDTH,
+  CrmDrawerFields,
+  CrmDrawerFooter,
+} from "../_components/drawer-footer";
+import {
+  CrmPageHeader,
+  CrmSearch,
+  CrmToolbar,
+  EmptyState,
+  EntityCell,
+  Panel,
+  RowActions,
+  crmDate,
+  crmPageStyle,
+} from "../_lib/ui";
 
 type PersonFormValues = {
   first_name: string;
@@ -45,6 +62,7 @@ type PersonFormValues = {
 };
 
 export default function CrmPeoplePage() {
+  const { token } = theme.useToken();
   const { message } = App.useApp();
   const { data: people, isLoading } = useCrmPeople();
   const { data: companies } = useCrmCompanies();
@@ -58,6 +76,7 @@ export default function CrmPeoplePage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CrmPersonWithCompany | null>(null);
   const [viewTarget, setViewTarget] = useState<CrmTargetRef | null>(null);
+  const [confirmRow, setConfirmRow] = useState<string | null>(null);
   const [form] = Form.useForm<PersonFormValues>();
 
   const rows = useMemo(() => {
@@ -133,234 +152,316 @@ export default function CrmPeoplePage() {
     }
   };
 
-  return (
-    <div style={{ padding: 24 }}>
-      <Space
-        style={{
-          width: "100%",
-          justifyContent: "space-between",
-          marginBottom: 16,
-          flexWrap: "wrap",
-        }}
-      >
-        <Typography.Title level={3} style={{ margin: 0 }}>
-          People
-        </Typography.Title>
-        <Space wrap>
-          <Input
-            allowClear
-            prefix={<MIcon name="search" size={16} />}
-            placeholder="Search people…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ width: 220 }}
-          />
-          <Space size={6}>
-            <Switch
-              size="small"
-              checked={showDeleted}
-              onChange={setShowDeleted}
-            />
-            <Typography.Text type="secondary">Deleted</Typography.Text>
-          </Space>
-          <Button
-            type="primary"
-            icon={<MIcon name="add" size={16} />}
-            onClick={openCreate}
-          >
-            New person
-          </Button>
-        </Space>
-      </Space>
+  /** Muted secondary-column text with a quiet em dash for empty values. */
+  const softText = (value: string | null | undefined) =>
+    value ? (
+      <span style={{ color: token.colorTextSecondary }}>{value}</span>
+    ) : (
+      <span style={{ color: token.colorTextQuaternary }}>—</span>
+    );
 
-      <Table
-        rowKey="id"
-        size="middle"
-        loading={isLoading}
-        dataSource={rows}
-        pagination={{ pageSize: 25, hideOnSinglePage: true }}
-        onRow={(p) => ({
-          onClick: () => setViewTarget({ type: "person", id: p.id }),
-          style: { cursor: "pointer" },
-        })}
-        columns={[
-          {
-            title: "Name",
-            key: "name",
-            render: (_, p) => (
-              <Space>
-                <Avatar size={26} src={p.avatar_url ?? undefined}>
-                  {(crmPersonName(p) || "?").charAt(0).toUpperCase()}
-                </Avatar>
-                <span style={{ fontWeight: 500 }}>
-                  {crmPersonName(p) || "Unnamed"}
-                </span>
-              </Space>
-            ),
-            sorter: (a, b) => crmPersonName(a).localeCompare(crmPersonName(b)),
-          },
-          {
-            title: "Email",
-            dataIndex: "email",
-            render: (v: string | null) => v || "—",
-          },
-          {
-            title: "Phone",
-            dataIndex: "phone",
-            render: (v: string | null) => v || "—",
-          },
-          {
-            title: "Company",
-            key: "company",
-            render: (_, p) => p.company?.name ?? "—",
-            sorter: (a, b) =>
-              (a.company?.name ?? "").localeCompare(b.company?.name ?? ""),
-          },
-          {
-            title: "Job title",
-            dataIndex: "job_title",
-            render: (v: string | null) => v || "—",
-          },
-          {
-            title: "City",
-            dataIndex: "city",
-            render: (v: string | null) => v || "—",
-          },
-          {
-            title: "Created",
-            dataIndex: "created_at",
-            render: (v: string) => dayjs(v).format("DD MMM YYYY"),
-            sorter: (a, b) => a.created_at.localeCompare(b.created_at),
-          },
-          {
-            title: "",
-            key: "actions",
-            width: 120,
-            render: (_, p) => (
-              <Space onClick={(e) => e.stopPropagation()}>
-                {p.deleted_at ? (
-                  <>
-                    <Button
-                      size="small"
-                      onClick={async () => {
-                        try {
-                          await setDeleted.mutateAsync({
-                            id: p.id,
-                            deleted: false,
-                          });
-                          message.success("Person restored.");
-                        } catch (err) {
-                          message.error(errMsg(err, "Failed to restore."));
-                        }
-                      }}
-                    >
-                      Restore
-                    </Button>
-                    <Popconfirm
-                      title="Permanently delete this person?"
-                      description="This cannot be undone."
-                      onConfirm={async () => {
-                        try {
-                          await destroyPerson.mutateAsync(p.id);
-                          message.success("Person permanently deleted.");
-                        } catch (err) {
-                          message.error(errMsg(err, "Failed to delete."));
-                        }
-                      }}
-                    >
-                      <Button size="small" danger>
-                        Destroy
-                      </Button>
-                    </Popconfirm>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<MIcon name="edit" size={16} />}
-                      onClick={() => openEdit(p)}
-                    />
-                    <Popconfirm
-                      title="Delete this person?"
-                      description="They move to Deleted and can be restored."
-                      onConfirm={async () => {
-                        try {
-                          await setDeleted.mutateAsync({
-                            id: p.id,
-                            deleted: true,
-                          });
-                          message.success("Person deleted.");
-                        } catch (err) {
-                          message.error(errMsg(err, "Failed to delete."));
-                        }
-                      }}
-                    >
-                      <Button
-                        type="text"
-                        size="small"
-                        danger
-                        icon={<MIcon name="delete" size={16} />}
-                      />
-                    </Popconfirm>
-                  </>
-                )}
-              </Space>
-            ),
-          },
-        ]}
+  const emptyText = search.trim() ? (
+    <EmptyState
+      compact
+      icon="search_off"
+      title="No people match your search"
+      description={`Nothing found for “${search.trim()}”. Try a name, email, job title, city, or company.`}
+      action={<Button onClick={() => setSearch("")}>Clear search</Button>}
+    />
+  ) : showDeleted ? (
+    <EmptyState
+      compact
+      icon="restore_from_trash"
+      title="Nothing in Deleted"
+      description="People you delete land here first, so you can restore them before they are permanently removed."
+    />
+  ) : (
+    <EmptyState
+      compact
+      icon="group"
+      accent={token.colorPrimary}
+      title="No people yet"
+      description="Add the contacts you work with. Each person keeps their own deals, tasks, notes, and timeline."
+      action={
+        <Button
+          type="primary"
+          icon={<MIcon name="add" size={16} />}
+          onClick={openCreate}
+        >
+          Add your first person
+        </Button>
+      }
+    />
+  );
+
+  return (
+    <div style={crmPageStyle()}>
+      <CrmPageHeader
+        title="People"
+        count={isLoading ? null : rows.length}
+        subtitle="Every contact in your team's CRM. Open a record to see its deals, tasks and notes."
       />
+
+      <CrmToolbar>
+        <CrmSearch
+          value={search}
+          onChange={setSearch}
+          placeholder="Search people…"
+        />
+        <CrmToggle
+          checked={showDeleted}
+          onChange={setShowDeleted}
+          label="Deleted"
+        />
+        <Button
+          type="primary"
+          icon={<MIcon name="add" size={16} />}
+          onClick={openCreate}
+          style={{ marginLeft: "auto" }}
+        >
+          New person
+        </Button>
+      </CrmToolbar>
+
+      <Panel padding={0}>
+        <Table
+          rowKey="id"
+          size="middle"
+          loading={isLoading}
+          dataSource={rows}
+          pagination={{
+            pageSize: 25,
+            hideOnSinglePage: true,
+            style: { marginInline: 16 },
+          }}
+          scroll={{ x: 880 }}
+          locale={{
+            emptyText: isLoading ? <div style={{ height: 120 }} /> : emptyText,
+          }}
+          onRow={(p) => ({
+            onClick: () => setViewTarget({ type: "person", id: p.id }),
+            style: { cursor: "pointer" },
+          })}
+          columns={[
+            {
+              title: "Name",
+              key: "name",
+              render: (_, p) => {
+                const name = crmPersonName(p) || "Unnamed";
+                const subtitle = [p.job_title, p.company?.name]
+                  .filter(Boolean)
+                  .join(" · ");
+                return (
+                  <EntityCell
+                    kind="person"
+                    name={name}
+                    subtitle={subtitle || undefined}
+                    src={p.avatar_url}
+                    muted={Boolean(p.deleted_at)}
+                  />
+                );
+              },
+              sorter: (a, b) => crmPersonName(a).localeCompare(crmPersonName(b)),
+            },
+            {
+              title: "Email",
+              dataIndex: "email",
+              render: (v: string | null) => softText(v),
+            },
+            {
+              title: "Phone",
+              dataIndex: "phone",
+              render: (v: string | null) => softText(v),
+            },
+            {
+              title: "City",
+              dataIndex: "city",
+              render: (v: string | null) => softText(v),
+            },
+            {
+              title: "Created",
+              dataIndex: "created_at",
+              width: 130,
+              render: (v: string) => (
+                <span style={{ color: token.colorTextTertiary }}>
+                  {crmDate(v)}
+                </span>
+              ),
+              sorter: (a, b) => a.created_at.localeCompare(b.created_at),
+            },
+            {
+              title: "",
+              key: "actions",
+              width: 96,
+              align: "right",
+              render: (_, p) => (
+                <RowActions open={confirmRow === p.id}>
+                  {p.deleted_at ? (
+                    <>
+                      <Tooltip title="Restore">
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<MIcon name="restore_from_trash" size={17} />}
+                          onClick={async () => {
+                            try {
+                              await setDeleted.mutateAsync({
+                                id: p.id,
+                                deleted: false,
+                              });
+                              message.success("Person restored.");
+                            } catch (err) {
+                              message.error(errMsg(err, "Failed to restore."));
+                            }
+                          }}
+                        />
+                      </Tooltip>
+                      <Popconfirm
+                        title="Permanently delete this person?"
+                        description="This cannot be undone."
+                        okText="Delete forever"
+                        okButtonProps={{ danger: true }}
+                        onOpenChange={(open) =>
+                          setConfirmRow(open ? p.id : null)
+                        }
+                        onConfirm={async () => {
+                          try {
+                            await destroyPerson.mutateAsync(p.id);
+                            message.success("Person permanently deleted.");
+                          } catch (err) {
+                            message.error(errMsg(err, "Failed to delete."));
+                          }
+                        }}
+                      >
+                        <Tooltip title="Delete forever">
+                          <Button
+                            type="text"
+                            size="small"
+                            danger
+                            icon={<MIcon name="delete_forever" size={17} />}
+                          />
+                        </Tooltip>
+                      </Popconfirm>
+                    </>
+                  ) : (
+                    <>
+                      <Tooltip title="Edit">
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<MIcon name="edit" size={16} />}
+                          onClick={() => openEdit(p)}
+                        />
+                      </Tooltip>
+                      <Popconfirm
+                        title="Delete this person?"
+                        description="They move to Deleted and can be restored."
+                        okText="Delete"
+                        okButtonProps={{ danger: true }}
+                        onOpenChange={(open) =>
+                          setConfirmRow(open ? p.id : null)
+                        }
+                        onConfirm={async () => {
+                          try {
+                            await setDeleted.mutateAsync({
+                              id: p.id,
+                              deleted: true,
+                            });
+                            message.success("Person deleted.");
+                          } catch (err) {
+                            message.error(errMsg(err, "Failed to delete."));
+                          }
+                        }}
+                      >
+                        <Tooltip title="Delete">
+                          <Button
+                            type="text"
+                            size="small"
+                            danger
+                            icon={<MIcon name="delete" size={16} />}
+                          />
+                        </Tooltip>
+                      </Popconfirm>
+                    </>
+                  )}
+                </RowActions>
+              ),
+            },
+          ]}
+        />
+      </Panel>
 
       <Drawer
         open={formOpen}
         onClose={() => setFormOpen(false)}
         title={editing ? "Edit person" : "New person"}
-        width={420}
+        width={CRM_DRAWER_WIDTH}
         destroyOnHidden
+        styles={{ body: CRM_DRAWER_BODY_STYLE }}
       >
-        <Form form={form} layout="vertical" onFinish={handleSubmit}>
-          <Space.Compact style={{ width: "100%" }}>
-            <Form.Item
-              name="first_name"
-              label="First name"
-              rules={[{ required: true, message: "First name is required" }]}
-              style={{ flex: 1, marginRight: 8 }}
-            >
-              <Input placeholder="First name" />
-            </Form.Item>
-            <Form.Item name="last_name" label="Last name" style={{ flex: 1 }}>
-              <Input placeholder="Last name" />
-            </Form.Item>
-          </Space.Compact>
-          <Form.Item
-            name="email"
-            label="Email"
-            rules={[{ type: "email", message: "Enter a valid email" }]}
-          >
-            <Input placeholder="name@company.com" />
-          </Form.Item>
-          <Form.Item name="phone" label="Phone">
-            <Input placeholder="+1 555 000 0000" />
-          </Form.Item>
-          <Form.Item name="company_id" label="Company">
-            <Select
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              options={companyOptions}
-              placeholder="Select a company"
-            />
-          </Form.Item>
-          <Form.Item name="job_title" label="Job title">
-            <Input placeholder="e.g. Head of Design" />
-          </Form.Item>
-          <Form.Item name="city" label="City">
-            <Input placeholder="City" />
-          </Form.Item>
-          <Form.Item name="linkedin_url" label="LinkedIn URL">
-            <Input placeholder="https://linkedin.com/in/…" />
-          </Form.Item>
-          <Space style={{ justifyContent: "flex-end", width: "100%" }}>
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleSubmit}
+          style={CRM_DRAWER_FORM_STYLE}
+        >
+          <CrmDrawerFields>
+            <FormSection label="Identity" first>
+              <div style={{ display: "flex", gap: 12 }}>
+                <Form.Item
+                  name="first_name"
+                  label="First name"
+                  rules={[{ required: true, message: "First name is required" }]}
+                  style={{ flex: 1, minWidth: 0 }}
+                >
+                  <Input placeholder="First name" />
+                </Form.Item>
+                <Form.Item
+                  name="last_name"
+                  label="Last name"
+                  style={{ flex: 1, minWidth: 0 }}
+                >
+                  <Input placeholder="Last name" />
+                </Form.Item>
+              </div>
+            </FormSection>
+
+            <FormSection label="Contact">
+              <Form.Item
+                name="email"
+                label="Email"
+                rules={[{ type: "email", message: "Enter a valid email" }]}
+              >
+                <Input placeholder="name@company.com" />
+              </Form.Item>
+              <Form.Item name="phone" label="Phone">
+                <Input placeholder="+1 555 000 0000" />
+              </Form.Item>
+              <Form.Item name="city" label="City">
+                <Input placeholder="City" />
+              </Form.Item>
+              <Form.Item name="linkedin_url" label="LinkedIn URL">
+                <Input placeholder="https://linkedin.com/in/…" />
+              </Form.Item>
+            </FormSection>
+
+            <FormSection label="Work">
+              <Form.Item name="company_id" label="Company">
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  options={companyOptions}
+                  placeholder="Select a company"
+                />
+              </Form.Item>
+              <Form.Item name="job_title" label="Job title">
+                <Input placeholder="e.g. Head of Design" />
+              </Form.Item>
+            </FormSection>
+          </CrmDrawerFields>
+
+          <CrmDrawerFooter>
             <Button onClick={() => setFormOpen(false)}>Cancel</Button>
             <Button
               type="primary"
@@ -369,7 +470,7 @@ export default function CrmPeoplePage() {
             >
               {editing ? "Save changes" : "Add person"}
             </Button>
-          </Space>
+          </CrmDrawerFooter>
         </Form>
       </Drawer>
 

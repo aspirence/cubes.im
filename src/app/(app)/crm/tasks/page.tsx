@@ -11,11 +11,9 @@ import {
   Popconfirm,
   Segmented,
   Select,
-  Space,
-  Switch,
   Table,
-  Tag,
-  Typography,
+  Tooltip,
+  theme,
 } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { useAuth } from "@/features/auth/use-auth";
@@ -44,6 +42,30 @@ import {
   decodeTarget,
   encodeTarget,
 } from "../_components/target-picker";
+import { CrmToggle } from "../_components/crm-toggle";
+import { FormSection } from "../_components/form-section";
+import { entityMeta } from "../_components/entity-meta";
+import { TILE_GRID } from "../_components/layout";
+import {
+  CRM_DRAWER_BODY_STYLE,
+  CRM_DRAWER_FORM_STYLE,
+  CRM_DRAWER_WIDTH,
+  CrmDrawerFields,
+  CrmDrawerFooter,
+} from "../_components/drawer-footer";
+import {
+  CrmPageHeader,
+  CrmToolbar,
+  EmptyState,
+  EntityAvatar,
+  Panel,
+  RowActions,
+  SoftChip,
+  StatTile,
+  crmDate,
+  crmPageStyle,
+  tint,
+} from "../_lib/ui";
 
 type TaskFormValues = {
   title: string;
@@ -54,8 +76,37 @@ type TaskFormValues = {
   targets?: string[];
 };
 
+/**
+ * Status accents are *data* (they live next to the status enum), so the hexes
+ * stay literal here — everything else on this page reads from the theme token.
+ */
+const STATUS_META: Record<
+  CrmTaskStatus,
+  { label: string; color: string; icon: string }
+> = {
+  TODO: {
+    label: "To do",
+    color: CRM_TASK_STATUSES[0].color,
+    icon: "radio_button_unchecked",
+  },
+  IN_PROGRESS: {
+    label: "In progress",
+    color: CRM_TASK_STATUSES[1].color,
+    icon: "pending",
+  },
+  DONE: {
+    label: "Done",
+    color: CRM_TASK_STATUSES[2].color,
+    icon: "check_circle",
+  },
+};
+
+const statusMeta = (value: unknown) =>
+  STATUS_META[value as CrmTaskStatus] ?? STATUS_META.TODO;
+
 export default function CrmTasksPage() {
   const { message } = App.useApp();
+  const { token } = theme.useToken();
   const { user } = useAuth();
   const { data: tasks, isLoading } = useCrmTasks();
   const { data: people } = useCrmPeople();
@@ -73,6 +124,7 @@ export default function CrmTasksPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CrmTaskWithTargets | null>(null);
   const [viewTarget, setViewTarget] = useState<CrmTargetRef | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
   const [form] = Form.useForm<TaskFormValues>();
 
   const recordName = useMemo(() => {
@@ -84,19 +136,58 @@ export default function CrmTasksPage() {
     return (type: string, id: string) => map.get(`${type}:${id}`) ?? null;
   }, [people, companies, deals]);
 
-  const memberName = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const m of members ?? []) if (m.user) map.set(m.user.id, m.user.name);
-    return (id: string | null) => (id && map.get(id)) || "—";
+  const memberById = useMemo(() => {
+    const map = new Map<string, { name: string; avatar: string | null }>();
+    for (const m of members ?? [])
+      if (m.user)
+        map.set(m.user.id, { name: m.user.name, avatar: m.user.avatar_url });
+    return map;
   }, [members]);
+
+  /** Everything the "My tasks" switch keeps — the basis for the stat tiles. */
+  const scoped = useMemo(
+    () => (tasks ?? []).filter((t) => !onlyMine || t.assignee_id === user?.id),
+    [tasks, onlyMine, user?.id],
+  );
 
   const rows = useMemo(
     () =>
-      (tasks ?? [])
-        .filter((t) => statusFilter === "ALL" || t.status === statusFilter)
-        .filter((t) => !onlyMine || t.assignee_id === user?.id),
-    [tasks, statusFilter, onlyMine, user?.id],
+      scoped.filter((t) => statusFilter === "ALL" || t.status === statusFilter),
+    [scoped, statusFilter],
   );
+
+  const counts = useMemo(() => {
+    const now = dayjs();
+    const soon = now.add(7, "day");
+    let todo = 0;
+    let inProgress = 0;
+    let done = 0;
+    let overdueTodo = 0;
+    let dueSoonInProgress = 0;
+    for (const t of scoped) {
+      if (t.status === "DONE") {
+        done += 1;
+        continue;
+      }
+      if (t.status === "IN_PROGRESS") inProgress += 1;
+      else todo += 1;
+      if (!t.due_at) continue;
+      const due = dayjs(t.due_at);
+      if (due.isBefore(now)) {
+        if (t.status !== "IN_PROGRESS") overdueTodo += 1;
+      } else if (t.status === "IN_PROGRESS" && due.isBefore(soon)) {
+        dueSoonInProgress += 1;
+      }
+    }
+    return {
+      todo,
+      inProgress,
+      done,
+      overdueTodo,
+      dueSoonInProgress,
+      total: scoped.length,
+    };
+  }, [scoped]);
 
   const memberOptions = useMemo(
     () =>
@@ -156,230 +247,542 @@ export default function CrmTasksPage() {
     }
   };
 
-  return (
-    <div style={{ padding: 24 }}>
-      <Space
-        style={{
-          width: "100%",
-          justifyContent: "space-between",
-          marginBottom: 16,
-          flexWrap: "wrap",
-        }}
-      >
-        <Space>
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            Tasks
-          </Typography.Title>
-          <Segmented
-            value={statusFilter}
-            onChange={(v) => setStatusFilter(v as "ALL" | CrmTaskStatus)}
-            options={[
-              { value: "ALL", label: "All" },
-              ...CRM_TASK_STATUSES.map((s) => ({
-                value: s.value,
-                label: s.label,
-              })),
-            ]}
-          />
-        </Space>
-        <Space wrap>
-          <Space size={6}>
-            <Switch size="small" checked={onlyMine} onChange={setOnlyMine} />
-            <Typography.Text type="secondary">My tasks</Typography.Text>
-          </Space>
-          <Button
-            type="primary"
-            icon={<MIcon name="add" size={16} />}
-            onClick={openCreate}
-          >
-            New task
-          </Button>
-        </Space>
-      </Space>
+  const changeStatus = async (id: string, status: CrmTaskStatus) => {
+    try {
+      await updateTask.mutateAsync({ id, patch: { status } });
+    } catch (err) {
+      message.error(errMsg(err, "Failed to update status."));
+    }
+  };
 
-      <Table
-        rowKey="id"
-        size="middle"
-        loading={isLoading}
-        dataSource={rows}
-        pagination={{ pageSize: 25, hideOnSinglePage: true }}
-        columns={[
-          {
-            title: "Task",
-            dataIndex: "title",
-            render: (v: string, t) => (
-              <Typography.Text
-                delete={t.status === "DONE"}
-                style={{ fontWeight: 500 }}
-              >
-                {v}
-              </Typography.Text>
-            ),
-          },
-          {
-            title: "Status",
-            key: "status",
-            width: 150,
-            render: (_, t) => (
-              <Select
-                size="small"
-                value={t.status as CrmTaskStatus}
-                style={{ width: 130 }}
-                onChange={async (status) => {
-                  try {
-                    await updateTask.mutateAsync({
-                      id: t.id,
-                      patch: { status },
-                    });
-                  } catch (err) {
-                    message.error(errMsg(err, "Failed to update status."));
-                  }
-                }}
-                options={CRM_TASK_STATUSES.map((s) => ({
-                  value: s.value,
-                  label: (
-                    <Space size={6}>
-                      <span
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: 999,
-                          background: s.color,
-                          display: "inline-block",
-                        }}
-                      />
-                      {s.label}
-                    </Space>
-                  ),
-                }))}
-              />
-            ),
-          },
-          {
-            title: "Due",
-            dataIndex: "due_at",
-            render: (v: string | null) => {
-              if (!v) return "—";
-              const overdue = dayjs(v).isBefore(dayjs());
-              return (
-                <Typography.Text type={overdue ? "danger" : undefined}>
-                  {dayjs(v).format("DD MMM YYYY")}
-                </Typography.Text>
-              );
-            },
-            sorter: (a, b) => (a.due_at ?? "").localeCompare(b.due_at ?? ""),
-          },
-          {
-            title: "Assignee",
-            key: "assignee",
-            render: (_, t) => memberName(t.assignee_id),
-          },
-          {
-            title: "Linked to",
-            key: "targets",
-            render: (_, t) => (
-              <Space size={4} wrap>
-                {t.targets.map((x) => {
-                  const name = recordName(x.target_type, x.target_id);
-                  if (!name) return null;
-                  return (
-                    <Tag
-                      key={x.id}
-                      style={{ cursor: "pointer" }}
-                      onClick={() =>
-                        setViewTarget({
-                          type: x.target_type as CrmTargetRef["type"],
-                          id: x.target_id,
-                        })
-                      }
-                    >
-                      {name}
-                    </Tag>
-                  );
-                })}
-              </Space>
-            ),
-          },
-          {
-            title: "",
-            key: "actions",
-            width: 90,
-            render: (_, t) => (
-              <Space>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<MIcon name="edit" size={16} />}
-                  onClick={() => openEdit(t)}
-                />
-                <Popconfirm
-                  title="Delete this task?"
-                  onConfirm={async () => {
-                    try {
-                      await deleteTask.mutateAsync(t.id);
-                      message.success("Task deleted.");
-                    } catch (err) {
-                      message.error(errMsg(err, "Failed to delete task."));
-                    }
-                  }}
-                >
-                  <Button
-                    type="text"
-                    size="small"
-                    danger
-                    icon={<MIcon name="delete" size={16} />}
-                  />
-                </Popconfirm>
-              </Space>
-            ),
-          },
-        ]}
+  /** Tile drill-down: click a status tile to filter, click it again to clear. */
+  const toggleStatus = (status: CrmTaskStatus) =>
+    setStatusFilter((current) => (current === status ? "ALL" : status));
+
+  const newTaskButton = (
+    <Button
+      type="primary"
+      icon={<MIcon name="add" size={16} />}
+      onClick={openCreate}
+    >
+      New task
+    </Button>
+  );
+
+  const emptyState = (() => {
+    if ((tasks ?? []).length === 0) {
+      return (
+        <EmptyState
+          compact
+          icon="task_alt"
+          accent={token.colorPrimary}
+          title="No tasks yet"
+          description="Tasks are the follow-ups attached to your people, companies and deals — the next call, the contract to chase, the demo to prep."
+          action={newTaskButton}
+        />
+      );
+    }
+    const label =
+      statusFilter === "ALL" ? null : statusMeta(statusFilter).label;
+    if (onlyMine) {
+      return (
+        <EmptyState
+          compact
+          icon="person_check"
+          title={
+            label ? `Nothing of yours in ${label}` : "Nothing assigned to you"
+          }
+          description="Turn off “My tasks” to see what the rest of the team is working on."
+          action={
+            <Button onClick={() => setOnlyMine(false)}>Show all tasks</Button>
+          }
+        />
+      );
+    }
+    return (
+      <EmptyState
+        compact
+        icon="filter_alt_off"
+        title={label ? `No ${label.toLowerCase()} tasks` : "No tasks here"}
+        description="Nothing matches this filter right now."
+        action={
+          statusFilter === "ALL" ? (
+            newTaskButton
+          ) : (
+            <Button onClick={() => setStatusFilter("ALL")}>
+              Clear filter
+            </Button>
+          )
+        }
       />
+    );
+  })();
+
+  return (
+    <div style={crmPageStyle()}>
+      <CrmPageHeader
+        title="Tasks"
+        subtitle="Follow-ups and to-dos linked to the people, companies and deals you work."
+        count={isLoading ? null : rows.length}
+      />
+
+      <CrmToolbar>
+        <Segmented
+          value={statusFilter}
+          onChange={(v) => setStatusFilter(v as "ALL" | CrmTaskStatus)}
+          options={[
+            { value: "ALL", label: "All" },
+            ...CRM_TASK_STATUSES.map((s) => ({
+              value: s.value,
+              label: s.label,
+            })),
+          ]}
+        />
+        <CrmToggle
+          checked={onlyMine}
+          onChange={setOnlyMine}
+          label="My tasks"
+        />
+        <div style={{ marginLeft: "auto" }}>{newTaskButton}</div>
+      </CrmToolbar>
+
+      <div style={TILE_GRID}>
+        <StatTile
+          icon={STATUS_META.TODO.icon}
+          color={STATUS_META.TODO.color}
+          label="To do"
+          value={counts.todo}
+          hint={
+            counts.overdueTodo > 0
+              ? `${counts.overdueTodo} overdue`
+              : "Nothing overdue"
+          }
+          onClick={() => toggleStatus("TODO")}
+        />
+        <StatTile
+          icon={STATUS_META.IN_PROGRESS.icon}
+          color={STATUS_META.IN_PROGRESS.color}
+          label="In progress"
+          value={counts.inProgress}
+          hint={
+            counts.dueSoonInProgress > 0
+              ? `${counts.dueSoonInProgress} due within 7 days`
+              : "No deadlines this week"
+          }
+          onClick={() => toggleStatus("IN_PROGRESS")}
+        />
+        <StatTile
+          icon={STATUS_META.DONE.icon}
+          color={STATUS_META.DONE.color}
+          label="Done"
+          value={counts.done}
+          hint={
+            counts.total > 0
+              ? `${Math.round((counts.done / counts.total) * 100)}% of ${counts.total} tasks`
+              : "Nothing completed yet"
+          }
+          onClick={() => toggleStatus("DONE")}
+        />
+      </div>
+
+      <Panel padding={0}>
+        <Table<CrmTaskWithTargets>
+          rowKey="id"
+          size="middle"
+          loading={isLoading}
+          dataSource={rows}
+          pagination={{
+            pageSize: 25,
+            hideOnSinglePage: true,
+            style: { marginInline: 16 },
+          }}
+          // Title + "Linked to" need room to breathe next to the 590px of
+          // fixed columns; without this the chips wrap to three rows.
+          scroll={{ x: 1080 }}
+          locale={{
+            emptyText: isLoading ? <div style={{ height: 120 }} /> : emptyState,
+          }}
+          onRow={(t) => ({
+            onClick: () => openEdit(t),
+            style: { cursor: "pointer" },
+          })}
+          columns={[
+            {
+              title: "Task",
+              dataIndex: "title",
+              render: (v: string, t) => {
+                const meta = statusMeta(t.status);
+                const done = t.status === "DONE";
+                return (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      minWidth: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 8,
+                        flex: "none",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: tint(meta.color, 0.12),
+                      }}
+                    >
+                      <MIcon name={meta.icon} size={17} color={meta.color} />
+                    </span>
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontWeight: 500,
+                          lineHeight: 1.35,
+                          color: done
+                            ? token.colorTextTertiary
+                            : token.colorText,
+                          textDecoration: done ? "line-through" : undefined,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {v}
+                      </div>
+                      {t.body ? (
+                        <div
+                          style={{
+                            fontSize: 12,
+                            lineHeight: 1.35,
+                            color: token.colorTextTertiary,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {t.body}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              },
+            },
+            {
+              title: "Status",
+              key: "status",
+              width: 168,
+              render: (_, t) => (
+                <div onClick={(e) => e.stopPropagation()}>
+                  <Select<CrmTaskStatus>
+                    size="small"
+                    variant="borderless"
+                    value={t.status as CrmTaskStatus}
+                    style={{ width: 148 }}
+                    onChange={(status) => changeStatus(t.id, status)}
+                    suffixIcon={
+                      <MIcon
+                        name="expand_more"
+                        size={14}
+                        color={token.colorTextQuaternary}
+                      />
+                    }
+                    labelRender={({ value }) => {
+                      const meta = statusMeta(value);
+                      return (
+                        <SoftChip
+                          tone="custom"
+                          color={meta.color}
+                          icon={meta.icon}
+                          style={{ height: 20 }}
+                        >
+                          {meta.label}
+                        </SoftChip>
+                      );
+                    }}
+                    options={CRM_TASK_STATUSES.map((s) => ({
+                      value: s.value,
+                      label: (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: 999,
+                              background: s.color,
+                              display: "inline-block",
+                              flex: "none",
+                            }}
+                          />
+                          {s.label}
+                        </span>
+                      ),
+                    }))}
+                  />
+                </div>
+              ),
+            },
+            {
+              title: "Due",
+              dataIndex: "due_at",
+              width: 148,
+              render: (v: string | null, t) => {
+                if (!v)
+                  return (
+                    <span style={{ color: token.colorTextQuaternary }}>—</span>
+                  );
+                const overdue =
+                  t.status !== "DONE" && dayjs(v).isBefore(dayjs());
+                return (
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      color: overdue
+                        ? token.colorError
+                        : token.colorTextSecondary,
+                      fontWeight: overdue ? 500 : 400,
+                    }}
+                  >
+                    {overdue ? (
+                      <MIcon
+                        name="warning"
+                        size={14}
+                        color={token.colorError}
+                      />
+                    ) : null}
+                    {crmDate(v)}
+                  </span>
+                );
+              },
+              sorter: (a, b) => (a.due_at ?? "").localeCompare(b.due_at ?? ""),
+            },
+            {
+              title: "Assignee",
+              key: "assignee",
+              width: 190,
+              render: (_, t) => {
+                const member = t.assignee_id
+                  ? memberById.get(t.assignee_id)
+                  : undefined;
+                if (!member)
+                  return (
+                    <span style={{ color: token.colorTextQuaternary }}>
+                      Unassigned
+                    </span>
+                  );
+                return (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      minWidth: 0,
+                    }}
+                  >
+                    <EntityAvatar
+                      name={member.name}
+                      kind="person"
+                      src={member.avatar}
+                      size={24}
+                    />
+                    <span
+                      style={{
+                        color: token.colorTextSecondary,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {member.name}
+                    </span>
+                  </div>
+                );
+              },
+            },
+            {
+              title: "Linked to",
+              key: "targets",
+              render: (_, t) => {
+                const chips = t.targets
+                  .map((x) => {
+                    const name = recordName(x.target_type, x.target_id);
+                    if (!name) return null;
+                    const meta = entityMeta(x.target_type);
+                    const open = () =>
+                      setViewTarget({
+                        type: x.target_type as CrmTargetRef["type"],
+                        id: x.target_id,
+                      });
+                    return (
+                      <span
+                        key={x.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={open}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            open();
+                          }
+                        }}
+                        style={{
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          maxWidth: 180,
+                        }}
+                      >
+                        <SoftChip
+                          tone="custom"
+                          color={meta.color}
+                          icon={meta.icon}
+                        >
+                          {name}
+                        </SoftChip>
+                      </span>
+                    );
+                  })
+                  .filter(Boolean);
+                if (chips.length === 0)
+                  return (
+                    <span style={{ color: token.colorTextQuaternary }}>—</span>
+                  );
+                return (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 4,
+                      minWidth: 0,
+                    }}
+                  >
+                    {chips}
+                  </div>
+                );
+              },
+            },
+            {
+              title: "",
+              key: "actions",
+              width: 84,
+              align: "right",
+              render: (_, t) => (
+                <RowActions open={confirmId === t.id}>
+                  <Tooltip title="Edit">
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<MIcon name="edit" size={16} />}
+                      onClick={() => openEdit(t)}
+                    />
+                  </Tooltip>
+                  <Popconfirm
+                    title="Delete this task?"
+                    description="This cannot be undone — tasks have no Deleted bin."
+                    okText="Delete"
+                    okButtonProps={{ danger: true }}
+                    onOpenChange={(open) =>
+                      setConfirmId((current) =>
+                        open ? t.id : current === t.id ? null : current,
+                      )
+                    }
+                    onConfirm={async () => {
+                      try {
+                        await deleteTask.mutateAsync(t.id);
+                        message.success("Task deleted.");
+                      } catch (err) {
+                        message.error(errMsg(err, "Failed to delete task."));
+                      }
+                    }}
+                  >
+                    <Tooltip title="Delete">
+                      <Button
+                        type="text"
+                        size="small"
+                        danger
+                        icon={<MIcon name="delete" size={16} />}
+                      />
+                    </Tooltip>
+                  </Popconfirm>
+                </RowActions>
+              ),
+            },
+          ]}
+        />
+      </Panel>
 
       <Drawer
         open={formOpen}
         onClose={() => setFormOpen(false)}
         title={editing ? "Edit task" : "New task"}
-        width={420}
+        width={CRM_DRAWER_WIDTH}
         destroyOnHidden
+        styles={{ body: CRM_DRAWER_BODY_STYLE }}
       >
-        <Form form={form} layout="vertical" onFinish={handleSubmit}>
-          <Form.Item
-            name="title"
-            label="Title"
-            rules={[{ required: true, message: "Task title is required" }]}
-          >
-            <Input placeholder="What needs doing?" />
-          </Form.Item>
-          <Form.Item name="body" label="Details">
-            <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} />
-          </Form.Item>
-          <Form.Item name="status" label="Status">
-            <Select
-              options={CRM_TASK_STATUSES.map((s) => ({
-                value: s.value,
-                label: s.label,
-              }))}
-            />
-          </Form.Item>
-          <Form.Item name="due_at" label="Due date">
-            <DatePicker style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="assignee_id" label="Assignee">
-            <Select
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              options={memberOptions}
-              placeholder="Team member"
-            />
-          </Form.Item>
-          {!editing && (
-            <Form.Item name="targets" label="Linked records">
-              <TargetPicker />
-            </Form.Item>
-          )}
-          <Space style={{ justifyContent: "flex-end", width: "100%" }}>
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleSubmit}
+          style={CRM_DRAWER_FORM_STYLE}
+        >
+          <CrmDrawerFields>
+            <FormSection label="Task" first>
+              <Form.Item
+                name="title"
+                label="Title"
+                rules={[{ required: true, message: "Task title is required" }]}
+              >
+                <Input placeholder="What needs doing?" />
+              </Form.Item>
+              <Form.Item name="body" label="Details">
+                <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} />
+              </Form.Item>
+            </FormSection>
+
+            <FormSection label="Tracking">
+              <Form.Item name="status" label="Status">
+                <Select
+                  options={CRM_TASK_STATUSES.map((s) => ({
+                    value: s.value,
+                    label: s.label,
+                  }))}
+                />
+              </Form.Item>
+              <Form.Item name="due_at" label="Due date">
+                <DatePicker style={{ width: "100%" }} />
+              </Form.Item>
+              <Form.Item name="assignee_id" label="Assignee">
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  options={memberOptions}
+                  placeholder="Team member"
+                />
+              </Form.Item>
+            </FormSection>
+
+            {!editing && (
+              <FormSection label="Relations">
+                <Form.Item name="targets" label="Linked records">
+                  <TargetPicker />
+                </Form.Item>
+              </FormSection>
+            )}
+          </CrmDrawerFields>
+
+          <CrmDrawerFooter>
             <Button onClick={() => setFormOpen(false)}>Cancel</Button>
             <Button
               type="primary"
@@ -388,7 +791,7 @@ export default function CrmTasksPage() {
             >
               {editing ? "Save changes" : "Create task"}
             </Button>
-          </Space>
+          </CrmDrawerFooter>
         </Form>
       </Drawer>
 

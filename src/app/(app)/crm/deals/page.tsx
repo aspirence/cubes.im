@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   App,
   Button,
@@ -13,10 +14,9 @@ import {
   Segmented,
   Select,
   Space,
-  Switch,
+  Spin,
   Table,
-  Tag,
-  Typography,
+  Tooltip,
   theme,
 } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
@@ -51,8 +51,6 @@ import { useCrmPeople } from "@/features/app-crm/use-crm-people";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
 import {
   CRM_CURRENCIES,
-  crmMoney,
-  crmPersonName,
   type CrmDealWithRefs,
   type CrmStage,
   type CrmTargetRef,
@@ -60,10 +58,44 @@ import {
 import { errMsg } from "@/lib/err";
 import { MIcon } from "../_components/m-icon";
 import { RecordDrawer } from "../_components/record-drawer";
+import { DealQuickCreate } from "../_components/paste-deal";
+import { CrmToggle } from "../_components/crm-toggle";
+import { DealCell } from "../_components/deal-glyph";
+import { CRM_ACCENT, NO_STAGE_COLOR } from "../_components/entity-meta";
+import { TILE_GRID } from "../_components/layout";
+import { FormSection } from "../_components/form-section";
+import {
+  CRM_DRAWER_BODY_STYLE,
+  CRM_DRAWER_FORM_STYLE,
+  CRM_DRAWER_WIDTH,
+  CrmDrawerFields,
+  CrmDrawerFooter,
+} from "../_components/drawer-footer";
+import {
+  CRM_MAX_WIDTH,
+  CrmPageHeader,
+  CrmSearch,
+  CrmToolbar,
+  EmptyState,
+  EntityAvatar,
+  Panel,
+  RowActions,
+  SoftChip,
+  StatTile,
+  crmDate,
+  crmDateShort,
+  crmMoney,
+  crmPageStyle,
+  crmPersonName,
+  tint,
+} from "../_lib/ui";
 
 /** The board's "no stage" pseudo-column id (column ids are `col:<id>`). */
 const NO_STAGE = "none";
 const colId = (stageId: string) => `col:${stageId}`;
+
+/** Hover-lift class for board cards (see the <style> block in the page). */
+const DEAL_CARD_CLASS = "crm-deal-card";
 
 type DealFormValues = {
   name: string;
@@ -76,12 +108,45 @@ type DealFormValues = {
   owner_id?: string | null;
 };
 
+/** `true` when a close date has already passed (day granularity). */
+function isOverdue(closeDate: string | null): boolean {
+  return closeDate ? dayjs(closeDate).isBefore(dayjs(), "day") : false;
+}
+
+/** One muted glyph + label pair in a card's meta row. */
+function CardMeta({ icon, text }: { icon: string; text: string }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 3,
+        minWidth: 0,
+        maxWidth: "100%",
+      }}
+    >
+      <MIcon name={icon} size={13} />
+      <span
+        style={{
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
 function DealCard({
   deal,
+  color,
   onOpen,
   dragOverlay,
 }: {
   deal: CrmDealWithRefs;
+  color: string;
   onOpen?: (deal: CrmDealWithRefs) => void;
   dragOverlay?: boolean;
 }) {
@@ -95,54 +160,104 @@ function DealCard({
     isDragging,
   } = useSortable({ id: deal.id, disabled: dragOverlay });
 
+  const contactName = crmPersonName(deal.contact);
+  const overdue = isOverdue(deal.close_date);
+  const hasMeta = Boolean(deal.company || contactName || deal.close_date);
+  const hasAmount = deal.amount !== null && deal.amount !== undefined;
+
   return (
     <div
       ref={dragOverlay ? undefined : setNodeRef}
       {...(dragOverlay ? {} : attributes)}
       {...(dragOverlay ? {} : listeners)}
       onClick={() => onOpen?.(deal)}
+      className={DEAL_CARD_CLASS}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.4 : 1,
         background: token.colorBgContainer,
-        border: `1px solid ${token.colorBorderSecondary}`,
-        borderRadius: 8,
+        // Base border lives in DEAL_CARD_CLASS so the :hover rule can win — an
+        // inline `border` would outrank it. Only the stage accent (data) is inline.
+        borderLeftColor: color,
+        borderRadius: 10,
         padding: "10px 12px",
-        cursor: "pointer",
+        cursor: dragOverlay || isDragging ? "grabbing" : "grab",
         boxShadow: dragOverlay ? token.boxShadowSecondary : undefined,
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
       }}
     >
-      <div style={{ fontWeight: 500, marginBottom: 4 }}>{deal.name}</div>
-      <div style={{ fontSize: 12, color: token.colorTextSecondary }}>
-        {crmMoney(deal.amount, deal.currency_code)}
-        {deal.company ? ` · ${deal.company.name}` : ""}
+      <div
+        style={{
+          fontSize: 13.5,
+          fontWeight: 500,
+          lineHeight: 1.4,
+          color: token.colorText,
+          wordBreak: "break-word",
+        }}
+      >
+        {deal.name}
       </div>
-      {(deal.contact || deal.close_date) && (
+
+      <div
+        style={{
+          fontSize: 15,
+          fontWeight: 650,
+          lineHeight: 1.2,
+          letterSpacing: "-0.2px",
+          color: hasAmount ? token.colorText : token.colorTextQuaternary,
+        }}
+      >
+        {crmMoney(deal.amount, deal.currency_code)}
+      </div>
+
+      {hasMeta ? (
         <div
           style={{
-            fontSize: 12,
-            color: token.colorTextTertiary,
-            marginTop: 4,
             display: "flex",
+            alignItems: "center",
             justifyContent: "space-between",
             gap: 8,
+            minWidth: 0,
+            fontSize: 11.5,
+            color: token.colorTextTertiary,
           }}
         >
-          <span>{crmPersonName(deal.contact)}</span>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              minWidth: 0,
+              flexWrap: "wrap",
+            }}
+          >
+            {deal.company ? (
+              <CardMeta icon="domain" text={deal.company.name} />
+            ) : null}
+            {contactName ? (
+              <CardMeta icon="person" text={contactName} />
+            ) : null}
+          </div>
           {deal.close_date ? (
             <span
-              style={
-                dayjs(deal.close_date).isBefore(dayjs(), "day")
-                  ? { color: token.colorError, fontWeight: 600 }
-                  : undefined
-              }
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 3,
+                flex: "none",
+                color: overdue ? token.colorError : token.colorTextTertiary,
+                fontWeight: overdue ? 600 : 500,
+              }}
             >
-              {dayjs(deal.close_date).format("DD MMM")}
+              <MIcon name="event" size={13} />
+              {crmDateShort(deal.close_date)}
             </span>
           ) : null}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -166,22 +281,24 @@ function BoardColumn({
   const { setNodeRef, isOver } = useDroppable({ id });
   const total = deals.reduce((sum, d) => sum + (d.amount ?? 0), 0);
   const currency = deals.find((d) => d.amount !== null)?.currency_code ?? "USD";
+  // A whisper of the stage colour over the standard column fill.
+  const wash = tint(color, isOver ? 0.13 : 0.05);
 
   return (
     <div
       ref={setNodeRef}
       style={{
-        width: 280,
+        width: 292,
         flexShrink: 0,
-        background: isOver
-          ? token.colorFillTertiary
-          : token.colorFillQuaternary,
-        borderRadius: 10,
-        padding: 10,
         display: "flex",
         flexDirection: "column",
         gap: 8,
-        maxHeight: "calc(100vh - 240px)",
+        padding: 10,
+        borderRadius: 12,
+        border: `1px solid ${isOver ? tint(color, 0.5) : "transparent"}`,
+        background: `linear-gradient(${wash}, ${wash}), ${token.colorFillQuaternary}`,
+        transition: "background .12s ease, border-color .12s ease",
+        maxHeight: "calc(100vh - 260px)",
       }}
     >
       <div
@@ -189,43 +306,80 @@ function BoardColumn({
           display: "flex",
           alignItems: "center",
           gap: 8,
-          padding: "2px 4px",
+          padding: "2px 2px 8px",
+          borderBottom: `1px solid ${token.colorSplit}`,
         }}
       >
         <span
           style={{
-            width: 10,
-            height: 10,
+            width: 9,
+            height: 9,
             borderRadius: 999,
             background: color,
-            flexShrink: 0,
+            flex: "none",
           }}
         />
-        <span style={{ fontWeight: 600 }}>{name}</span>
-        <span style={{ color: token.colorTextTertiary, fontSize: 12 }}>
+        <span
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: token.colorText,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {name}
+        </span>
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flex: "none",
+            minWidth: 20,
+            height: 18,
+            padding: "0 6px",
+            borderRadius: 999,
+            background: tint(color, 0.16),
+            color,
+            fontSize: 11.5,
+            fontWeight: 600,
+            lineHeight: 1,
+          }}
+        >
           {deals.length}
         </span>
         <span
           style={{
             marginLeft: "auto",
-            color: token.colorTextSecondary,
-            fontSize: 12,
-            fontWeight: 500,
+            flex: "none",
+            fontSize: 12.5,
+            fontWeight: 600,
+            color:
+              deals.length === 0
+                ? token.colorTextQuaternary
+                : token.colorTextSecondary,
+            whiteSpace: "nowrap",
           }}
         >
           {crmMoney(total, currency)}
         </span>
         {onAdd ? (
-          <Button
-            type="text"
-            size="small"
-            aria-label={`Add a deal in ${name}`}
-            icon={<MIcon name="add" size={16} />}
-            onClick={onAdd}
-            style={{ flexShrink: 0 }}
-          />
+          <Tooltip title={`Add a deal in ${name}`}>
+            <Button
+              type="text"
+              size="small"
+              aria-label={`Add a deal in ${name}`}
+              icon={<MIcon name="add" size={16} />}
+              onClick={onAdd}
+              style={{ flexShrink: 0 }}
+            />
+          </Tooltip>
         ) : null}
       </div>
+
       <div
         style={{
           overflowY: "auto",
@@ -233,6 +387,7 @@ function BoardColumn({
           flexDirection: "column",
           gap: 8,
           minHeight: 24,
+          padding: 2,
         }}
       >
         <SortableContext
@@ -240,9 +395,31 @@ function BoardColumn({
           strategy={verticalListSortingStrategy}
         >
           {deals.map((d) => (
-            <DealCard key={d.id} deal={d} onOpen={onOpen} />
+            <DealCard key={d.id} deal={d} color={color} onOpen={onOpen} />
           ))}
         </SortableContext>
+        {deals.length === 0 ? (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 4,
+              flex: "none",
+              minHeight: 76,
+              padding: "16px 12px",
+              borderRadius: 10,
+              border: `1px dashed ${tint(color, 0.45)}`,
+              color: token.colorTextTertiary,
+              fontSize: 12,
+              textAlign: "center",
+            }}
+          >
+            <MIcon name="inbox" size={18} color={token.colorTextQuaternary} />
+            Drop a deal here
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -250,8 +427,10 @@ function BoardColumn({
 
 export default function CrmDealsPage() {
   const { message } = App.useApp();
+  const { token } = theme.useToken();
+  const router = useRouter();
   const { data: deals, isLoading } = useCrmDeals();
-  const { data: stages } = useCrmStages();
+  const { data: stages, isLoading: stagesLoading } = useCrmStages();
   const { data: companies } = useCrmCompanies();
   const { data: people } = useCrmPeople();
   const { data: members } = useTeamMembers();
@@ -268,6 +447,7 @@ export default function CrmDealsPage() {
   const [editing, setEditing] = useState<CrmDealWithRefs | null>(null);
   const [viewTarget, setViewTarget] = useState<CrmTargetRef | null>(null);
   const [activeDeal, setActiveDeal] = useState<CrmDealWithRefs | null>(null);
+  const [confirmRowId, setConfirmRowId] = useState<string | null>(null);
   const [form] = Form.useForm<DealFormValues>();
 
   const sensors = useSensors(
@@ -308,7 +488,7 @@ export default function CrmDealsPage() {
         id: colId(NO_STAGE),
         stageId: null,
         name: "No stage",
-        color: "#8a8d98",
+        color: NO_STAGE_COLOR,
         deals: orphans,
       });
     }
@@ -339,6 +519,17 @@ export default function CrmDealsPage() {
     for (const s of stages ?? []) map.set(s.id, s);
     return map;
   }, [stages]);
+
+  /** Board summary across every visible column (all live deals). */
+  const pipeline = useMemo(() => {
+    const total = liveDeals.reduce((sum, d) => sum + (d.amount ?? 0), 0);
+    const currency =
+      liveDeals.find((d) => d.amount !== null)?.currency_code ?? "USD";
+    return { count: liveDeals.length, total, currency };
+  }, [liveDeals]);
+
+  const stageColorOf = (stageId: string | null) =>
+    (stageId ? stageById.get(stageId)?.color : null) ?? NO_STAGE_COLOR;
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveDeal(liveDeals.find((d) => d.id === event.active.id) ?? null);
@@ -473,313 +664,571 @@ export default function CrmDealsPage() {
     }
   };
 
-  return (
-    <div style={{ padding: 24 }}>
-      <Space
-        style={{
-          width: "100%",
-          justifyContent: "space-between",
-          marginBottom: 16,
-          flexWrap: "wrap",
-        }}
-      >
-        <Space>
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            Deals
-          </Typography.Title>
-          <Segmented
-            value={view}
-            onChange={(v) => setView(v as "board" | "table")}
-            options={[
-              { value: "board", label: "Board" },
-              { value: "table", label: "Table" },
-            ]}
-          />
-        </Space>
-        <Space wrap>
-          {view === "table" && (
-            <>
-              <Input
-                allowClear
-                prefix={<MIcon name="search" size={16} />}
-                placeholder="Search deals…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                style={{ width: 220 }}
-              />
-              <Space size={6}>
-                <Switch
-                  size="small"
-                  checked={showDeleted}
-                  onChange={setShowDeleted}
-                />
-                <Typography.Text type="secondary">Deleted</Typography.Text>
-              </Space>
-            </>
-          )}
-          <Button
-            type="primary"
-            icon={<MIcon name="add" size={16} />}
-            onClick={() => openCreate()}
-          >
-            New deal
-          </Button>
-        </Space>
-      </Space>
+  const boardLoading = isLoading || stagesLoading;
 
-      {view === "board" ? (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCorners}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onDragCancel={() => setActiveDeal(null)}
+  const tableEmpty = search.trim() ? (
+    <EmptyState
+      compact
+      icon="search_off"
+      title="No deals match your search"
+      description={`Nothing found for “${search.trim()}”. Try a deal, company or contact name.`}
+      action={<Button onClick={() => setSearch("")}>Clear search</Button>}
+    />
+  ) : showDeleted ? (
+    <EmptyState
+      compact
+      icon="restore_from_trash"
+      title="Nothing in Deleted"
+      description="Deals you delete land here first, so you can restore them before they are permanently removed."
+    />
+  ) : (
+    <EmptyState
+      compact
+      icon="handshake"
+      accent={token.colorPrimary}
+      title="No deals yet"
+      description="Deals are the opportunities you move across the pipeline. Create the first one to get the board going."
+      action={
+        <Button
+          type="primary"
+          icon={<MIcon name="add" size={16} />}
+          onClick={() => openCreate()}
         >
-          <div
-            style={{
-              display: "flex",
-              gap: 12,
-              overflowX: "auto",
-              alignItems: "flex-start",
-              paddingBottom: 12,
-            }}
-          >
-            {columns.map((c) => (
-              <BoardColumn
-                key={c.id}
-                id={c.id}
-                name={c.name}
-                color={c.color}
-                deals={c.deals}
-                onOpen={(deal) =>
-                  setViewTarget({ type: "deal", id: deal.id })
-                }
-                onAdd={
-                  c.stageId ? () => openCreate(c.stageId) : undefined
-                }
-              />
-            ))}
-          </div>
-          <DragOverlay>
-            {activeDeal ? <DealCard deal={activeDeal} dragOverlay /> : null}
-          </DragOverlay>
-        </DndContext>
-      ) : (
-        <Table
-          rowKey="id"
-          size="middle"
-          loading={isLoading}
-          dataSource={tableRows}
-          pagination={{ pageSize: 25, hideOnSinglePage: true }}
-          onRow={(d) => ({
-            onClick: () => setViewTarget({ type: "deal", id: d.id }),
-            style: { cursor: "pointer" },
-          })}
-          columns={[
+          New deal
+        </Button>
+      }
+    />
+  );
+
+  return (
+    <div style={crmPageStyle(view === "board" ? "100%" : CRM_MAX_WIDTH)}>
+      <CrmPageHeader
+        title="Deals"
+        count={
+          view === "board"
+            ? boardLoading
+              ? null
+              : liveDeals.length
+            : isLoading
+              ? null
+              : tableRows.length
+        }
+        subtitle={
+          view === "board"
+            ? "Drag a card to move it through the pipeline — stage and order save instantly."
+            : "Every deal in one sortable list, including the ones you've deleted."
+        }
+      />
+
+      <CrmToolbar>
+        <Segmented
+          value={view}
+          onChange={(v) => setView(v as "board" | "table")}
+          options={[
             {
-              title: "Deal",
-              dataIndex: "name",
-              render: (v: string) => <span style={{ fontWeight: 500 }}>{v}</span>,
-              sorter: (a, b) => a.name.localeCompare(b.name),
+              value: "board",
+              label: (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <MIcon name="view_kanban" size={16} />
+                  Board
+                </span>
+              ),
             },
             {
-              title: "Stage",
-              key: "stage",
-              render: (_, d) => {
-                const stage = d.stage_id ? stageById.get(d.stage_id) : null;
-                return stage ? (
-                  <Tag color={stage.color}>{stage.name}</Tag>
-                ) : (
-                  <Tag>No stage</Tag>
-                );
-              },
-              filters: (stages ?? []).map((s) => ({
-                text: s.name,
-                value: s.id,
-              })),
-              onFilter: (value, d) => d.stage_id === value,
-            },
-            {
-              title: "Amount",
-              key: "amount",
-              render: (_, d) => crmMoney(d.amount, d.currency_code),
-              sorter: (a, b) => (a.amount ?? 0) - (b.amount ?? 0),
-            },
-            {
-              title: "Company",
-              key: "company",
-              render: (_, d) => d.company?.name ?? "—",
-            },
-            {
-              title: "Contact",
-              key: "contact",
-              render: (_, d) => crmPersonName(d.contact) || "—",
-            },
-            {
-              title: "Owner",
-              key: "owner",
-              render: (_, d) => memberName(d.owner_id),
-            },
-            {
-              title: "Close date",
-              dataIndex: "close_date",
-              render: (v: string | null) =>
-                v ? dayjs(v).format("DD MMM YYYY") : "—",
-              sorter: (a, b) =>
-                (a.close_date ?? "").localeCompare(b.close_date ?? ""),
-            },
-            {
-              title: "",
-              key: "actions",
-              width: 120,
-              render: (_, d) => (
-                <Space onClick={(e) => e.stopPropagation()}>
-                  {d.deleted_at ? (
-                    <>
-                      <Button
-                        size="small"
-                        onClick={async () => {
-                          try {
-                            await setDeleted.mutateAsync({
-                              id: d.id,
-                              deleted: false,
-                            });
-                            message.success("Deal restored.");
-                          } catch (err) {
-                            message.error(errMsg(err, "Failed to restore."));
-                          }
-                        }}
-                      >
-                        Restore
-                      </Button>
-                      <Popconfirm
-                        title="Permanently delete this deal?"
-                        description="This cannot be undone."
-                        onConfirm={async () => {
-                          try {
-                            await destroyDeal.mutateAsync(d.id);
-                            message.success("Deal permanently deleted.");
-                          } catch (err) {
-                            message.error(errMsg(err, "Failed to delete."));
-                          }
-                        }}
-                      >
-                        <Button size="small" danger>
-                          Destroy
-                        </Button>
-                      </Popconfirm>
-                    </>
-                  ) : (
-                    <>
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<MIcon name="edit" size={16} />}
-                        onClick={() => openEdit(d)}
-                      />
-                      <Popconfirm
-                        title="Delete this deal?"
-                        description="It moves to Deleted and can be restored."
-                        onConfirm={async () => {
-                          try {
-                            await setDeleted.mutateAsync({
-                              id: d.id,
-                              deleted: true,
-                            });
-                            message.success("Deal deleted.");
-                          } catch (err) {
-                            message.error(errMsg(err, "Failed to delete."));
-                          }
-                        }}
-                      >
-                        <Button
-                          type="text"
-                          size="small"
-                          danger
-                          icon={<MIcon name="delete" size={16} />}
-                        />
-                      </Popconfirm>
-                    </>
-                  )}
-                </Space>
+              value: "table",
+              label: (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <MIcon name="table_rows" size={16} />
+                  Table
+                </span>
               ),
             },
           ]}
         />
+
+        {view === "table" && (
+          <>
+            <CrmSearch
+              value={search}
+              onChange={setSearch}
+              placeholder="Search deals…"
+            />
+            <CrmToggle
+              checked={showDeleted}
+              onChange={setShowDeleted}
+              label="Deleted"
+            />
+          </>
+        )}
+
+        <Button
+          type="primary"
+          icon={<MIcon name="add" size={16} />}
+          onClick={() => openCreate()}
+          style={{ marginLeft: "auto" }}
+        >
+          New deal
+        </Button>
+      </CrmToolbar>
+
+      {view === "board" ? (
+        <>
+          <div style={TILE_GRID}>
+            <StatTile
+              icon="target"
+              color={CRM_ACCENT.deal}
+              label="Open deals"
+              value={boardLoading ? "—" : pipeline.count}
+              hint={`${columns.length} ${
+                columns.length === 1 ? "column" : "columns"
+              } on the board`}
+            />
+            <StatTile
+              icon="payments"
+              color={CRM_ACCENT.money}
+              label="Pipeline value"
+              value={
+                boardLoading
+                  ? "—"
+                  : crmMoney(pipeline.total, pipeline.currency)
+              }
+              hint="Summed across every visible column"
+            />
+          </div>
+
+          {boardLoading ? (
+            <div style={{ display: "grid", placeItems: "center", padding: 64 }}>
+              <Spin size="large" />
+            </div>
+          ) : columns.length === 0 ? (
+            <Panel padding={0}>
+              <EmptyState
+                icon="view_kanban"
+                accent={token.colorPrimary}
+                title="Your pipeline has no stages yet"
+                description="Stages are the board's columns — Discovery, Proposal, Won, and so on. Add a few in CRM settings, then start dropping deals into them."
+                action={
+                  <Space>
+                    <Button
+                      type="primary"
+                      icon={<MIcon name="tune" size={16} />}
+                      onClick={() => router.push("/crm/settings")}
+                    >
+                      Manage stages
+                    </Button>
+                    <Button
+                      icon={<MIcon name="add" size={16} />}
+                      onClick={() => openCreate()}
+                    >
+                      New deal
+                    </Button>
+                  </Space>
+                }
+              />
+            </Panel>
+          ) : (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCorners}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragCancel={() => setActiveDeal(null)}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  overflowX: "auto",
+                  alignItems: "flex-start",
+                  paddingBottom: 12,
+                }}
+              >
+                {columns.map((c) => (
+                  <BoardColumn
+                    key={c.id}
+                    id={c.id}
+                    name={c.name}
+                    color={c.color}
+                    deals={c.deals}
+                    onOpen={(deal) =>
+                      setViewTarget({ type: "deal", id: deal.id })
+                    }
+                    onAdd={
+                      c.stageId ? () => openCreate(c.stageId) : undefined
+                    }
+                  />
+                ))}
+              </div>
+              <DragOverlay>
+                {activeDeal ? (
+                  <DealCard
+                    deal={activeDeal}
+                    color={stageColorOf(activeDeal.stage_id)}
+                    dragOverlay
+                  />
+                ) : null}
+              </DragOverlay>
+            </DndContext>
+          )}
+        </>
+      ) : (
+        <Panel padding={0}>
+          <Table
+            rowKey="id"
+            size="middle"
+            loading={isLoading}
+            dataSource={tableRows}
+            pagination={{
+              pageSize: 25,
+              hideOnSinglePage: true,
+              style: { marginInline: 16 },
+            }}
+            // Sum of the fixed column widths — anything smaller and AntD's
+            // fixed table layout squeezes every column instead of scrolling.
+            scroll={{ x: 1130 }}
+            locale={{
+              emptyText: isLoading ? (
+                <div style={{ height: 120 }} />
+              ) : (
+                tableEmpty
+              ),
+            }}
+            onRow={(d) => ({
+              onClick: () => setViewTarget({ type: "deal", id: d.id }),
+              style: { cursor: "pointer" },
+            })}
+            columns={[
+              {
+                title: "Deal",
+                dataIndex: "name",
+                width: 260,
+                render: (v: string, d) => (
+                  <DealCell
+                    name={v}
+                    subtitle={d.company?.name ?? undefined}
+                    muted={Boolean(d.deleted_at)}
+                  />
+                ),
+                sorter: (a, b) => a.name.localeCompare(b.name),
+              },
+              {
+                title: "Stage",
+                key: "stage",
+                width: 150,
+                render: (_, d) => {
+                  const stage = d.stage_id ? stageById.get(d.stage_id) : null;
+                  return stage ? (
+                    <SoftChip tone="custom" color={stage.color}>
+                      {stage.name}
+                    </SoftChip>
+                  ) : (
+                    <SoftChip>No stage</SoftChip>
+                  );
+                },
+                filters: (stages ?? []).map((s) => ({
+                  text: s.name,
+                  value: s.id,
+                })),
+                onFilter: (value, d) => d.stage_id === value,
+              },
+              {
+                title: "Amount",
+                key: "amount",
+                width: 130,
+                align: "right",
+                render: (_, d) => (
+                  <span
+                    style={{
+                      fontWeight: 500,
+                      color:
+                        d.amount === null || d.amount === undefined
+                          ? token.colorTextQuaternary
+                          : token.colorText,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {crmMoney(d.amount, d.currency_code)}
+                  </span>
+                ),
+                sorter: (a, b) => (a.amount ?? 0) - (b.amount ?? 0),
+              },
+              {
+                title: "Contact",
+                key: "contact",
+                width: 190,
+                render: (_, d) => {
+                  const name = crmPersonName(d.contact);
+                  if (!name) {
+                    return (
+                      <span style={{ color: token.colorTextQuaternary }}>—</span>
+                    );
+                  }
+                  return (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        minWidth: 0,
+                        maxWidth: "100%",
+                      }}
+                    >
+                      <EntityAvatar name={name} kind="person" size={22} />
+                      <span
+                        style={{
+                          color: token.colorTextSecondary,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {name}
+                      </span>
+                    </span>
+                  );
+                },
+              },
+              {
+                title: "Owner",
+                key: "owner",
+                width: 150,
+                render: (_, d) => (
+                  <span style={{ color: token.colorTextSecondary }}>
+                    {memberName(d.owner_id)}
+                  </span>
+                ),
+              },
+              {
+                title: "Close date",
+                dataIndex: "close_date",
+                width: 140,
+                render: (v: string | null) => {
+                  const overdue = isOverdue(v);
+                  return (
+                    <span
+                      style={{
+                        whiteSpace: "nowrap",
+                        color: overdue
+                          ? token.colorError
+                          : token.colorTextSecondary,
+                        fontWeight: overdue ? 600 : undefined,
+                      }}
+                    >
+                      {crmDate(v)}
+                    </span>
+                  );
+                },
+                sorter: (a, b) =>
+                  (a.close_date ?? "").localeCompare(b.close_date ?? ""),
+              },
+              {
+                title: "",
+                key: "actions",
+                width: 110,
+                align: "right",
+                render: (_, d) => (
+                  <RowActions open={confirmRowId === d.id}>
+                    {d.deleted_at ? (
+                      <>
+                        <Tooltip title="Restore">
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<MIcon name="restore_from_trash" size={16} />}
+                            onClick={async () => {
+                              try {
+                                await setDeleted.mutateAsync({
+                                  id: d.id,
+                                  deleted: false,
+                                });
+                                message.success("Deal restored.");
+                              } catch (err) {
+                                message.error(
+                                  errMsg(err, "Failed to restore."),
+                                );
+                              }
+                            }}
+                          />
+                        </Tooltip>
+                        <Popconfirm
+                          title="Permanently delete this deal?"
+                          description="This cannot be undone."
+                          okText="Delete forever"
+                          okButtonProps={{ danger: true }}
+                          onOpenChange={(open) =>
+                            setConfirmRowId(open ? d.id : null)
+                          }
+                          onConfirm={async () => {
+                            try {
+                              await destroyDeal.mutateAsync(d.id);
+                              message.success("Deal permanently deleted.");
+                            } catch (err) {
+                              message.error(errMsg(err, "Failed to delete."));
+                            }
+                          }}
+                        >
+                          <Tooltip title="Delete forever">
+                            <Button
+                              type="text"
+                              size="small"
+                              danger
+                              icon={
+                                <MIcon name="delete_forever" size={16} />
+                              }
+                            />
+                          </Tooltip>
+                        </Popconfirm>
+                      </>
+                    ) : (
+                      <>
+                        <Tooltip title="Edit">
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<MIcon name="edit" size={16} />}
+                            onClick={() => openEdit(d)}
+                          />
+                        </Tooltip>
+                        <Popconfirm
+                          title="Delete this deal?"
+                          description="It moves to Deleted and can be restored."
+                          okText="Delete"
+                          okButtonProps={{ danger: true }}
+                          onOpenChange={(open) =>
+                            setConfirmRowId(open ? d.id : null)
+                          }
+                          onConfirm={async () => {
+                            try {
+                              await setDeleted.mutateAsync({
+                                id: d.id,
+                                deleted: true,
+                              });
+                              message.success("Deal deleted.");
+                            } catch (err) {
+                              message.error(errMsg(err, "Failed to delete."));
+                            }
+                          }}
+                        >
+                          <Tooltip title="Delete">
+                            <Button
+                              type="text"
+                              size="small"
+                              danger
+                              icon={<MIcon name="delete" size={16} />}
+                            />
+                          </Tooltip>
+                        </Popconfirm>
+                      </>
+                    )}
+                  </RowActions>
+                ),
+              },
+            ]}
+          />
+        </Panel>
       )}
 
       <Drawer
         open={formOpen}
         onClose={() => setFormOpen(false)}
         title={editing ? "Edit deal" : "New deal"}
-        width={420}
+        width={CRM_DRAWER_WIDTH}
         destroyOnHidden
+        styles={{ body: CRM_DRAWER_BODY_STYLE }}
       >
-        <Form form={form} layout="vertical" onFinish={handleSubmit}>
-          <Form.Item
-            name="name"
-            label="Deal name"
-            rules={[{ required: true, message: "Deal name is required" }]}
-          >
-            <Input placeholder="e.g. Acme — Annual plan" />
-          </Form.Item>
-          <Space.Compact style={{ width: "100%" }}>
-            <Form.Item
-              name="amount"
-              label="Amount"
-              style={{ flex: 1, marginRight: 8 }}
-            >
-              <InputNumber
-                style={{ width: "100%" }}
-                min={0}
-                placeholder="10000"
-              />
-            </Form.Item>
-            <Form.Item
-              name="currency_code"
-              label="Currency"
-              initialValue="USD"
-              style={{ width: 110 }}
-            >
-              <Select
-                options={CRM_CURRENCIES.map((c) => ({ value: c, label: c }))}
-              />
-            </Form.Item>
-          </Space.Compact>
-          <Form.Item name="stage_id" label="Stage">
-            <Select allowClear options={stageOptions} placeholder="Stage" />
-          </Form.Item>
-          <Form.Item name="close_date" label="Close date">
-            <DatePicker style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="company_id" label="Company">
-            <Select
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              options={companyOptions}
-              placeholder="Company"
-            />
-          </Form.Item>
-          <Form.Item name="contact_id" label="Point of contact">
-            <Select
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              options={peopleOptions}
-              placeholder="Person"
-            />
-          </Form.Item>
-          <Form.Item name="owner_id" label="Owner">
-            <Select
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              options={memberOptions}
-              placeholder="Team member"
-            />
-          </Form.Item>
-          <Space style={{ justifyContent: "flex-end", width: "100%" }}>
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleSubmit}
+          style={CRM_DRAWER_FORM_STYLE}
+        >
+          <CrmDrawerFields>
+            <FormSection label="Opportunity" first>
+              <Form.Item
+                name="name"
+                label="Deal name"
+                rules={[{ required: true, message: "Deal name is required" }]}
+              >
+                <Input placeholder="e.g. Acme — Annual plan" />
+              </Form.Item>
+              <div style={{ display: "flex", gap: 12 }}>
+                <Form.Item
+                  name="amount"
+                  label="Amount"
+                  style={{ flex: 1, minWidth: 0 }}
+                >
+                  <InputNumber
+                    style={{ width: "100%" }}
+                    min={0}
+                    placeholder="10000"
+                  />
+                </Form.Item>
+                <Form.Item
+                  name="currency_code"
+                  label="Currency"
+                  initialValue="USD"
+                  style={{ width: 110, flex: "none" }}
+                >
+                  <Select
+                    options={CRM_CURRENCIES.map((c) => ({ value: c, label: c }))}
+                  />
+                </Form.Item>
+              </div>
+            </FormSection>
+
+            <FormSection label="Pipeline">
+              <Form.Item name="stage_id" label="Stage">
+                <Select allowClear options={stageOptions} placeholder="Stage" />
+              </Form.Item>
+              <Form.Item name="close_date" label="Close date">
+                <DatePicker style={{ width: "100%" }} />
+              </Form.Item>
+              <Form.Item name="owner_id" label="Owner">
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  options={memberOptions}
+                  placeholder="Team member"
+                />
+              </Form.Item>
+            </FormSection>
+
+            <FormSection label="Relations">
+              <Form.Item name="company_id" label="Company">
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  options={companyOptions}
+                  placeholder="Company"
+                />
+              </Form.Item>
+              <Form.Item name="contact_id" label="Point of contact">
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  options={peopleOptions}
+                  placeholder="Person"
+                />
+              </Form.Item>
+            </FormSection>
+          </CrmDrawerFields>
+
+          <CrmDrawerFooter>
             <Button onClick={() => setFormOpen(false)}>Cancel</Button>
             <Button
               type="primary"
@@ -788,11 +1237,23 @@ export default function CrmDealsPage() {
             >
               {editing ? "Save changes" : "Create deal"}
             </Button>
-          </Space>
+          </CrmDrawerFooter>
         </Form>
       </Drawer>
 
       <RecordDrawer target={viewTarget} onClose={() => setViewTarget(null)} />
+
+      {/* Paste a lead anywhere on the board to start a deal from it. */}
+      <DealQuickCreate />
+
+      <style>{`
+        .${DEAL_CARD_CLASS} {
+          border: 1px solid ${token.colorBorderSecondary};
+          border-left-width: 3px;
+          transition: border-color .12s ease, box-shadow .12s ease;
+        }
+        .${DEAL_CARD_CLASS}:hover { border-color: ${token.colorBorder}; box-shadow: ${token.boxShadowTertiary}; }
+      `}</style>
     </div>
   );
 }

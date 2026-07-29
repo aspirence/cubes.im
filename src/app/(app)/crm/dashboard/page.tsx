@@ -1,18 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import {
-  Card,
-  Col,
-  Empty,
-  List,
-  Row,
-  Tag,
-  Typography,
-  theme,
-} from "antd";
+import { Button, Space, Spin, Tooltip, theme } from "antd";
+import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
-import relativeTime from "dayjs/plugin/relativeTime";
 import { EChart, CHART_FONT } from "@/features/home/echart";
 import { useAuth } from "@/features/auth/use-auth";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
@@ -22,16 +13,29 @@ import { useCrmPeople } from "@/features/app-crm/use-crm-people";
 import { useCrmStages } from "@/features/app-crm/use-crm-stages";
 import { useCrmTasks } from "@/features/app-crm/use-crm-tasks";
 import { useCrmRecentActivities } from "@/features/app-crm/use-crm-activities";
-import {
-  crmMoney,
-  crmPersonName,
-  type CrmActivity,
-  type CrmTargetRef,
-} from "@/features/app-crm/types";
+import type { CrmActivity, CrmTargetRef } from "@/features/app-crm/types";
 import { MIcon } from "../_components/m-icon";
 import { RecordDrawer } from "../_components/record-drawer";
-
-dayjs.extend(relativeTime);
+import { DealQuickCreate, PasteDealHint } from "../_components/paste-deal";
+import { DealGlyph } from "../_components/deal-glyph";
+import { CRM_ACCENT, NO_STAGE_COLOR } from "../_components/entity-meta";
+import { CONTENT_GRID, TILE_GRID } from "../_components/layout";
+import { CrmListRow } from "../_components/list-row";
+import {
+  CrmPageHeader,
+  EmptyState,
+  EntityAvatar,
+  Panel,
+  SoftChip,
+  StatTile,
+  crmDate,
+  crmDateTime,
+  crmFromNow,
+  crmMoney,
+  crmPageStyle,
+  crmPersonName,
+  type SoftChipTone,
+} from "../_lib/ui";
 
 function activityLine(a: CrmActivity, recordName: string): string {
   const props = (a.properties ?? {}) as Record<string, unknown>;
@@ -55,76 +59,78 @@ function activityLine(a: CrmActivity, recordName: string): string {
   }
 }
 
-function StatCard({
-  icon,
-  color,
-  title,
-  value,
-  hint,
-}: {
-  icon: string;
-  color: string;
-  title: string;
-  value: React.ReactNode;
-  hint?: string;
-}) {
+/** Soft chip vocabulary for the activity feed's event kinds. */
+const EVENT_META: Record<
+  string,
+  { label: string; icon: string; tone: SoftChipTone }
+> = {
+  created: { label: "Created", icon: "add_circle", tone: "success" },
+  updated: { label: "Updated", icon: "edit", tone: "neutral" },
+  stage_changed: { label: "Stage", icon: "swap_horiz", tone: "accent" },
+  deleted: { label: "Deleted", icon: "delete", tone: "danger" },
+  restored: { label: "Restored", icon: "restore_from_trash", tone: "success" },
+  note_added: { label: "Note", icon: "sticky_note_2", tone: "neutral" },
+  task_added: { label: "Task", icon: "task_alt", tone: "accent" },
+};
+
+function eventMeta(event: string) {
+  return (
+    EVENT_META[event] ?? {
+      label: event.replace(/_/g, " "),
+      icon: "history",
+      tone: "neutral" as SoftChipTone,
+    }
+  );
+}
+
+/** Non-entity leading glyph (tasks), same footprint as an EntityAvatar. */
+function GlyphChip({ icon }: { icon: string }) {
   const { token } = theme.useToken();
   return (
-    <Card size="small" styles={{ body: { padding: 14 } }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-        <div
-          style={{
-            width: 38,
-            height: 38,
-            borderRadius: 10,
-            background: `${color}1f`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flex: "none",
-          }}
-        >
-          <MIcon name={icon} size={20} color={color} />
-        </div>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 12, color: token.colorTextSecondary }}>
-            {title}
-          </div>
-          <div
-            style={{
-              fontSize: 20,
-              fontWeight: 650,
-              color: token.colorText,
-              lineHeight: 1.25,
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {value}
-          </div>
-          {hint ? (
-            <div style={{ fontSize: 11.5, color: token.colorTextTertiary }}>
-              {hint}
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </Card>
+    <span
+      style={{
+        width: 28,
+        height: 28,
+        borderRadius: 8,
+        flex: "none",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: token.colorFillTertiary,
+      }}
+    >
+      <MIcon name={icon} size={16} color={token.colorTextTertiary} />
+    </span>
+  );
+}
+
+/** In-panel loading treatment — same shape in every panel on the page. */
+function PanelSpin() {
+  return (
+    <div style={{ display: "grid", placeItems: "center", padding: 40 }}>
+      <Spin size="small" />
+    </div>
   );
 }
 
 export default function CrmDashboardPage() {
   const { token } = theme.useToken();
+  const router = useRouter();
   const { user } = useAuth();
-  const { data: people } = useCrmPeople();
-  const { data: companies } = useCrmCompanies();
-  const { data: deals } = useCrmDeals();
-  const { data: stages } = useCrmStages();
-  const { data: tasks } = useCrmTasks();
-  const { data: activities } = useCrmRecentActivities(12);
+  const { data: people, isLoading: peopleLoading } = useCrmPeople();
+  const { data: companies, isLoading: companiesLoading } = useCrmCompanies();
+  const { data: deals, isLoading: dealsLoading } = useCrmDeals();
+  const { data: stages, isLoading: stagesLoading } = useCrmStages();
+  const { data: tasks, isLoading: tasksLoading } = useCrmTasks();
+  const { data: activities, isLoading: activitiesLoading } =
+    useCrmRecentActivities(12);
   const { data: members } = useTeamMembers();
   const [drawerTarget, setDrawerTarget] = useState<CrmTargetRef | null>(null);
+  // The quick-deal dialog also opens on paste; this is the button route.
+  const [dealFormOpen, setDealFormOpen] = useState(false);
+
+  /** While any of these is cold the tiles show "—" instead of a confident 0. */
+  const pipelineLoading = dealsLoading || stagesLoading;
 
   const livePeople = useMemo(
     () => (people ?? []).filter((p) => !p.deleted_at),
@@ -188,7 +194,7 @@ export default function CrmDashboardPage() {
     if (orphans.length > 0) {
       rows.push({
         name: "No stage",
-        color: "#8a8d98",
+        color: NO_STAGE_COLOR,
         count: orphans.length,
         value: orphans.reduce((sum, d) => sum + (d.amount ?? 0), 0),
       });
@@ -231,6 +237,20 @@ export default function CrmDashboardPage() {
     [liveDeals],
   );
 
+  // Tooltip chrome tracks the theme so dark mode stays legible.
+  const chartTooltip = useMemo(
+    () => ({
+      backgroundColor: token.colorBgElevated,
+      borderColor: token.colorBorderSecondary,
+      textStyle: {
+        color: token.colorText,
+        fontFamily: CHART_FONT,
+        fontSize: 12,
+      },
+    }),
+    [token.colorBgElevated, token.colorBorderSecondary, token.colorText],
+  );
+
   // Horizontal bars: stage identity comes from the axis label (color is the
   // stage's own entity color, mirrored from the board); values direct-labeled.
   const chartOption = useMemo(
@@ -253,6 +273,7 @@ export default function CrmDashboardPage() {
         },
       },
       tooltip: {
+        ...chartTooltip,
         trigger: "item" as const,
         formatter: (params: unknown) => {
           const p = Array.isArray(params) ? params[0] : params;
@@ -285,219 +306,391 @@ export default function CrmDashboardPage() {
         },
       ],
     }),
-    [stageRows, mainCurrency, token.colorTextSecondary],
+    [stageRows, mainCurrency, token.colorTextSecondary, chartTooltip],
   );
 
+  const mutedLine: React.CSSProperties = {
+    fontSize: 12,
+    lineHeight: 1.35,
+    color: token.colorTextTertiary,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  };
+  const primaryLine: React.CSSProperties = {
+    fontWeight: 500,
+    lineHeight: 1.35,
+    color: token.colorText,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  };
+  const panelExtraText: React.CSSProperties = {
+    fontSize: 12,
+    color: token.colorTextTertiary,
+  };
+
   return (
-    <div style={{ padding: 24, maxWidth: 1200, margin: "0 auto" }}>
-      <Typography.Title level={3} style={{ marginBottom: 16 }}>
-        CRM Dashboard
-      </Typography.Title>
+    <div style={crmPageStyle()}>
+      <CrmPageHeader
+        title="CRM Dashboard"
+        subtitle="Where the pipeline stands, what closes next, and what the team just touched."
+        right={
+          <>
+            <PasteDealHint style={{ marginRight: 4 }} />
+            <Button
+              icon={<MIcon name="monitoring" size={16} />}
+              onClick={() => router.push("/crm/reports")}
+            >
+              Reports
+            </Button>
+            <Button
+              type="primary"
+              icon={<MIcon name="view_kanban" size={16} />}
+              onClick={() => router.push("/crm/deals")}
+            >
+              Open pipeline
+            </Button>
+          </>
+        }
+      />
 
-      <Row gutter={[16, 16]}>
-        <Col xs={12} xl={6}>
-          <StatCard
-            icon="person"
-            color="#0ea5e9"
-            title="People"
-            value={livePeople.length}
-            hint={`+${addedThisMonth(livePeople)} this month`}
-          />
-        </Col>
-        <Col xs={12} xl={6}>
-          <StatCard
-            icon="domain"
-            color="#6366f1"
-            title="Companies"
-            value={liveCompanies.length}
-            hint={`+${addedThisMonth(liveCompanies)} this month`}
-          />
-        </Col>
-        <Col xs={12} xl={6}>
-          <StatCard
-            icon="target"
-            color="#14b8a6"
-            title="Open deals"
-            value={liveDeals.length}
-            hint={`+${addedThisMonth(liveDeals)} this month`}
-          />
-        </Col>
-        <Col xs={12} xl={6}>
-          <StatCard
-            icon="payments"
-            color="#5a5ad6"
-            title="Pipeline value"
-            value={crmMoney(pipelineValue, mainCurrency)}
-            hint={
-              avgDealSize > 0
-                ? `avg ${crmMoney(avgDealSize, mainCurrency)} per deal`
-                : undefined
-            }
-          />
-        </Col>
-      </Row>
+      <div style={TILE_GRID}>
+        <StatTile
+          icon="person"
+          color={CRM_ACCENT.person}
+          label="People"
+          value={peopleLoading ? "—" : livePeople.length}
+          hint={
+            peopleLoading ? undefined : `+${addedThisMonth(livePeople)} this month`
+          }
+          onClick={() => router.push("/crm/people")}
+        />
+        <StatTile
+          icon="domain"
+          color={CRM_ACCENT.company}
+          label="Companies"
+          value={companiesLoading ? "—" : liveCompanies.length}
+          hint={
+            companiesLoading
+              ? undefined
+              : `+${addedThisMonth(liveCompanies)} this month`
+          }
+          onClick={() => router.push("/crm/companies")}
+        />
+        <StatTile
+          icon="target"
+          color={CRM_ACCENT.deal}
+          label="Open deals"
+          value={dealsLoading ? "—" : liveDeals.length}
+          hint={
+            dealsLoading ? undefined : `+${addedThisMonth(liveDeals)} this month`
+          }
+          onClick={() => router.push("/crm/deals")}
+        />
+        <StatTile
+          icon="payments"
+          color={CRM_ACCENT.money}
+          label="Pipeline value"
+          value={dealsLoading ? "—" : crmMoney(pipelineValue, mainCurrency)}
+          hint={
+            !dealsLoading && avgDealSize > 0
+              ? `avg ${crmMoney(avgDealSize, mainCurrency)} per deal`
+              : undefined
+          }
+          onClick={() => router.push("/crm/reports")}
+        />
+      </div>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} lg={12}>
-          <Card
-            size="small"
-            title="Pipeline by stage"
-            styles={{ body: { paddingTop: 8 } }}
-          >
-            {stageRows.length === 0 ? (
-              <Empty description="No stages yet — set up the pipeline in CRM Settings." />
-            ) : (
-              <EChart
-                option={chartOption}
-                height={Math.max(180, stageRows.length * 44)}
-              />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card size="small" title="Upcoming closes">
-            <List
-              dataSource={upcomingCloses}
-              locale={{
-                emptyText: "No close dates set — add them on your deals.",
-              }}
-              renderItem={(d) => {
-                const overdue = dayjs(d.close_date).isBefore(dayjs(), "day");
-                return (
-                  <List.Item
-                    style={{ paddingInline: 0, cursor: "pointer" }}
-                    onClick={() => setDrawerTarget({ type: "deal", id: d.id })}
-                    actions={[
-                      <Typography.Text
-                        key="amt"
-                        strong
-                        style={{ whiteSpace: "nowrap" }}
+      <div style={CONTENT_GRID}>
+        <Panel
+          title="Pipeline by stage"
+          extra={
+            pipelineLoading ? null : (
+              <span style={panelExtraText}>
+                {crmMoney(pipelineValue, mainCurrency)} total
+              </span>
+            )
+          }
+          padding={pipelineLoading || stageRows.length === 0 ? 8 : 16}
+        >
+          {pipelineLoading ? (
+            <PanelSpin />
+          ) : stageRows.length === 0 ? (
+            <EmptyState
+              compact
+              icon="flag"
+              title="No stages yet"
+              description="Set up the pipeline in CRM Settings and every deal's value shows up here by stage."
+              action={
+                <Button
+                  type="primary"
+                  onClick={() => router.push("/crm/settings")}
+                >
+                  Set up the pipeline
+                </Button>
+              }
+            />
+          ) : (
+            <EChart
+              option={chartOption}
+              height={Math.max(180, stageRows.length * 44)}
+            />
+          )}
+        </Panel>
+
+        <Panel
+          title="Upcoming closes"
+          extra={
+            <Space size={4}>
+              <Tooltip title="New deal">
+                <Button
+                  type="text"
+                  size="small"
+                  aria-label="New deal"
+                  icon={<MIcon name="add" size={16} />}
+                  onClick={() => setDealFormOpen(true)}
+                />
+              </Tooltip>
+              <Button
+                type="link"
+                size="small"
+                style={{ paddingInline: 0 }}
+                onClick={() => router.push("/crm/deals")}
+              >
+                All deals
+              </Button>
+            </Space>
+          }
+          padding={dealsLoading || upcomingCloses.length === 0 ? 8 : 0}
+        >
+          {dealsLoading ? (
+            <PanelSpin />
+          ) : upcomingCloses.length === 0 ? (
+            <EmptyState
+              compact
+              icon="event_upcoming"
+              title="No close dates yet"
+              description="Give a deal a close date and it lands here — overdue first, then whatever is next."
+              action={
+                <Button type="primary" onClick={() => setDealFormOpen(true)}>
+                  Create a deal
+                </Button>
+              }
+            />
+          ) : (
+            upcomingCloses.map((d, index) => {
+              const overdue = dayjs(d.close_date).isBefore(dayjs(), "day");
+              return (
+                <CrmListRow
+                  key={d.id}
+                  first={index === 0}
+                  onClick={() => setDrawerTarget({ type: "deal", id: d.id })}
+                >
+                  <DealGlyph name={d.name} size={28} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={primaryLine}>{d.name}</div>
+                    <div style={mutedLine}>
+                      {d.company?.name ? `${d.company.name} · ` : ""}
+                      <span
+                        style={{
+                          color: overdue
+                            ? token.colorError
+                            : token.colorTextTertiary,
+                        }}
                       >
-                        {crmMoney(d.amount, d.currency_code)}
-                      </Typography.Text>,
-                    ]}
-                  >
-                    <List.Item.Meta
-                      avatar={
-                        <MIcon
-                          name="event"
-                          size={18}
-                          color={
-                            overdue ? token.colorError : token.colorTextTertiary
-                          }
-                        />
-                      }
-                      title={d.name}
-                      description={
-                        <span>
-                          {d.company?.name ? `${d.company.name} · ` : ""}
-                          <Typography.Text
-                            type={overdue ? "danger" : "secondary"}
-                            style={{ fontSize: 12 }}
-                          >
-                            {overdue
-                              ? `was due ${dayjs(d.close_date).format("DD MMM")}`
-                              : dayjs(d.close_date).format("DD MMM YYYY")}
-                          </Typography.Text>
-                          {overdue ? (
-                            <Tag color="red" style={{ marginLeft: 8 }}>
-                              Overdue
-                            </Tag>
-                          ) : null}
-                        </span>
-                      }
-                    />
-                  </List.Item>
-                );
-              }}
-            />
-          </Card>
-        </Col>
-      </Row>
-
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} lg={12}>
-          <Card size="small" title="My open tasks">
-            <List
-              dataSource={myOpenTasks}
-              locale={{ emptyText: "Nothing assigned to you. Enjoy the calm." }}
-              renderItem={(t) => (
-                <List.Item style={{ paddingInline: 0 }}>
-                  <List.Item.Meta
-                    avatar={
-                      <MIcon
-                        name="task_alt"
-                        size={18}
-                        color={token.colorTextTertiary}
-                      />
-                    }
-                    title={t.title}
-                    description={
-                      t.due_at
-                        ? `Due ${dayjs(t.due_at).format("DD MMM")}`
-                        : "No due date"
-                    }
-                  />
-                  {t.due_at && dayjs(t.due_at).isBefore(dayjs()) ? (
-                    <Tag color="red">Overdue</Tag>
-                  ) : null}
-                </List.Item>
-              )}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card size="small" title="Recent activity">
-            <List
-              dataSource={activities ?? []}
-              locale={{ emptyText: "No CRM activity yet." }}
-              renderItem={(a) => {
-                const name = recordName(a.target_type, a.target_id);
-                const exists = name !== "a deleted record";
-                return (
-                  <List.Item
+                        {crmDate(d.close_date)}
+                      </span>
+                    </div>
+                  </div>
+                  <div
                     style={{
-                      paddingInline: 0,
-                      cursor: exists ? "pointer" : undefined,
-                    }}
-                    onClick={() => {
-                      if (exists) {
-                        setDrawerTarget({
-                          type: a.target_type as CrmTargetRef["type"],
-                          id: a.target_id,
-                        });
-                      }
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      flex: "none",
                     }}
                   >
-                    <List.Item.Meta
-                      avatar={
-                        <MIcon
-                          name="history"
-                          size={18}
-                          color={token.colorTextTertiary}
-                        />
-                      }
-                      title={
-                        <span>
-                          <b>{userName(a.actor_id)}</b>{" "}
-                          <Typography.Text type="secondary">
-                            {activityLine(a, name)}
-                          </Typography.Text>
-                        </span>
-                      }
-                      description={dayjs(a.created_at).fromNow()}
-                    />
-                  </List.Item>
-                );
-              }}
+                    {overdue ? (
+                      <SoftChip tone="danger" icon="schedule">
+                        Overdue
+                      </SoftChip>
+                    ) : null}
+                    <span
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: token.colorText,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {crmMoney(d.amount, d.currency_code)}
+                    </span>
+                  </div>
+                </CrmListRow>
+              );
+            })
+          )}
+        </Panel>
+
+        <Panel
+          title="My open tasks"
+          extra={
+            <Button
+              type="link"
+              size="small"
+              style={{ paddingInline: 0 }}
+              onClick={() => router.push("/crm/tasks")}
+            >
+              All tasks
+            </Button>
+          }
+          padding={tasksLoading || myOpenTasks.length === 0 ? 8 : 0}
+        >
+          {tasksLoading ? (
+            <PanelSpin />
+          ) : myOpenTasks.length === 0 ? (
+            <EmptyState
+              compact
+              icon="task_alt"
+              title="Nothing assigned to you"
+              description="No open CRM tasks are waiting on you. Enjoy the calm — or line the next one up."
+              action={
+                <Button
+                  type="primary"
+                  onClick={() => router.push("/crm/tasks")}
+                >
+                  Create a task
+                </Button>
+              }
             />
-          </Card>
-        </Col>
-      </Row>
+          ) : (
+            myOpenTasks.map((t, index) => {
+              const overdue = Boolean(
+                t.due_at && dayjs(t.due_at).isBefore(dayjs()),
+              );
+              return (
+                <CrmListRow key={t.id} first={index === 0} hover={false}>
+                  <GlyphChip icon="task_alt" />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={primaryLine}>{t.title}</div>
+                    <div style={mutedLine}>
+                      {t.due_at ? `Due ${crmDate(t.due_at)}` : "No due date"}
+                    </div>
+                  </div>
+                  {overdue ? (
+                    <SoftChip tone="danger" icon="schedule">
+                      Overdue
+                    </SoftChip>
+                  ) : null}
+                </CrmListRow>
+              );
+            })
+          )}
+        </Panel>
+
+        <Panel
+          title="Recent activity"
+          extra={<span style={panelExtraText}>Latest 12</span>}
+          padding={
+            activitiesLoading || (activities ?? []).length === 0 ? 8 : 0
+          }
+        >
+          {activitiesLoading ? (
+            <PanelSpin />
+          ) : (activities ?? []).length === 0 ? (
+            <EmptyState
+              compact
+              icon="history"
+              title="No CRM activity yet"
+              description="Add a person, company, or deal — every create, edit, and stage move shows up in this feed."
+              action={
+                <Button
+                  type="primary"
+                  onClick={() => router.push("/crm/people")}
+                >
+                  Add your first person
+                </Button>
+              }
+            />
+          ) : (
+            (activities ?? []).map((a, index) => {
+              const name = recordName(a.target_type, a.target_id);
+              const exists = name !== "a deleted record";
+              const meta = eventMeta(a.event);
+              const actor = userName(a.actor_id);
+              return (
+                <CrmListRow
+                  key={a.id}
+                  first={index === 0}
+                  onClick={
+                    exists
+                      ? () =>
+                          setDrawerTarget({
+                            type: a.target_type as CrmTargetRef["type"],
+                            id: a.target_id,
+                          })
+                      : undefined
+                  }
+                >
+                  <EntityAvatar kind="person" name={actor} size={28} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        lineHeight: 1.4,
+                        color: token.colorTextSecondary,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontWeight: 500,
+                          color: token.colorText,
+                        }}
+                      >
+                        {actor}
+                      </span>{" "}
+                      {activityLine(a, name)}
+                    </div>
+                    <Tooltip title={crmDateTime(a.created_at)}>
+                      <span
+                        style={{
+                          display: "inline-block",
+                          fontSize: 11.5,
+                          lineHeight: 1.4,
+                          color: token.colorTextTertiary,
+                        }}
+                      >
+                        {crmFromNow(a.created_at)}
+                      </span>
+                    </Tooltip>
+                  </div>
+                  <SoftChip
+                    tone={meta.tone}
+                    icon={meta.icon}
+                    style={{ flex: "none" }}
+                  >
+                    {meta.label}
+                  </SoftChip>
+                </CrmListRow>
+              );
+            })
+          )}
+        </Panel>
+      </div>
 
       <RecordDrawer
         target={drawerTarget}
         onClose={() => setDrawerTarget(null)}
+      />
+
+      {/* Paste a lead anywhere on this page, or use the buttons above. */}
+      <DealQuickCreate
+        open={dealFormOpen}
+        onClose={() => setDealFormOpen(false)}
       />
     </div>
   );

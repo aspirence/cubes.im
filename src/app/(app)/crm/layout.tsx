@@ -1,6 +1,6 @@
 "use client";
 
-import { App, Button, Result, Spin } from "antd";
+import { App, Button, Spin, theme } from "antd";
 import { useRouter } from "next/navigation";
 import {
   useInstallApp,
@@ -9,27 +9,9 @@ import {
 } from "@/features/apps-platform/use-installed-apps";
 import { useIsCrmAdmin } from "@/features/app-crm/use-crm-access";
 import { errMsg } from "@/lib/err";
+import { EmptyState, Panel } from "./_lib/ui";
 
-function MIcon({
-  name,
-  size = 28,
-  color = "#0ea5e9",
-}: {
-  name: string;
-  size?: number;
-  color?: string;
-}) {
-  return (
-    <span
-      className="material-symbols-rounded"
-      aria-hidden
-      style={{ fontSize: size, lineHeight: 1, color }}
-    >
-      {name}
-    </span>
-  );
-}
-
+/** Full-height stage for the install / no-access gates. */
 function Centered({ children }: { children: React.ReactNode }) {
   return (
     <div
@@ -45,8 +27,18 @@ function Centered({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** The gate card: same panel surface as every other CRM screen. */
+function GatePanel({ children }: { children: React.ReactNode }) {
+  return (
+    <Panel padding={0} style={{ width: "100%", maxWidth: 460 }}>
+      {children}
+    </Panel>
+  );
+}
+
 export default function CRMLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const { token } = theme.useToken();
   const { message } = App.useApp();
   const { enabled, isLoading } = useInstalledApp("crm");
   const { data: isTeamAdmin } = useIsTeamAdmin();
@@ -73,27 +65,30 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
   if (!enabled) {
     return (
       <Centered>
-        <Result
-          icon={<MIcon name="hub" size={42} />}
-          title="Install Cubes CRM to unlock this workspace"
-          subTitle="People, companies, the deal pipeline, CRM tasks, notes, and timelines stay behind the CRM app install for this team."
-          extra={
-            isTeamAdmin ? (
-              <Button
-                type="primary"
-                size="large"
-                loading={installApp.isPending}
-                onClick={handleInstall}
-              >
-                Install Cubes CRM
-              </Button>
-            ) : (
-              <Button size="large" onClick={() => router.push("/apps")}>
-                Open App Center
-              </Button>
-            )
-          }
-        />
+        <GatePanel>
+          <EmptyState
+            icon="hub"
+            accent={token.colorPrimary}
+            title="Install Cubes CRM to unlock this workspace"
+            description="People, companies, the deal pipeline, CRM tasks, notes, and timelines stay behind the CRM app install for this team."
+            action={
+              isTeamAdmin ? (
+                <Button
+                  type="primary"
+                  size="large"
+                  loading={installApp.isPending}
+                  onClick={handleInstall}
+                >
+                  Install Cubes CRM
+                </Button>
+              ) : (
+                <Button size="large" onClick={() => router.push("/apps")}>
+                  Open App Center
+                </Button>
+              )
+            }
+          />
+        </GatePanel>
       </Centered>
     );
   }
@@ -103,16 +98,18 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
   if (!isCrmAdmin) {
     return (
       <Centered>
-        <Result
-          icon={<MIcon name="lock" size={42} />}
-          title="You don't have CRM access yet"
-          subTitle="Cubes CRM is installed for this workspace, but access is granted per person. Ask the workspace owner to add you from CRM Settings → Access."
-          extra={
-            <Button size="large" onClick={() => router.push("/home")}>
-              Back to Home
-            </Button>
-          }
-        />
+        <GatePanel>
+          <EmptyState
+            icon="lock"
+            title="You don't have CRM access yet"
+            description="Cubes CRM is installed for this workspace, but access is granted per person. Ask the workspace owner to add you from CRM Settings → Access."
+            action={
+              <Button size="large" onClick={() => router.push("/home")}>
+                Back to Home
+              </Button>
+            }
+          />
+        </GatePanel>
       </Centered>
     );
   }
