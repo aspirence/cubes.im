@@ -302,6 +302,22 @@ export function useNotificationsRealtime(options?: { toast?: boolean }) {
       queryClient.invalidateQueries({ queryKey: ["active-team"] });
     };
 
+    // A NEW notification means something changed server-side for this user —
+    // a task assigned, a comment, a status move, a project shared. Mark the
+    // data caches behind those events stale so whatever screen is open (Home
+    // dashboard, a project board, My Tasks) refetches silently instead of the
+    // user having to reload the page. invalidateQueries only refetches
+    // queries that are actively mounted, so this stays cheap; notifications
+    // are low-frequency by design (chat coalesces per conversation).
+    const invalidateNotifiedData = () => {
+      // Home dashboard + My Tasks (use-all-tasks.ts allTeamTasksKey root).
+      queryClient.invalidateQueries({ queryKey: ["all-team-tasks"] });
+      // Project task lists / subtasks (use-tasks.ts TASKS_ROOT).
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      // Project lists (use-projects.ts PROJECTS_ROOT) — shares/creates.
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+    };
+
     const channel = supabase
       // This hook mounts in more than one surface (e.g. bell + inbox pane), so
       // the topic must be unique per hook instance. Reusing the exact same
@@ -318,6 +334,7 @@ export function useNotificationsRealtime(options?: { toast?: boolean }) {
         },
         (payload) => {
           invalidate();
+          invalidateNotifiedData();
           // Heads-up toast + chime so a new notification is noticed without
           // opening the bell. Only the surface that opted in (the bell) does
           // this — several mounts of this hook would otherwise stack duplicates.
