@@ -57,10 +57,14 @@ import {
 } from "@/features/team-members/use-team-members";
 import {
   TeamMentionInput,
+  extractMentions,
   type MentionEntity,
   type MentionMember,
 } from "@/features/team-members/team-mention-input";
-import { useNotifyMentions } from "@/features/notifications/use-mention-notify";
+import {
+  useNotifyMentions,
+  useNotifyUsers,
+} from "@/features/notifications/use-mention-notify";
 import { useTeams, useActiveTeam } from "@/features/teams/use-teams";
 import { useAllTeamTasks } from "@/features/tasks/use-all-tasks";
 import { useProjects } from "@/features/projects/use-projects";
@@ -90,6 +94,11 @@ const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 const ONLINE_GREEN = "#22c55e";
+
+/** Sentinel id for the composer's "@all" broadcast entry (never a real user). */
+const ALL_MENTION_ID = "__all__";
+/** "@all" with word boundaries — same shape ChatMessageText uses for names. */
+const ALL_MENTION_RE = /(^|[^\p{L}\p{N}_])@all(?![\p{L}\p{N}_])/u;
 
 function MIcon({ name, size = 18, color }: { name: string; size?: number; color?: string }) {
   return (
@@ -480,6 +489,7 @@ function ChatThreadPageInner() {
   const { data: teamTasks } = useAllTeamTasks();
   const { data: allProjects } = useProjects();
   const notifyMentions = useNotifyMentions();
+  const notifyUsers = useNotifyUsers();
 
   const mentionMembers = useMemo<MentionMember[]>(
     () =>
@@ -519,7 +529,25 @@ function ChatThreadPageInner() {
     [allTeams, allProjects, teamTasks],
   );
   const memberNames = useMemo(
-    () => mentionMembers.map((m) => m.name),
+    // "all" rides along so rendered "@all" gets mention styling too.
+    () => [...mentionMembers.map((m) => m.name), "all"],
+    [mentionMembers],
+  );
+
+  // The composer's picker offers "@all" first — a broadcast to everyone in
+  // THIS conversation. It is display-only sugar for the input: the send path
+  // detects it in the body and fans out to the roster (see submit), so it is
+  // deliberately excluded from the notifyMentions member list.
+  const composerMentionMembers = useMemo<MentionMember[]>(
+    () => [
+      {
+        id: ALL_MENTION_ID,
+        name: "all",
+        avatarUrl: null,
+        email: "Notify everyone in this conversation",
+      },
+      ...mentionMembers,
+    ],
     [mentionMembers],
   );
 
@@ -724,22 +752,37 @@ function ChatThreadPageInner() {
         message.error(errMsg(err, "Couldn't send the message."));
       },
       onSuccess: () => {
+        const conversationLabel =
+          channel?.kind === "dm"
+            ? "a direct message"
+            : channel?.kind === "group"
+              ? "a group message"
+              : `#${title}`;
         // Fire-and-forget: mentioned people/teams get an inbox notification;
         // failures must never read as a failed send.
         void notifyMentions({
           text,
           members: mentionMembers,
           entities: mentionEntities,
-          message: `${myName} mentioned you in ${
-            channel?.kind === "dm"
-              ? "a direct message"
-              : channel?.kind === "group"
-                ? "a group message"
-                : `#${title}`
-          }`,
+          message: `${myName} mentioned you in ${conversationLabel}`,
           url: `/chat/${channelId}`,
           teamId: activeTeam?.id,
         });
+        // "@all" broadcasts to this conversation's roster (minus the sender
+        // and anyone already mentioned by name, so nobody gets pinged twice).
+        if (ALL_MENTION_RE.test(text)) {
+          const explicit = new Set(
+            extractMentions(text, mentionMembers).userIds,
+          );
+          void notifyUsers({
+            userIds: members
+              .map((m) => m.user_id)
+              .filter((id) => !explicit.has(id)),
+            message: `${myName} mentioned everyone in ${conversationLabel}`,
+            url: `/chat/${channelId}`,
+            teamId: activeTeam?.id,
+          });
+        }
       },
     });
   };
@@ -1548,7 +1591,7 @@ function ChatThreadPageInner() {
                   setDraft(v);
                   if (v.trim()) notifyTyping();
                 }}
-                members={mentionMembers}
+                members={composerMentionMembers}
                 entities={mentionEntities}
                 onPressEnter={(e) => {
                   if (!e.shiftKey) {

@@ -89,3 +89,39 @@ export function useNotifyMentions() {
     [supabase, user],
   );
 }
+
+/**
+ * Direct fan-out to an explicit recipient list — powers chat's `@all`, where
+ * the audience is the conversation's roster rather than parsed labels. Same
+ * ceiling and best-effort semantics as {@link useNotifyMentions}; the sender
+ * is always excluded.
+ */
+export function useNotifyUsers() {
+  const supabase = useMemo(() => createClient(), []);
+  const { user } = useAuth();
+
+  return useCallback(
+    async (input: {
+      userIds: string[];
+      message: string;
+      url: string;
+      teamId?: string;
+    }): Promise<void> => {
+      if (!user) return;
+      const ids = [...new Set(input.userIds)].filter((id) => id && id !== user.id);
+      if (ids.length === 0) return;
+      await Promise.allSettled(
+        ids.slice(0, MAX_NOTIFICATIONS).map((userId) =>
+          loose(supabase).rpc("create_notification", {
+            p_user_id: userId,
+            p_message: input.message,
+            p_type: "mention",
+            p_url: input.url,
+            p_team_id: input.teamId ?? null,
+          }),
+        ),
+      );
+    },
+    [supabase, user],
+  );
+}
