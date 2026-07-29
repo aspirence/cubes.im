@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import {
   App,
   Button,
@@ -24,11 +24,11 @@ import { useCrmCompanies } from "@/features/app-crm/use-crm-companies";
 import {
   crmPersonName,
   type CrmPersonWithCompany,
-  type CrmTargetRef,
 } from "@/features/app-crm/types";
 import { errMsg } from "@/lib/err";
 import { MIcon } from "../_components/m-icon";
 import { RecordDrawer } from "../_components/record-drawer";
+import { useRecordDeepLink } from "../_lib/record-deep-link";
 import { CrmToggle } from "../_components/crm-toggle";
 import { FormSection } from "../_components/form-section";
 import {
@@ -62,6 +62,16 @@ type PersonFormValues = {
 };
 
 export default function CrmPeoplePage() {
+  // `useSearchParams` behind the ?m= deep link forces a client bailout — it
+  // has to sit under Suspense or the production static pass errors out.
+  return (
+    <Suspense fallback={null}>
+      <CrmPeoplePageInner />
+    </Suspense>
+  );
+}
+
+function CrmPeoplePageInner() {
   const { token } = theme.useToken();
   const { message } = App.useApp();
   const { data: people, isLoading } = useCrmPeople();
@@ -75,7 +85,9 @@ export default function CrmPeoplePage() {
   const [showDeleted, setShowDeleted] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CrmPersonWithCompany | null>(null);
-  const [viewTarget, setViewTarget] = useState<CrmTargetRef | null>(null);
+  /** Seeded from `?m=` so a reminder notification opens this record. */
+  const [viewTarget, setViewTarget, closeViewTarget] =
+    useRecordDeepLink("person");
   const [confirmRow, setConfirmRow] = useState<string | null>(null);
   const [form] = Form.useForm<PersonFormValues>();
 
@@ -474,7 +486,7 @@ export default function CrmPeoplePage() {
         </Form>
       </Drawer>
 
-      <RecordDrawer target={viewTarget} onClose={() => setViewTarget(null)} />
+      <RecordDrawer target={viewTarget} onClose={closeViewTarget} />
     </div>
   );
 }

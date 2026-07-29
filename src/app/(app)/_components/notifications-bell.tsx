@@ -166,6 +166,14 @@ const TYPE_ICON: Record<
     tag: "Chat",
     verb: "New message",
   },
+  crm_reminder: {
+    icon: "alarm",
+    bg: "#fdf3e0",
+    fg: "#c98a20",
+    label: "Reminders",
+    tag: "CRM",
+    verb: "Reminder due",
+  },
   status_change: {
     icon: "swap_horiz",
     bg: "#eaf3ee",

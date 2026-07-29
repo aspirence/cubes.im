@@ -1,18 +1,17 @@
 "use client";
 
 import { theme } from "antd";
-import { MIcon } from "./m-icon";
-import { avatarColor } from "../_lib/ui";
-import { ENTITY_META } from "./entity-meta";
+import { GlyphTile } from "../_lib/ui";
+import { CAMPAIGN_ICON, ENTITY_META } from "./entity-meta";
 
 /**
  * The deal avatar.
  *
  * People are circles and companies are rounded squares (`EntityAvatar`); a deal
  * is neither, so it gets the same deterministic fill with the deal glyph inside
- * instead of initials. Used everywhere a deal is represented — board-adjacent
- * table, dashboard feed, record drawer header, target picker — so one deal
- * always looks like the same deal.
+ * instead of initials (`GlyphTile`). Used everywhere a deal is represented —
+ * board-adjacent table, dashboard feed, record drawer header, target picker —
+ * so one deal always looks like the same deal.
  */
 export function DealGlyph({
   name,
@@ -21,29 +20,22 @@ export function DealGlyph({
   name: string;
   size?: number;
 }) {
-  return (
-    <span
-      aria-hidden
-      title={name || undefined}
-      style={{
-        width: size,
-        height: size,
-        borderRadius: Math.max(6, Math.round(size * 0.29)),
-        background: avatarColor(name),
-        color: "#fff",
-        flex: "none",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <MIcon
-        name={ENTITY_META.deal.icon}
-        size={Math.round(size * 0.6)}
-        color="#fff"
-      />
-    </span>
-  );
+  return <GlyphTile name={name} icon={ENTITY_META.deal.icon} size={size} />;
+}
+
+/**
+ * The campaign avatar — the same tile, wearing the megaphone. A campaign is not
+ * one of the three polymorphic record types, but it shows up in lists next to
+ * them and has to sit on the same grid.
+ */
+export function CampaignGlyph({
+  name,
+  size = 28,
+}: {
+  name: string;
+  size?: number;
+}) {
+  return <GlyphTile name={name} icon={CAMPAIGN_ICON} size={size} />;
 }
 
 /**

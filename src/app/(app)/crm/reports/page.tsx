@@ -11,8 +11,17 @@ import { useCrmDeals } from "@/features/app-crm/use-crm-deals";
 import { useCrmPeople } from "@/features/app-crm/use-crm-people";
 import { useCrmStages } from "@/features/app-crm/use-crm-stages";
 import { useCrmTasks } from "@/features/app-crm/use-crm-tasks";
+import {
+  useCrmCampaigns,
+  useCrmCampaignSpend,
+} from "@/features/app-crm/use-crm-campaigns";
+import {
+  CRM_LEAD_STATUSES,
+  crmLeadStatusMeta,
+  type CrmChipTone,
+} from "@/features/app-crm/types";
 import { MIcon } from "../_components/m-icon";
-import { CRM_ACCENT } from "../_components/entity-meta";
+import { CRM_ACCENT, NO_STAGE_COLOR } from "../_components/entity-meta";
 import { CONTENT_GRID, TILE_GRID } from "../_components/layout";
 import { closingWithin } from "../_lib/deal-metrics";
 import {
@@ -20,6 +29,7 @@ import {
   EmptyState,
   Panel,
   StatTile,
+  crmMoneyPrecise,
   crmPageStyle,
 } from "../_lib/ui";
 
@@ -59,6 +69,9 @@ export default function CrmReportsPage() {
   const { data: people, isLoading: peopleLoading } = useCrmPeople();
   const { data: companies, isLoading: companiesLoading } = useCrmCompanies();
   const { data: tasks, isLoading: tasksLoading } = useCrmTasks();
+  const { data: campaigns, isLoading: campaignsLoading } = useCrmCampaigns();
+  const { data: campaignSpend, isLoading: spendLoading } =
+    useCrmCampaignSpend();
   const { data: members } = useTeamMembers();
 
   const liveDeals = useMemo(
@@ -302,6 +315,206 @@ export default function CrmReportsPage() {
     };
   }, [liveDeals, members, axisText, chartTooltip, token.colorTextSecondary]);
 
+  /**
+   * Lead status is a STATE, not a category, so it wears the reserved status
+   * colours instead of a categorical hue — and every bar is named on the axis,
+   * so identity is never carried by colour alone.
+   */
+  const statusToneColor = useMemo<Record<CrmChipTone, string>>(
+    () => ({
+      neutral: NO_STAGE_COLOR,
+      success: token.colorSuccess,
+      warning: token.colorWarning,
+      danger: token.colorError,
+      accent: token.colorPrimary,
+    }),
+    [
+      token.colorSuccess,
+      token.colorWarning,
+      token.colorError,
+      token.colorPrimary,
+    ],
+  );
+
+  // Leads by status — the whole fixed vocabulary, in order, zeroes included:
+  // an empty "Qualified" is a finding, not a row to hide.
+  const statusOption = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const d of liveDeals) {
+      const key = crmLeadStatusMeta(d.status).value;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const rows = CRM_LEAD_STATUSES.map((s) => ({
+      ...s,
+      count: counts.get(s.value) ?? 0,
+    }));
+    return {
+      rows,
+      option: {
+        grid: { left: 8, right: 28, top: 8, bottom: 8, containLabel: true },
+        xAxis: {
+          type: "value" as const,
+          axisLabel: { show: false },
+          splitLine: { show: false },
+        },
+        yAxis: {
+          type: "category" as const,
+          inverse: true,
+          data: rows.map((r) => r.label),
+          axisLine: { show: false },
+          axisTick: { show: false },
+          axisLabel: axisText,
+        },
+        tooltip: {
+          ...chartTooltip,
+          trigger: "item" as const,
+          formatter: (params: unknown) => {
+            const p = params as { name?: string; value?: number };
+            const count = p.value ?? 0;
+            return `${p.name}: ${count} lead${count === 1 ? "" : "s"}`;
+          },
+        },
+        series: [
+          {
+            type: "bar" as const,
+            data: rows.map((r) => ({
+              value: r.count,
+              itemStyle: {
+                color: statusToneColor[r.tone],
+                borderRadius: [0, 4, 4, 0],
+              },
+            })),
+            barWidth: 14,
+            label: {
+              show: true,
+              position: "right" as const,
+              color: token.colorTextSecondary,
+              fontFamily: CHART_FONT,
+              formatter: "{c}",
+            },
+          },
+        ],
+      },
+    };
+  }, [
+    liveDeals,
+    statusToneColor,
+    axisText,
+    chartTooltip,
+    token.colorTextSecondary,
+  ]);
+
+  // Leads by campaign — magnitude, so one hue; cost-per-lead rides the direct
+  // label wherever spend has been logged (derived, never stored).
+  const campaignOption = useMemo(() => {
+    const spendByCampaign = new Map<string, number>();
+    for (const s of campaignSpend ?? []) {
+      spendByCampaign.set(
+        s.campaign_id,
+        (spendByCampaign.get(s.campaign_id) ?? 0) + Number(s.amount),
+      );
+    }
+    // Two counts per campaign: every attributed lead (the bar) and the ones a
+    // cost per lead may divide by. 'junk' is excluded from the denominator on
+    // purpose — that is the whole reason it is a separate status from
+    // 'not_interested', which was a real lead that simply said no.
+    const leadsByCampaign = new Map<string, number>();
+    const billableByCampaign = new Map<string, number>();
+    for (const d of liveDeals) {
+      if (!d.campaign_id) continue;
+      leadsByCampaign.set(
+        d.campaign_id,
+        (leadsByCampaign.get(d.campaign_id) ?? 0) + 1,
+      );
+      if (crmLeadStatusMeta(d.status).value !== "junk") {
+        billableByCampaign.set(
+          d.campaign_id,
+          (billableByCampaign.get(d.campaign_id) ?? 0) + 1,
+        );
+      }
+    }
+    const rows = (campaigns ?? [])
+      .filter((c) => !c.deleted_at)
+      .map((c) => {
+        const leads = leadsByCampaign.get(c.id) ?? 0;
+        const billable = billableByCampaign.get(c.id) ?? 0;
+        const spend = spendByCampaign.get(c.id) ?? 0;
+        return {
+          name: c.name,
+          leads,
+          cpl:
+            billable > 0 && spend > 0
+              ? crmMoneyPrecise(spend / billable, c.currency_code)
+              : null,
+        };
+      })
+      .filter((r) => r.leads > 0)
+      .sort((a, b) => b.leads - a.leads)
+      .slice(0, 8);
+    return {
+      rows,
+      option: {
+        // Wide right gutter: the direct label carries the cost per lead too.
+        grid: { left: 8, right: 132, top: 8, bottom: 8, containLabel: true },
+        xAxis: {
+          type: "value" as const,
+          axisLabel: { show: false },
+          splitLine: { show: false },
+        },
+        yAxis: {
+          type: "category" as const,
+          inverse: true,
+          data: rows.map((r) => r.name),
+          axisLine: { show: false },
+          axisTick: { show: false },
+          axisLabel: axisText,
+        },
+        tooltip: {
+          ...chartTooltip,
+          trigger: "item" as const,
+          formatter: (params: unknown) => {
+            const idx = (params as { dataIndex?: number }).dataIndex ?? 0;
+            const row = rows[idx];
+            if (!row) return "";
+            const leads = `${row.name}: ${row.leads} lead${
+              row.leads === 1 ? "" : "s"
+            }`;
+            return row.cpl ? `${leads}<br/>${row.cpl} per lead` : leads;
+          },
+        },
+        series: [
+          {
+            type: "bar" as const,
+            data: rows.map((r) => r.leads),
+            barWidth: 14,
+            itemStyle: { color: MAG, borderRadius: [0, 4, 4, 0] },
+            label: {
+              show: true,
+              position: "right" as const,
+              color: token.colorTextSecondary,
+              fontFamily: CHART_FONT,
+              formatter: (params: unknown) => {
+                const idx = (params as { dataIndex?: number }).dataIndex ?? 0;
+                const row = rows[idx];
+                if (!row) return "";
+                return row.cpl
+                  ? `${row.leads}  ·  ${row.cpl}/lead`
+                  : String(row.leads);
+              },
+            },
+          },
+        ],
+      },
+    };
+  }, [
+    campaigns,
+    campaignSpend,
+    liveDeals,
+    axisText,
+    chartTooltip,
+    token.colorTextSecondary,
+  ]);
+
   const hasDeals = liveDeals.length > 0;
   /** The close-month chart needs dates, not just deals, or it plots zeroes. */
   const hasCloseDates = useMemo(
@@ -464,6 +677,57 @@ export default function CrmReportsPage() {
                   onClick={() => router.push("/crm/people")}
                 >
                   Add your first person
+                </Button>
+              }
+            />
+          )}
+        </Panel>
+
+        <Panel title="Leads by status">
+          {caption(
+            "How the leads themselves are doing — a separate question from where their cards sit on the board.",
+          )}
+          {dealsLoading ? (
+            panelSpin
+          ) : hasDeals ? (
+            <EChart
+              option={statusOption.option}
+              height={Math.max(220, statusOption.rows.length * 34)}
+            />
+          ) : (
+            <EmptyState
+              compact
+              icon="flag"
+              title="No leads yet"
+              description="Every deal carries a lead status — New through Converted — and this chart shows how the desk is spread across them."
+              action={goToDeals}
+            />
+          )}
+        </Panel>
+
+        <Panel title="Leads by campaign">
+          {caption(
+            "Which campaigns actually produce leads — with cost per lead wherever daily spend has been logged. Junk leads count on the bar but not in the cost per lead.",
+          )}
+          {dealsLoading || campaignsLoading || spendLoading ? (
+            panelSpin
+          ) : campaignOption.rows.length > 0 ? (
+            <EChart
+              option={campaignOption.option}
+              height={Math.max(200, campaignOption.rows.length * 40)}
+            />
+          ) : (
+            <EmptyState
+              compact
+              icon="campaign"
+              title="No campaign leads yet"
+              description="Attach a campaign to your deals and log its daily spend — this chart then ranks the top campaigns by lead volume and prints what each lead cost."
+              action={
+                <Button
+                  type="primary"
+                  onClick={() => router.push("/crm/campaigns")}
+                >
+                  Set up campaigns
                 </Button>
               }
             />

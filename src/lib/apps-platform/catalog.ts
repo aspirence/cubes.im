@@ -145,9 +145,9 @@ export const APP_CATALOG: AppDescriptor[] = [
   {
     key: "crm",
     name: "Cubes CRM",
-    tagline: "People, companies, and a deal pipeline — your sales workspace",
+    tagline: "Leads, campaigns, and a deal pipeline — your marketing lead desk",
     description:
-      "A Twenty-inspired CRM inside Cubes: contacts and companies with rich profiles, a drag-and-drop deal pipeline with per-stage totals, CRM tasks and notes attached to any record, and a full activity timeline. Access is owner-controlled — the workspace owner installs it and grants CRM access to the admins who run sales.",
+      "A Twenty-inspired CRM inside Cubes: contacts and companies with rich profiles, a drag-and-drop deal pipeline where every lead carries its own status (new, contacted, qualified, junk…), paid campaigns with daily spend so every lead has a cost, personal reminders that fire a real notification when they're due, CRM tasks and notes attached to any record, and a full activity timeline. Access is owner-controlled — the workspace owner installs it and grants CRM access to the admins who run sales.",
     icon: "hub",
     color: "#0ea5e9",
     category: "Sales",

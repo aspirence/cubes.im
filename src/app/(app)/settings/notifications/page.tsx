@@ -109,6 +109,14 @@ const CATEGORIES: {
     bg: "#e6f0fb",
   },
   {
+    type: "crm_reminder",
+    title: "Reminders",
+    description: "When a CRM reminder you set on a record falls due.",
+    icon: "alarm",
+    tint: "#c98a20",
+    bg: "#fdf3e0",
+  },
+  {
     type: "info",
     title: "Updates & activity",
     description: "Automations, workflow steps, and other activity.",

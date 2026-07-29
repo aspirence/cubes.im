@@ -8,7 +8,7 @@ import {
 } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveTeam } from "@/features/teams/use-teams";
-import type { CrmDeal, CrmDealWithRefs } from "./types";
+import type { CrmDeal, CrmDealWithRefs, CrmLeadStatus } from "./types";
 
 const dealsKey = (teamId: string | undefined) => ["crm-deals", teamId] as const;
 
@@ -16,6 +16,10 @@ const dealsKey = (teamId: string | undefined) => ["crm-deals", teamId] as const;
  * Everything a deal write may carry. `amount`/`currency_code` are omitted on
  * purpose: deals no longer track money, so the columns stay in the table
  * (nullable / defaulted) but nothing may write to them again.
+ *
+ * `status` is re-added narrowed to the seven lead statuses (the DB column is
+ * plain text behind a check constraint); `campaign_id` rides along from the row
+ * type. Status is the lead's own health — `stage_id` remains the board axis.
  */
 export type CrmDealPatch = Partial<
   Omit<
@@ -27,8 +31,9 @@ export type CrmDealPatch = Partial<
     | "created_by"
     | "amount"
     | "currency_code"
+    | "status"
   >
->;
+> & { status?: CrmLeadStatus };
 
 /** All the active team's deals (soft-deleted included), board-ordered. */
 export function useCrmDeals() {
@@ -167,7 +172,12 @@ export function useSetCrmDealDeleted() {
   });
 }
 
-/** Permanent destroy + polymorphic target cleanup. */
+/**
+ * Permanent destroy + polymorphic target cleanup. Task targets, note targets
+ * AND reminders all point at the record by `(target_type, target_id)` with no
+ * FK, so nothing cascades — an uncleaned reminder would keep firing a
+ * notification at a row that no longer exists.
+ */
 export function useDestroyCrmDeal() {
   const supabase = useMemo(() => createClient(), []);
   const queryClient = useQueryClient();
@@ -178,6 +188,7 @@ export function useDestroyCrmDeal() {
       for (const table of [
         "app_crm_task_targets",
         "app_crm_note_targets",
+        "app_crm_reminders",
       ] as const) {
         const { error } = await supabase
           .from(table)
@@ -196,6 +207,7 @@ export function useDestroyCrmDeal() {
       queryClient.invalidateQueries({ queryKey: dealsKey(teamId) });
       queryClient.invalidateQueries({ queryKey: ["crm-tasks", teamId] });
       queryClient.invalidateQueries({ queryKey: ["crm-notes", teamId] });
+      queryClient.invalidateQueries({ queryKey: ["crm-reminders", teamId] });
     },
   });
 }

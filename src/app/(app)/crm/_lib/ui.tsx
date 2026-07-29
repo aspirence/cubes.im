@@ -37,6 +37,31 @@ export {
 } from "./format";
 export { crmMoney, crmPersonName } from "@/features/app-crm/types";
 
+/**
+ * Money for PER-UNIT figures — cost per lead, and anything else where the
+ * interesting digits are after the decimal point.
+ *
+ * `crmMoney` rounds to whole units, which is right for a spend total (nobody
+ * reads ₹1,24,500.00) and wrong here: a ₹33.40 cost per lead prints "₹33", and
+ * anything under half a unit prints "₹0", which reads as free.
+ */
+export function crmMoneyPrecise(
+  amount: number | null | undefined,
+  currency: string | null | undefined,
+): string {
+  if (amount === null || amount === undefined) return "—";
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currency || "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${currency ?? ""} ${amount.toFixed(2)}`.trim();
+  }
+}
+
 /* ------------------------------------------------------------------ *
  * Layout constants
  * ------------------------------------------------------------------ */
@@ -559,6 +584,43 @@ export function EntityAvatar({
 }
 
 /**
+ * The avatar for record types that have no initials worth showing — a deal, a
+ * campaign. Same deterministic fill and rounded-square footprint as
+ * `EntityAvatar`, with a Material glyph where the initials would be, so one
+ * record always looks like the same record. `DealGlyph` / `CampaignGlyph` are
+ * the two named wrappers; nothing should re-implement this shape a third time.
+ */
+export function GlyphTile({
+  name,
+  icon,
+  size = 28,
+}: {
+  name: string;
+  icon: string;
+  size?: number;
+}) {
+  return (
+    <span
+      aria-hidden
+      title={name || undefined}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: Math.max(6, Math.round(size * 0.29)),
+        background: avatarColor(name),
+        color: "#fff",
+        flex: "none",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <MIcon name={icon} size={Math.round(size * 0.6)} color="#fff" />
+    </span>
+  );
+}
+
+/**
  * First-column cell for CRM tables: avatar + name (500) with an optional muted
  * second line.
  */
@@ -610,6 +672,71 @@ export function EntityCell({
             {subtitle}
           </div>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Overview grid (definition list)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Two-column label/value grid — the "what is this record" block at the top of
+ * the record drawer and the campaign drawer. One implementation, so a field
+ * reads identically wherever a record is opened from.
+ */
+export function OverviewGrid({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+        gap: "14px 18px",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * One field of an `OverviewGrid`. An em-dash value dims itself, so an empty
+ * field reads as absent rather than as data.
+ */
+export function OverviewField({
+  label,
+  children,
+  span,
+}: {
+  label: string;
+  children: React.ReactNode;
+  /** Addresses, URLs and notes span both columns. */
+  span?: 2;
+}) {
+  const { token } = theme.useToken();
+  const empty = children === "—";
+  return (
+    <div style={{ minWidth: 0, gridColumn: span === 2 ? "1 / -1" : undefined }}>
+      <div
+        style={{
+          fontSize: 12,
+          lineHeight: 1.4,
+          color: token.colorTextTertiary,
+          marginBottom: 2,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: 13,
+          lineHeight: 1.5,
+          color: empty ? token.colorTextQuaternary : token.colorText,
+          wordBreak: "break-word",
+        }}
+      >
+        {children}
       </div>
     </div>
   );

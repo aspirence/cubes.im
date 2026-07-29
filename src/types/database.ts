@@ -609,6 +609,7 @@ export type Database = {
       app_crm_deals: {
         Row: {
           amount: number | null
+          campaign_id: string | null
           close_date: string | null
           company_id: string | null
           contact_id: string | null
@@ -622,11 +623,13 @@ export type Database = {
           phone: string | null
           position: number
           stage_id: string | null
+          status: string
           team_id: string
           updated_at: string
         }
         Insert: {
           amount?: number | null
+          campaign_id?: string | null
           close_date?: string | null
           company_id?: string | null
           contact_id?: string | null
@@ -640,11 +643,13 @@ export type Database = {
           phone?: string | null
           position?: number
           stage_id?: string | null
+          status?: string
           team_id: string
           updated_at?: string
         }
         Update: {
           amount?: number | null
+          campaign_id?: string | null
           close_date?: string | null
           company_id?: string | null
           contact_id?: string | null
@@ -658,6 +663,7 @@ export type Database = {
           phone?: string | null
           position?: number
           stage_id?: string | null
+          status?: string
           team_id?: string
           updated_at?: string
         }
@@ -699,6 +705,195 @@ export type Database = {
           },
           {
             foreignKeyName: "app_crm_deals_created_by_fk"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_deals_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "app_crm_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_crm_campaigns: {
+        Row: {
+          channel: string | null
+          created_at: string
+          created_by: string | null
+          currency_code: string
+          deleted_at: string | null
+          ended_on: string | null
+          id: string
+          name: string
+          notes: string | null
+          started_on: string | null
+          status: string
+          team_id: string
+          updated_at: string
+        }
+        Insert: {
+          channel?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency_code?: string
+          deleted_at?: string | null
+          ended_on?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          started_on?: string | null
+          status?: string
+          team_id: string
+          updated_at?: string
+        }
+        Update: {
+          channel?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency_code?: string
+          deleted_at?: string | null
+          ended_on?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          started_on?: string | null
+          status?: string
+          team_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_crm_campaigns_team_id_fk"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_campaigns_created_by_fk"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_crm_campaign_spend: {
+        Row: {
+          amount: number
+          campaign_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          note: string | null
+          spend_on: string
+          team_id: string
+        }
+        Insert: {
+          amount: number
+          campaign_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          spend_on: string
+          team_id: string
+        }
+        Update: {
+          amount?: number
+          campaign_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          spend_on?: string
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_crm_campaign_spend_team_id_fk"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_campaign_spend_campaign_id_fk"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "app_crm_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_campaign_spend_created_by_fk"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_crm_reminders: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          done_at: string | null
+          id: string
+          note: string | null
+          notified_at: string | null
+          remind_at: string
+          target_id: string
+          target_type: string
+          team_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          done_at?: string | null
+          id?: string
+          note?: string | null
+          notified_at?: string | null
+          remind_at: string
+          target_id: string
+          target_type: string
+          team_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          done_at?: string | null
+          id?: string
+          note?: string | null
+          notified_at?: string | null
+          remind_at?: string
+          target_id?: string
+          target_type?: string
+          team_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_crm_reminders_team_id_fk"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_reminders_user_id_fk"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_reminders_created_by_fk"
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "users"
@@ -6328,6 +6523,7 @@ export type Database = {
         Args: { _date: string; _employee_id: string }
         Returns: number
       }
+      crm_fire_due_reminders: { Args: never; Returns: number }
       is_crm_admin: { Args: { _team_id: string }; Returns: boolean }
       is_hr_admin: { Args: { _org_id: string }; Returns: boolean }
       is_org_admin: { Args: { _org_id: string }; Returns: boolean }

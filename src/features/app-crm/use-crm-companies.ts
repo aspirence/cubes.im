@@ -107,8 +107,9 @@ export function useSetCrmCompanyDeleted() {
 }
 
 /**
- * Permanently destroys a company. Task/note targets have no FK onto the record
- * (polymorphic), so they are cleaned up here; people/deals FKs SET NULL.
+ * Permanently destroys a company. Task/note targets and reminders have no FK
+ * onto the record (polymorphic), so they are cleaned up here; people/deals FKs
+ * SET NULL. A skipped reminder would keep firing at a row that is gone.
  */
 export function useDestroyCrmCompany() {
   const supabase = useMemo(() => createClient(), []);
@@ -120,6 +121,7 @@ export function useDestroyCrmCompany() {
       for (const table of [
         "app_crm_task_targets",
         "app_crm_note_targets",
+        "app_crm_reminders",
       ] as const) {
         const { error } = await supabase
           .from(table)
@@ -140,6 +142,7 @@ export function useDestroyCrmCompany() {
       queryClient.invalidateQueries({ queryKey: ["crm-deals", teamId] });
       queryClient.invalidateQueries({ queryKey: ["crm-tasks", teamId] });
       queryClient.invalidateQueries({ queryKey: ["crm-notes", teamId] });
+      queryClient.invalidateQueries({ queryKey: ["crm-reminders", teamId] });
     },
   });
 }

@@ -103,7 +103,11 @@ export function useSetCrmPersonDeleted() {
   });
 }
 
-/** Permanent destroy + polymorphic target cleanup (deals contact SET NULL). */
+/**
+ * Permanent destroy + polymorphic target cleanup (deals contact SET NULL).
+ * Reminders are polymorphic too — no FK, nothing cascades, so a skipped one
+ * would keep pinging at a record that is gone.
+ */
 export function useDestroyCrmPerson() {
   const supabase = useMemo(() => createClient(), []);
   const queryClient = useQueryClient();
@@ -114,6 +118,7 @@ export function useDestroyCrmPerson() {
       for (const table of [
         "app_crm_task_targets",
         "app_crm_note_targets",
+        "app_crm_reminders",
       ] as const) {
         const { error } = await supabase
           .from(table)
@@ -133,6 +138,7 @@ export function useDestroyCrmPerson() {
       queryClient.invalidateQueries({ queryKey: ["crm-deals", teamId] });
       queryClient.invalidateQueries({ queryKey: ["crm-tasks", teamId] });
       queryClient.invalidateQueries({ queryKey: ["crm-notes", teamId] });
+      queryClient.invalidateQueries({ queryKey: ["crm-reminders", teamId] });
     },
   });
 }

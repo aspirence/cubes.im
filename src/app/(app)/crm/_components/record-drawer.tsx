@@ -19,6 +19,7 @@ import { useCrmCompanies } from "@/features/app-crm/use-crm-companies";
 import { useCrmDeals } from "@/features/app-crm/use-crm-deals";
 import { useCrmPeople } from "@/features/app-crm/use-crm-people";
 import { useCrmStages } from "@/features/app-crm/use-crm-stages";
+import { useCrmCampaigns } from "@/features/app-crm/use-crm-campaigns";
 import { useCrmRecordActivities } from "@/features/app-crm/use-crm-activities";
 import {
   useCreateCrmNote,
@@ -31,8 +32,10 @@ import {
   useDeleteCrmTask,
   useUpdateCrmTask,
 } from "@/features/app-crm/use-crm-tasks";
+import { useRecordReminders } from "@/features/app-crm/use-crm-reminders";
 import {
   CRM_TASK_STATUSES,
+  crmLeadStatusMeta,
   crmMoney,
   crmPersonName,
   type CrmActivity,
@@ -46,11 +49,19 @@ import { errMsg } from "@/lib/err";
 import { MIcon } from "./m-icon";
 import { DealGlyph } from "./deal-glyph";
 import { PhoneWithCopy } from "./phone-cell";
-import { ENTITY_META } from "./entity-meta";
+import { ENTITY_META, leadStatusIcon } from "./entity-meta";
 import { CrmListRow } from "./list-row";
+import {
+  ReminderList,
+  ReminderQuickAdd,
+  isReminderOverdue,
+  openReminders,
+} from "./reminder-controls";
 import {
   EmptyState,
   EntityAvatar,
+  OverviewField,
+  OverviewGrid,
   Panel,
   RowActions,
   SoftChip,
@@ -65,6 +76,7 @@ const ACTIVITY_ICONS: Record<string, string> = {
   created: "add_circle",
   updated: "edit",
   stage_changed: "swap_horiz",
+  status_changed: "flag",
   deleted: "delete",
   restored: "restore_from_trash",
   note_added: "sticky_note_2",
@@ -88,6 +100,12 @@ function activityText(activity: CrmActivity): string {
     }
     case "stage_changed":
       return `moved the deal from ${String(props.from ?? "no stage")} to ${String(props.to ?? "no stage")}`;
+    case "status_changed":
+      return `changed the lead status from ${crmLeadStatusMeta(
+        String(props.from ?? ""),
+      ).label.toLowerCase()} to ${crmLeadStatusMeta(
+        String(props.to ?? ""),
+      ).label.toLowerCase()}`;
     case "deleted":
       return "deleted this record";
     case "restored":
@@ -107,7 +125,7 @@ type OverviewItem = {
   label: string;
   children: React.ReactNode;
   /** Full-width fields (addresses, URLs) span both columns. */
-  span?: number;
+  span?: 2;
 };
 
 const ELLIPSIS: React.CSSProperties = {
@@ -187,11 +205,13 @@ export function RecordDrawer({
   const { data: companies, isLoading: companiesLoading } = useCrmCompanies();
   const { data: deals, isLoading: dealsLoading } = useCrmDeals();
   const { data: stages } = useCrmStages();
+  const { data: campaigns } = useCrmCampaigns();
   const { data: members } = useTeamMembers();
   const { data: activities, isLoading: activitiesLoading } =
     useCrmRecordActivities(target?.type, target?.id);
   const { data: tasks } = useCrmTasks();
   const { data: notes } = useCrmNotes();
+  const { data: reminders } = useRecordReminders(target?.type, target?.id);
   const createTask = useCreateCrmTask();
   const updateTask = useUpdateCrmTask();
   const deleteTask = useDeleteCrmTask();
@@ -266,6 +286,17 @@ export function RecordDrawer({
         ),
       ),
     [notes, target],
+  );
+
+  /** Undismissed nudges — drive both the header chip and the tab count. */
+  const linkedReminders = useMemo(
+    () => openReminders(reminders),
+    [reminders],
+  );
+
+  const remindersOverdue = useMemo(
+    () => linkedReminders.some(isReminderOverdue),
+    [linkedReminders],
   );
 
   const overviewItems = useMemo<OverviewItem[]>(() => {
@@ -361,6 +392,9 @@ export function RecordDrawer({
     }
     const d = record as CrmDealWithRefs;
     const stage = (stages ?? []).find((s) => s.id === d.stage_id);
+    const status = crmLeadStatusMeta(d.status);
+    // Soft-deleted campaigns still resolve: a lead keeps the name it arrived on.
+    const campaign = (campaigns ?? []).find((c) => c.id === d.campaign_id);
     return [
       {
         key: "stage",
@@ -372,6 +406,27 @@ export function RecordDrawer({
         ) : (
           <SoftChip>No stage</SoftChip>
         ),
+      },
+      // The two first-class lead fields. Opening a lead from a reminder has to
+      // answer "how is this doing" and "where did it come from" without a trip
+      // back through Edit.
+      {
+        key: "status",
+        label: "Status",
+        children: (
+          <SoftChip tone={status.tone} icon={leadStatusIcon(status.value)}>
+            {status.label}
+          </SoftChip>
+        ),
+      },
+      {
+        key: "campaign",
+        label: "Campaign",
+        children: campaign
+          ? campaign.deleted_at
+            ? `${campaign.name} (deleted)`
+            : campaign.name
+          : "—",
       },
       {
         key: "close",
@@ -400,7 +455,7 @@ export function RecordDrawer({
         children: crmDate(d.created_at),
       },
     ];
-  }, [target, record, stages, userName]);
+  }, [target, record, stages, campaigns, userName]);
 
   const handleAddTask = async () => {
     const trimmed = newTask.trim();
@@ -442,6 +497,7 @@ export function RecordDrawer({
     if (target.type === "deal") {
       const d = record as CrmDealWithRefs;
       const stage = (stages ?? []).find((s) => s.id === d.stage_id);
+      const status = crmLeadStatusMeta(d.status);
       return (
         <div
           style={{
@@ -459,6 +515,11 @@ export function RecordDrawer({
           ) : (
             <SoftChip>No stage</SoftChip>
           )}
+          {/* Two axes, two chips: where the card sits, and how the lead is
+              doing. The header is where a reminder click lands. */}
+          <SoftChip tone={status.tone} icon={leadStatusIcon(status.value)}>
+            {status.label}
+          </SoftChip>
           {d.company?.name ? (
             <span
               style={{
@@ -561,6 +622,19 @@ export function RecordDrawer({
                 >
                   {meta.label}
                 </SoftChip>
+                {/* A pending nudge on this record, visible before you open
+                    the Reminders tab. */}
+                {linkedReminders.length > 0 ? (
+                  <SoftChip
+                    tone={remindersOverdue ? "danger" : "warning"}
+                    icon="alarm"
+                    style={{ flex: "none" }}
+                  >
+                    {linkedReminders.length === 1
+                      ? "Reminder"
+                      : `${linkedReminders.length} reminders`}
+                  </SoftChip>
+                ) : null}
               </div>
               {headerSubtitle()}
             </div>
@@ -588,49 +662,17 @@ export function RecordDrawer({
               label: "Overview",
               children: (
                 <Panel padding={14}>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                      gap: "14px 18px",
-                    }}
-                  >
-                    {overviewItems.map((item) => {
-                      const empty = item.children === "—";
-                      return (
-                        <div
-                          key={item.key}
-                          style={{
-                            minWidth: 0,
-                            gridColumn: item.span === 2 ? "1 / -1" : undefined,
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: 12,
-                              lineHeight: 1.4,
-                              color: token.colorTextTertiary,
-                              marginBottom: 2,
-                            }}
-                          >
-                            {item.label}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: 13,
-                              lineHeight: 1.5,
-                              color: empty
-                                ? token.colorTextQuaternary
-                                : token.colorText,
-                              wordBreak: "break-word",
-                            }}
-                          >
-                            {item.children}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <OverviewGrid>
+                    {overviewItems.map((item) => (
+                      <OverviewField
+                        key={item.key}
+                        label={item.label}
+                        span={item.span}
+                      >
+                        {item.children}
+                      </OverviewField>
+                    ))}
+                  </OverviewGrid>
                 </Panel>
               ),
             },
@@ -1026,6 +1068,20 @@ export function RecordDrawer({
                   )}
                 </div>
               ),
+            },
+            {
+              key: "reminders",
+              label: (
+                <TabLabel count={linkedReminders.length}>Reminders</TabLabel>
+              ),
+              children: target ? (
+                <div>
+                  {/* A reminder is personal — it pings the person who set it,
+                      where a task is work the whole team can see. */}
+                  <ReminderQuickAdd target={target} />
+                  <ReminderList target={target} />
+                </div>
+              ) : null,
             },
           ]}
         />

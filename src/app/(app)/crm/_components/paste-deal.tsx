@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   App,
   Button,
+  Checkbox,
   DatePicker,
   Form,
   Input,
@@ -19,9 +20,21 @@ import { useCreateCrmCompany, useCrmCompanies } from "@/features/app-crm/use-crm
 import { useCreateCrmPerson, useCrmPeople } from "@/features/app-crm/use-crm-people";
 import { useCreateCrmDeal, useCrmDeals } from "@/features/app-crm/use-crm-deals";
 import { useCrmStages } from "@/features/app-crm/use-crm-stages";
-import { crmPersonName } from "@/features/app-crm/types";
+import { useCrmCampaigns } from "@/features/app-crm/use-crm-campaigns";
+import { useCreateCrmReminder } from "@/features/app-crm/use-crm-reminders";
+import {
+  CRM_LEAD_STATUSES,
+  CRM_LEAD_STATUS_DEFAULT,
+  crmPersonName,
+  type CrmLeadStatus,
+} from "@/features/app-crm/types";
 import { errMsg } from "@/lib/err";
 import { MIcon } from "./m-icon";
+import {
+  CRM_REMIND_AT_FORMAT,
+  crmDefaultRemindAt,
+  crmDisabledRemindDate,
+} from "./reminder-controls";
 import { SoftChip, fallbackDealName } from "../_lib/ui";
 import { useCrmPrefsStore } from "../_lib/crm-prefs-store";
 import {
@@ -38,10 +51,17 @@ type DealFormValues = {
   name?: string;
   phone?: string;
   stage_id?: string | null;
+  /** The lead's own health — never the board axis, which is `stage_id`. */
+  status?: CrmLeadStatus;
+  /** Where the lead came from; without it the lead has no cost per lead. */
+  campaign_id?: string | null;
   close_date?: Dayjs | null;
   company_id?: string | null;
   contact_id?: string | null;
   owner_id?: string | null;
+  /** Set a personal follow-up nudge on the new deal. On by default. */
+  remind?: boolean;
+  remind_at?: Dayjs | null;
 };
 
 /** Would a paste here land in a field the user is actually typing into? */
@@ -107,8 +127,11 @@ export function DealQuickCreate({
   const [submitting, setSubmitting] = useState(false);
   const lastCompanyId = useCrmPrefsStore((s) => s.lastCompanyId);
   const setLastCompanyId = useCrmPrefsStore((s) => s.setLastCompanyId);
+  const lastCampaignId = useCrmPrefsStore((s) => s.lastCampaignId);
+  const setLastCampaignId = useCrmPrefsStore((s) => s.setLastCampaignId);
 
   const { data: stages } = useCrmStages();
+  const { data: campaigns } = useCrmCampaigns();
   const { data: companies } = useCrmCompanies();
   const { data: people } = useCrmPeople();
   const { data: deals } = useCrmDeals();
@@ -116,6 +139,10 @@ export function DealQuickCreate({
   const createDeal = useCreateCrmDeal();
   const createCompany = useCreateCrmCompany();
   const createPerson = useCreateCrmPerson();
+  const createReminder = useCreateCrmReminder();
+
+  /** Only show the "when" picker while the follow-up box is ticked. */
+  const remindTicked = Form.useWatch("remind", form) ?? true;
 
   const liveCompanies = useMemo(
     () => (companies ?? []).filter((c) => !c.deleted_at),
@@ -124,6 +151,10 @@ export function DealQuickCreate({
   const livePeople = useMemo(
     () => (people ?? []).filter((p) => !p.deleted_at),
     [people],
+  );
+  const liveCampaigns = useMemo(
+    () => (campaigns ?? []).filter((c) => !c.deleted_at),
+    [campaigns],
   );
 
   /** The company the pasted text points at, if the CRM already has it. */
@@ -200,6 +231,15 @@ export function DealQuickCreate({
       name: active.name ?? "",
       phone: active.phone ?? undefined,
       stage_id: stages?.[0]?.id ?? null,
+      // Every lead starts life as "new"; the desk moves it from there — and a
+      // lead you pasted BECAUSE someone just called can be marked here.
+      status: CRM_LEAD_STATUS_DEFAULT,
+      // This is the fastest capture path in the product, so it is exactly where
+      // attribution gets lost. Leads arrive in runs from one campaign, so the
+      // last one used is the guess — same trick as `lastCompanyId` above.
+      campaign_id: liveCampaigns.some((c) => c.id === lastCampaignId)
+        ? lastCampaignId
+        : null,
       // A pasted date wins; otherwise today, since a lead captured now is
       // usually being worked now.
       close_date: active.closeDate ? dayjs(active.closeDate) : dayjs(),
@@ -214,6 +254,10 @@ export function DealQuickCreate({
               : null)),
       contact_id: matchedPerson?.id ?? (canCreateContact ? CREATE_NEW : null),
       owner_id: user?.id ?? null,
+      // A captured lead that nobody chases is a lost lead — so the nudge is on
+      // unless the user says otherwise.
+      remind: true,
+      remind_at: crmDefaultRemindAt(),
     };
   }, [
     active,
@@ -224,6 +268,8 @@ export function DealQuickCreate({
     canCreateContact,
     liveCompanies,
     lastCompanyId,
+    liveCampaigns,
+    lastCampaignId,
     user?.id,
   ]);
 
@@ -268,6 +314,16 @@ export function DealQuickCreate({
     [stages],
   );
 
+  const statusOptions = useMemo(
+    () => CRM_LEAD_STATUSES.map((s) => ({ value: s.value, label: s.label })),
+    [],
+  );
+
+  const campaignOptions = useMemo(
+    () => liveCampaigns.map((c) => ({ value: c.id, label: c.name })),
+    [liveCampaigns],
+  );
+
   const close = () => {
     setParsed(null);
     setSubmitting(false);
@@ -310,7 +366,7 @@ export function DealQuickCreate({
       // Name is optional — fall back to whoever the deal is attached to, so a
       // one-tap capture still reads sensibly on the board.
       const typedName = values.name?.trim();
-      await createDeal.mutateAsync({
+      const deal = await createDeal.mutateAsync({
         name:
           typedName ||
           fallbackDealName({
@@ -324,6 +380,8 @@ export function DealQuickCreate({
           }),
         phone,
         stage_id: stageId,
+        status: values.status ?? CRM_LEAD_STATUS_DEFAULT,
+        campaign_id: values.campaign_id ?? null,
         close_date: values.close_date ? values.close_date.format("YYYY-MM-DD") : null,
         company_id: companyId,
         contact_id: contactId,
@@ -331,11 +389,34 @@ export function DealQuickCreate({
         position: Math.max(0, ...stageDeals.map((d) => d.position)) + 1,
       });
 
-      // Remember the account so the next capture defaults to it.
+      // The follow-up nudge, if the box is still ticked. The deal is already
+      // saved at this point, so a failed reminder degrades to a warning rather
+      // than throwing the whole capture away.
+      let reminderFailed = false;
+      if (values.remind && values.remind_at) {
+        try {
+          await createReminder.mutateAsync({
+            target_type: "deal",
+            target_id: deal.id,
+            remind_at: values.remind_at.toISOString(),
+            note: `Follow up on ${deal.name}`,
+          });
+        } catch {
+          reminderFailed = true;
+        }
+      }
+
+      // Remember the account and the campaign so the next capture defaults
+      // to both — a run of leads from one ad shouldn't need re-picking.
       setLastCompanyId(companyId);
-      message.success(
-        active.raw ? "Deal created from your clipboard." : "Deal created.",
-      );
+      setLastCampaignId(values.campaign_id ?? null);
+      if (reminderFailed) {
+        message.warning("Deal created, but the follow-up reminder didn't save.");
+      } else {
+        message.success(
+          active.raw ? "Deal created from your clipboard." : "Deal created.",
+        );
+      }
       close();
     } catch (err) {
       setSubmitting(false);
@@ -426,6 +507,30 @@ export function DealQuickCreate({
               </Form.Item>
             </Space.Compact>
 
+            <Space.Compact style={{ width: "100%" }}>
+              <Form.Item
+                name="status"
+                label="Status"
+                style={{ flex: 1, marginRight: 8 }}
+              >
+                <Select options={statusOptions} placeholder="Status" />
+              </Form.Item>
+              <Form.Item
+                name="campaign_id"
+                label="Campaign"
+                style={{ flex: 1 }}
+              >
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  options={campaignOptions}
+                  placeholder="Campaign"
+                  notFoundContent="No campaigns yet"
+                />
+              </Form.Item>
+            </Space.Compact>
+
             <Form.Item name="company_id" label="Company">
               <Select
                 allowClear
@@ -455,6 +560,28 @@ export function DealQuickCreate({
                 placeholder="Team member"
               />
             </Form.Item>
+
+            {/* The nudge that keeps a captured lead from going cold — a
+                personal reminder on the new deal, not a team task. */}
+            <Form.Item
+              name="remind"
+              valuePropName="checked"
+              style={{ marginBottom: remindTicked ? 8 : undefined }}
+            >
+              <Checkbox>Remind me to follow up</Checkbox>
+            </Form.Item>
+
+            {remindTicked ? (
+              <Form.Item name="remind_at" label="Remind me at">
+                <DatePicker
+                  showTime={{ format: "HH:mm", minuteStep: 5 }}
+                  format={CRM_REMIND_AT_FORMAT}
+                  disabledDate={crmDisabledRemindDate}
+                  allowClear={false}
+                  style={{ width: "100%" }}
+                />
+              </Form.Item>
+            ) : null}
 
             {/* The source text, folded away — proof of what was read.
                 Only a pasted dialog has one; a button-opened form does not. */}

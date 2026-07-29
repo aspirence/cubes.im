@@ -8,6 +8,7 @@ import {
   Form,
   Input,
   Popconfirm,
+  Segmented,
   Spin,
   Tooltip,
   theme,
@@ -26,6 +27,7 @@ import {
   crmPersonName,
   type CrmNoteWithTargets,
   type CrmTargetRef,
+  type CrmTargetType,
 } from "@/features/app-crm/types";
 import { errMsg } from "@/lib/err";
 import { MIcon } from "../_components/m-icon";
@@ -35,7 +37,7 @@ import {
   decodeTarget,
   encodeTarget,
 } from "../_components/target-picker";
-import { entityMeta } from "../_components/entity-meta";
+import { ENTITY_META, entityMeta } from "../_components/entity-meta";
 import { FormSection } from "../_components/form-section";
 import {
   CRM_DRAWER_BODY_STYLE,
@@ -66,6 +68,11 @@ type NoteFormValues = {
   targets?: string[];
 };
 
+/** Toolbar filter: every note, or only those linked to one kind of record. */
+type LinkFilter = "all" | CrmTargetType;
+
+const LINK_FILTERS: CrmTargetType[] = ["person", "company", "deal"];
+
 export default function CrmNotesPage() {
   const { message } = App.useApp();
   const { token } = theme.useToken();
@@ -80,10 +87,15 @@ export default function CrmNotesPage() {
   const deleteNote = useDeleteCrmNote();
 
   const [search, setSearch] = useState("");
+  const [linkFilter, setLinkFilter] = useState<LinkFilter>("all");
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CrmNoteWithTargets | null>(null);
   const [viewTarget, setViewTarget] = useState<CrmTargetRef | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  // Quick edit happens on the card itself — the Drawer stays for the full form.
+  const [inlineId, setInlineId] = useState<string | null>(null);
+  const [inlineTitle, setInlineTitle] = useState("");
+  const [inlineBody, setInlineBody] = useState("");
   const [form] = Form.useForm<NoteFormValues>();
 
   const recordName = useMemo(() => {
@@ -109,18 +121,31 @@ export default function CrmNotesPage() {
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return (notes ?? []).filter((n) => {
+      if (
+        linkFilter !== "all" &&
+        !n.targets.some((t) => t.target_type === linkFilter)
+      ) {
+        return false;
+      }
       if (!needle) return true;
       return [n.title, n.body ?? ""].join(" ").toLowerCase().includes(needle);
     });
-  }, [notes, search]);
+  }, [notes, search, linkFilter]);
+
+  const clearFilters = () => {
+    setSearch("");
+    setLinkFilter("all");
+  };
 
   const openCreate = () => {
+    setInlineId(null);
     setEditing(null);
     form.resetFields();
     setFormOpen(true);
   };
 
   const openEdit = (note: CrmNoteWithTargets) => {
+    setInlineId(null);
     setEditing(note);
     form.setFieldsValue({
       title: note.title,
@@ -155,6 +180,32 @@ export default function CrmNotesPage() {
         message.success("Note added.");
       }
       setFormOpen(false);
+    } catch (err) {
+      message.error(errMsg(err, "Failed to save note."));
+    }
+  };
+
+  /** Turn one card into its own little editor — title and body, nothing else. */
+  const startInline = (note: CrmNoteWithTargets) => {
+    setFormOpen(false);
+    setInlineId(note.id);
+    setInlineTitle(note.title);
+    setInlineBody(note.body ?? "");
+  };
+
+  const saveInline = async (note: CrmNoteWithTargets) => {
+    const title = inlineTitle.trim();
+    if (!title) {
+      message.error("Note title is required.");
+      return;
+    }
+    try {
+      await updateNote.mutateAsync({
+        id: note.id,
+        patch: { title, body: inlineBody.trim() || null },
+      });
+      setInlineId(null);
+      message.success("Note updated.");
     } catch (err) {
       message.error(errMsg(err, "Failed to save note."));
     }
@@ -238,13 +289,22 @@ export default function CrmNotesPage() {
     }
 
     if (rows.length === 0) {
+      const needle = search.trim();
+      const linked =
+        linkFilter === "all" ? null : ENTITY_META[linkFilter].plural.toLowerCase();
       return (
         <Panel padding={0}>
           <EmptyState
             icon="search_off"
-            title="No notes match your search"
-            description={`Nothing here mentions “${search.trim()}”. Try a different word, or clear the search to see all ${(notes ?? []).length} notes.`}
-            action={<Button onClick={() => setSearch("")}>Clear search</Button>}
+            title={
+              needle ? "No notes match your search" : "No notes match this filter"
+            }
+            description={
+              needle
+                ? `Nothing${linked ? ` filed against ${linked}` : ""} here mentions “${needle}”. Try a different word, or clear the filters to see all ${(notes ?? []).length} notes.`
+                : `No notes are linked to ${linked}. Clear the filter to see all ${(notes ?? []).length} notes.`
+            }
+            action={<Button onClick={clearFilters}>Clear filters</Button>}
           />
         </Panel>
       );
@@ -262,16 +322,17 @@ export default function CrmNotesPage() {
         {rows.map((n) => {
           const who = author(n.created_by);
           const chips = renderTargets(n);
+          const inline = inlineId === n.id;
           return (
-            <Panel key={n.id} hover padding={16}>
+            <Panel key={n.id} hover={!inline} padding={16}>
               <div
                 className={CRM_HOVER_ROW_CLASS}
-                onClick={() => openEdit(n)}
+                onClick={inline ? undefined : () => openEdit(n)}
                 style={{
                   display: "flex",
                   flexDirection: "column",
                   gap: 10,
-                  cursor: "pointer",
+                  cursor: inline ? "default" : "pointer",
                 }}
               >
                 <div
@@ -282,33 +343,51 @@ export default function CrmNotesPage() {
                     minHeight: 24,
                   }}
                 >
-                  <div
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      fontSize: 14,
-                      fontWeight: 600,
-                      lineHeight: 1.4,
-                      letterSpacing: "-0.1px",
-                      color: token.colorText,
-                      display: "-webkit-box",
-                      WebkitBoxOrient: "vertical",
-                      WebkitLineClamp: 2,
-                      overflow: "hidden",
-                    }}
-                  >
-                    {n.title || "Untitled note"}
-                  </div>
+                  {inline ? (
+                    <Input
+                      autoFocus
+                      value={inlineTitle}
+                      onChange={(e) => setInlineTitle(e.target.value)}
+                      onPressEnter={() => saveInline(n)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") setInlineId(null);
+                      }}
+                      placeholder="Note title"
+                      style={{ flex: 1, minWidth: 0, fontWeight: 600 }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        fontSize: 14,
+                        fontWeight: 600,
+                        lineHeight: 1.4,
+                        letterSpacing: "-0.1px",
+                        color: token.colorText,
+                        display: "-webkit-box",
+                        WebkitBoxOrient: "vertical",
+                        WebkitLineClamp: 2,
+                        overflow: "hidden",
+                      }}
+                    >
+                      {n.title || "Untitled note"}
+                    </div>
+                  )}
                   <RowActions
                     open={confirmId === n.id}
-                    style={{ marginTop: -2 }}
+                    style={{
+                      marginTop: -2,
+                      display: inline ? "none" : undefined,
+                    }}
                   >
-                    <Tooltip title="Edit">
+                    <Tooltip title="Quick edit">
                       <Button
                         type="text"
                         size="small"
+                        aria-label="Edit this note in place"
                         icon={<MIcon name="edit" size={16} />}
-                        onClick={() => openEdit(n)}
+                        onClick={() => startInline(n)}
                       />
                     </Tooltip>
                     <Popconfirm
@@ -342,7 +421,17 @@ export default function CrmNotesPage() {
                   </RowActions>
                 </div>
 
-                {n.body ? (
+                {inline ? (
+                  <Input.TextArea
+                    value={inlineBody}
+                    onChange={(e) => setInlineBody(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") setInlineId(null);
+                    }}
+                    placeholder="Call recap, meeting summary, research…"
+                    autoSize={{ minRows: 3, maxRows: 12 }}
+                  />
+                ) : n.body ? (
                   <div
                     style={{
                       fontSize: 13,
@@ -401,18 +490,41 @@ export default function CrmNotesPage() {
                   >
                     {who.name}
                   </span>
-                  <Tooltip title={crmDateTime(n.created_at)}>
-                    <span
+                  {inline ? (
+                    <div
                       style={{
-                        fontSize: 12,
-                        color: token.colorTextTertiary,
                         marginLeft: "auto",
+                        display: "flex",
+                        gap: 8,
                         flex: "none",
                       }}
                     >
-                      {crmFromNow(n.created_at)}
-                    </span>
-                  </Tooltip>
+                      <Button size="small" onClick={() => setInlineId(null)}>
+                        Cancel
+                      </Button>
+                      <Button
+                        type="primary"
+                        size="small"
+                        loading={updateNote.isPending}
+                        onClick={() => saveInline(n)}
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  ) : (
+                    <Tooltip title={crmDateTime(n.created_at)}>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: token.colorTextTertiary,
+                          marginLeft: "auto",
+                          flex: "none",
+                        }}
+                      >
+                        {crmFromNow(n.created_at)}
+                      </span>
+                    </Tooltip>
+                  )}
                 </div>
               </div>
             </Panel>
@@ -435,6 +547,18 @@ export default function CrmNotesPage() {
           value={search}
           onChange={setSearch}
           placeholder="Search notes…"
+        />
+        {/* Filed against what — the second question after "what does it say". */}
+        <Segmented
+          value={linkFilter}
+          onChange={(v) => setLinkFilter(v as LinkFilter)}
+          options={[
+            { value: "all", label: "All" },
+            ...LINK_FILTERS.map((t) => ({
+              value: t,
+              label: ENTITY_META[t].plural,
+            })),
+          ]}
         />
         <div style={{ marginLeft: "auto" }}>{newNoteButton}</div>
       </CrmToolbar>

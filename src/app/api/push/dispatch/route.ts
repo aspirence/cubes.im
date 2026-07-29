@@ -21,6 +21,7 @@ const TITLE: Record<string, string> = {
   video_version: "New version uploaded",
   client_review: "Client review",
   chat_message: "New message",
+  crm_reminder: "Reminder",
   join_request: "Join request",
   member_joined: "New member",
   project_shared: "Project shared",

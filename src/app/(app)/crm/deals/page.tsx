@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   App,
@@ -45,13 +45,17 @@ import {
   useUpdateCrmDeal,
 } from "@/features/app-crm/use-crm-deals";
 import { useCrmStages } from "@/features/app-crm/use-crm-stages";
+import { useCrmCampaigns } from "@/features/app-crm/use-crm-campaigns";
 import { useCrmCompanies } from "@/features/app-crm/use-crm-companies";
 import { useCrmPeople } from "@/features/app-crm/use-crm-people";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
 import {
+  CRM_LEAD_STATUSES,
+  CRM_LEAD_STATUS_DEFAULT,
+  crmLeadStatusMeta,
   type CrmDealWithRefs,
+  type CrmLeadStatus,
   type CrmStage,
-  type CrmTargetRef,
 } from "@/features/app-crm/types";
 import { errMsg } from "@/lib/err";
 import { MIcon } from "../_components/m-icon";
@@ -59,7 +63,11 @@ import { RecordDrawer } from "../_components/record-drawer";
 import { DealQuickCreate } from "../_components/paste-deal";
 import { CrmToggle } from "../_components/crm-toggle";
 import { DealCell } from "../_components/deal-glyph";
-import { CRM_ACCENT, NO_STAGE_COLOR } from "../_components/entity-meta";
+import {
+  CRM_ACCENT,
+  NO_STAGE_COLOR,
+  leadStatusIcon,
+} from "../_components/entity-meta";
 import { TILE_GRID } from "../_components/layout";
 import { FormSection } from "../_components/form-section";
 import { closingWithin } from "../_lib/deal-metrics";
@@ -89,6 +97,7 @@ import {
   tint,
 } from "../_lib/ui";
 import { useCrmPrefsStore } from "../_lib/crm-prefs-store";
+import { useRecordDeepLink } from "../_lib/record-deep-link";
 import { PhoneWithCopy } from "../_components/phone-cell";
 
 /** The board's "no stage" pseudo-column id (column ids are `col:<id>`). */
@@ -103,11 +112,17 @@ type DealFormValues = {
   name?: string;
   phone?: string;
   stage_id?: string | null;
+  /** The lead's own health — never the board axis, which is `stage_id`. */
+  status?: CrmLeadStatus;
+  campaign_id?: string | null;
   close_date?: Dayjs | null;
   company_id?: string | null;
   contact_id?: string | null;
   owner_id?: string | null;
 };
+
+/** Toolbar lead-status filter — the seven statuses plus "show everything". */
+type StatusFilter = "ALL" | CrmLeadStatus;
 
 /** `true` when a close date has already passed (day granularity). */
 function isOverdue(closeDate: string | null): boolean {
@@ -164,6 +179,7 @@ function DealCard({
   const contactName = crmPersonName(deal.contact);
   const overdue = isOverdue(deal.close_date);
   const hasMeta = Boolean(deal.company || contactName || deal.close_date);
+  const status = crmLeadStatusMeta(deal.status);
 
   return (
     <div
@@ -200,6 +216,23 @@ function DealCard({
       >
         {deal.name}
       </div>
+
+      {/* Lead health, one size down — the board should read as states at a
+          glance without competing with the stage colour on the card's edge.
+          The glyph is what separates New from Qualified (both `accent`) and
+          Contacted from Not interested (both `neutral`) on a card. */}
+      <SoftChip
+        tone={status.tone}
+        icon={leadStatusIcon(status.value)}
+        style={{
+          alignSelf: "flex-start",
+          height: 18,
+          padding: "0 7px",
+          fontSize: 11,
+        }}
+      >
+        {status.label}
+      </SoftChip>
 
       {hasMeta ? (
         <div
@@ -405,11 +438,22 @@ function BoardColumn({
 }
 
 export default function CrmDealsPage() {
+  // `useSearchParams` (the ?m= deep link below) forces a client bailout — it has
+  // to sit under a Suspense boundary or the production static pass errors out.
+  return (
+    <Suspense fallback={null}>
+      <CrmDealsPageInner />
+    </Suspense>
+  );
+}
+
+function CrmDealsPageInner() {
   const { message } = App.useApp();
   const { token } = theme.useToken();
   const router = useRouter();
   const { data: deals, isLoading } = useCrmDeals();
   const { data: stages, isLoading: stagesLoading } = useCrmStages();
+  const { data: campaigns } = useCrmCampaigns();
   const { data: companies } = useCrmCompanies();
   const { data: people } = useCrmPeople();
   const { data: members } = useTeamMembers();
@@ -423,10 +467,14 @@ export default function CrmDealsPage() {
 
   const [view, setView] = useState<"board" | "table">("board");
   const [search, setSearch] = useState("");
+  /** Narrows both the board and the table — lead health, not pipeline stage. */
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [showDeleted, setShowDeleted] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CrmDealWithRefs | null>(null);
-  const [viewTarget, setViewTarget] = useState<CrmTargetRef | null>(null);
+  /** Seeded from `?m=` so a reminder notification opens the lead it names. */
+  const [viewTarget, setViewTarget, closeViewTarget] =
+    useRecordDeepLink("deal");
   const [activeDeal, setActiveDeal] = useState<CrmDealWithRefs | null>(null);
   const [confirmRowId, setConfirmRowId] = useState<string | null>(null);
   const [form] = Form.useForm<DealFormValues>();
@@ -439,6 +487,34 @@ export default function CrmDealsPage() {
     () => (deals ?? []).filter((d) => !d.deleted_at),
     [deals],
   );
+
+  /** Deal / company / contact name match — the same needle in both views. */
+  const matchesSearch = useCallback(
+    (d: CrmDealWithRefs, needle: string) =>
+      !needle ||
+      [d.name, d.company?.name ?? "", crmPersonName(d.contact)]
+        .join(" ")
+        .toLowerCase()
+        .includes(needle),
+    [],
+  );
+
+  /**
+   * What the board actually renders. Status is matched through
+   * `crmLeadStatusMeta` so a blank or unknown value lands under "New", exactly
+   * like the chip on the card. Search narrows the board too — the box stays on
+   * screen in both views, so a filter can never be silently in force.
+   */
+  const boardDeals = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return liveDeals
+      .filter(
+        (d) =>
+          statusFilter === "ALL" ||
+          crmLeadStatusMeta(d.status).value === statusFilter,
+      )
+      .filter((d) => matchesSearch(d, needle));
+  }, [liveDeals, statusFilter, search, matchesSearch]);
 
   const knownStageIds = useMemo(
     () => new Set((stages ?? []).map((s) => s.id)),
@@ -457,11 +533,11 @@ export default function CrmDealsPage() {
       stageId: s.id,
       name: s.name,
       color: s.color,
-      deals: liveDeals
+      deals: boardDeals
         .filter((d) => d.stage_id === s.id)
         .sort((a, b) => a.position - b.position),
     }));
-    const orphans = liveDeals
+    const orphans = boardDeals
       .filter((d) => !d.stage_id || !knownStageIds.has(d.stage_id))
       .sort((a, b) => a.position - b.position);
     if (orphans.length > 0) {
@@ -474,7 +550,7 @@ export default function CrmDealsPage() {
       });
     }
     return cols;
-  }, [stages, liveDeals, knownStageIds]);
+  }, [stages, boardDeals, knownStageIds]);
 
   const memberName = useMemo(() => {
     const map = new Map<string, string>();
@@ -482,18 +558,24 @@ export default function CrmDealsPage() {
     return (id: string | null) => (id && map.get(id)) || "—";
   }, [members]);
 
+  /** Soft-deleted campaigns are included — a deal keeps the name it was won on. */
+  const campaignName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of campaigns ?? []) map.set(c.id, c.name);
+    return (id: string | null) => (id ? (map.get(id) ?? "") : "");
+  }, [campaigns]);
+
   const tableRows = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return (deals ?? [])
       .filter((d) => (showDeleted ? Boolean(d.deleted_at) : !d.deleted_at))
-      .filter((d) => {
-        if (!needle) return true;
-        return [d.name, d.company?.name ?? "", crmPersonName(d.contact)]
-          .join(" ")
-          .toLowerCase()
-          .includes(needle);
-      });
-  }, [deals, search, showDeleted]);
+      .filter(
+        (d) =>
+          statusFilter === "ALL" ||
+          crmLeadStatusMeta(d.status).value === statusFilter,
+      )
+      .filter((d) => matchesSearch(d, needle));
+  }, [deals, search, showDeleted, statusFilter, matchesSearch]);
 
   const stageById = useMemo(() => {
     const map = new Map<string, CrmStage>();
@@ -501,8 +583,9 @@ export default function CrmDealsPage() {
     return map;
   }, [stages]);
 
-  /** Board summary — same 30-day window the dashboard and reports tiles use. */
-  const closing30 = useMemo(() => closingWithin(liveDeals, 30), [liveDeals]);
+  /** Board summary — same 30-day window the dashboard and reports tiles use,
+   *  counted over what the status filter is actually showing. */
+  const closing30 = useMemo(() => closingWithin(boardDeals, 30), [boardDeals]);
 
   const stageColorOf = (stageId: string | null) =>
     (stageId ? stageById.get(stageId)?.color : null) ?? NO_STAGE_COLOR;
@@ -583,12 +666,33 @@ export default function CrmDealsPage() {
     () => (stages ?? []).map((s) => ({ value: s.id, label: s.name })),
     [stages],
   );
+  const statusOptions = useMemo(
+    () => CRM_LEAD_STATUSES.map((s) => ({ value: s.value, label: s.label })),
+    [],
+  );
+  /** Live campaigns to pick from, plus whatever the deal being edited already
+   *  points at — a deleted campaign should still read as its name, not an id. */
+  const campaignOptions = useMemo(() => {
+    const live = (campaigns ?? []).filter((c) => !c.deleted_at);
+    const options = live.map((c) => ({ value: c.id, label: c.name }));
+    const current = editing?.campaign_id;
+    if (current && !live.some((c) => c.id === current)) {
+      const gone = (campaigns ?? []).find((c) => c.id === current);
+      if (gone) {
+        options.push({ value: gone.id, label: `${gone.name} (deleted)` });
+      }
+    }
+    return options;
+  }, [campaigns, editing]);
 
   const openCreate = (stageId?: string | null) => {
     setEditing(null);
     form.resetFields();
     form.setFieldsValue({
       stage_id: stageId ?? stages?.[0]?.id ?? null,
+      // Every lead starts life as "new" — the team moves it from there.
+      status: CRM_LEAD_STATUS_DEFAULT,
+      campaign_id: null,
       // Most deals are captured for something happening now; today is the
       // useful default and a wrong date is one click away.
       close_date: dayjs(),
@@ -606,6 +710,8 @@ export default function CrmDealsPage() {
       name: deal.name,
       phone: deal.phone ?? undefined,
       stage_id: deal.stage_id,
+      status: crmLeadStatusMeta(deal.status).value,
+      campaign_id: deal.campaign_id,
       close_date: deal.close_date ? dayjs(deal.close_date) : null,
       company_id: deal.company_id,
       contact_id: deal.contact_id,
@@ -635,6 +741,8 @@ export default function CrmDealsPage() {
         }),
       phone,
       stage_id: values.stage_id ?? null,
+      status: values.status ?? CRM_LEAD_STATUS_DEFAULT,
+      campaign_id: values.campaign_id ?? null,
       close_date: values.close_date
         ? values.close_date.format("YYYY-MM-DD")
         : null,
@@ -664,7 +772,11 @@ export default function CrmDealsPage() {
 
   const boardLoading = isLoading || stagesLoading;
 
-  const tableEmpty = search.trim() ? (
+  /**
+   * "Your filters hid everything" — shared by the table and the board, which
+   * both narrow on the same search box and the same status Select.
+   */
+  const filteredEmpty = search.trim() ? (
     <EmptyState
       compact
       icon="search_off"
@@ -672,6 +784,20 @@ export default function CrmDealsPage() {
       description={`Nothing found for “${search.trim()}”. Try a deal, company or contact name.`}
       action={<Button onClick={() => setSearch("")}>Clear search</Button>}
     />
+  ) : statusFilter !== "ALL" ? (
+    <EmptyState
+      compact
+      icon="filter_alt_off"
+      title={`No ${crmLeadStatusMeta(statusFilter).label.toLowerCase()} leads`}
+      description="No deal currently carries this lead status. Clear the filter to see the rest."
+      action={
+        <Button onClick={() => setStatusFilter("ALL")}>Clear status</Button>
+      }
+    />
+  ) : null;
+
+  const tableEmpty = filteredEmpty ? (
+    filteredEmpty
   ) : showDeleted ? (
     <EmptyState
       compact
@@ -706,7 +832,7 @@ export default function CrmDealsPage() {
           view === "board"
             ? boardLoading
               ? null
-              : liveDeals.length
+              : boardDeals.length
             : isLoading
               ? null
               : tableRows.length
@@ -756,19 +882,31 @@ export default function CrmDealsPage() {
           ]}
         />
 
+        {/* Lead status narrows both views — it is the marketing lens on the
+            same deals, independent of where they sit on the board. */}
+        <Select<StatusFilter>
+          value={statusFilter}
+          onChange={(v) => setStatusFilter(v)}
+          style={{ width: 168 }}
+          options={[{ value: "ALL", label: "All statuses" }, ...statusOptions]}
+        />
+
+        {/* Search narrows both views, so it stays on screen in both — hiding it
+            on the board used to leave a filter silently in force. */}
+        <CrmSearch
+          value={search}
+          onChange={setSearch}
+          placeholder="Search deals…"
+        />
+
+        {/* Deleted deals never appear on the board, so the toggle is the one
+            control that really is table-only. */}
         {view === "table" && (
-          <>
-            <CrmSearch
-              value={search}
-              onChange={setSearch}
-              placeholder="Search deals…"
-            />
-            <CrmToggle
-              checked={showDeleted}
-              onChange={setShowDeleted}
-              label="Deleted"
-            />
-          </>
+          <CrmToggle
+            checked={showDeleted}
+            onChange={setShowDeleted}
+            label="Deleted"
+          />
         )}
 
         <Button
@@ -788,7 +926,7 @@ export default function CrmDealsPage() {
               icon="handshake"
               color={CRM_ACCENT.deal}
               label="Open deals"
-              value={boardLoading ? "—" : liveDeals.length}
+              value={boardLoading ? "—" : boardDeals.length}
               hint={`Across ${columns.length} ${
                 columns.length === 1 ? "column" : "columns"
               } on the board`}
@@ -806,6 +944,10 @@ export default function CrmDealsPage() {
             <div style={{ display: "grid", placeItems: "center", padding: 64 }}>
               <Spin size="large" />
             </div>
+          ) : boardDeals.length === 0 && filteredEmpty ? (
+            /* Without this the board renders N columns of "Drop a deal here"
+               and never says the filter is why they are all empty. */
+            <Panel padding={8}>{filteredEmpty}</Panel>
           ) : columns.length === 0 ? (
             <Panel padding={0}>
               <EmptyState
@@ -891,7 +1033,9 @@ export default function CrmDealsPage() {
             }}
             // Sum of the fixed column widths — anything smaller and AntD's
             // fixed table layout squeezes every column instead of scrolling.
-            scroll={{ x: 1180 }}
+            // 260 deal + 150 stage + 140 status + 160 campaign + 190 contact
+            // + 180 mobile + 150 owner + 140 close date + 110 actions.
+            scroll={{ x: 1480 }}
             locale={{
               emptyText: isLoading ? (
                 <div style={{ height: 120 }} />
@@ -936,6 +1080,48 @@ export default function CrmDealsPage() {
                   value: s.id,
                 })),
                 onFilter: (value, d) => d.stage_id === value,
+              },
+              {
+                title: "Status",
+                key: "status",
+                width: 140,
+                render: (_, d) => {
+                  const status = crmLeadStatusMeta(d.status);
+                  return (
+                    <SoftChip
+                      tone={status.tone}
+                      icon={leadStatusIcon(status.value)}
+                    >
+                      {status.label}
+                    </SoftChip>
+                  );
+                },
+              },
+              {
+                title: "Campaign",
+                key: "campaign",
+                width: 160,
+                render: (_, d) => {
+                  const name = campaignName(d.campaign_id);
+                  if (!name) {
+                    return (
+                      <span style={{ color: token.colorTextQuaternary }}>—</span>
+                    );
+                  }
+                  return (
+                    <span
+                      style={{
+                        display: "block",
+                        color: token.colorTextSecondary,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {name}
+                    </span>
+                  );
+                },
               },
               {
                 title: "Contact",
@@ -1163,6 +1349,13 @@ export default function CrmDealsPage() {
               <Form.Item name="stage_id" label="Stage">
                 <Select allowClear options={stageOptions} placeholder="Stage" />
               </Form.Item>
+              <Form.Item
+                name="status"
+                label="Status"
+                extra="How the lead itself is doing — separate from the stage it sits in."
+              >
+                <Select options={statusOptions} placeholder="Status" />
+              </Form.Item>
               <Form.Item name="close_date" label="Close date">
                 <DatePicker style={{ width: "100%" }} />
               </Form.Item>
@@ -1196,6 +1389,20 @@ export default function CrmDealsPage() {
                   placeholder="Person"
                 />
               </Form.Item>
+              <Form.Item
+                name="campaign_id"
+                label="Campaign"
+                extra="Where the lead came from — this is what makes cost per lead work."
+              >
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  options={campaignOptions}
+                  placeholder="Campaign"
+                  notFoundContent="No campaigns yet"
+                />
+              </Form.Item>
             </FormSection>
           </CrmDrawerFields>
 
@@ -1212,7 +1419,7 @@ export default function CrmDealsPage() {
         </Form>
       </Drawer>
 
-      <RecordDrawer target={viewTarget} onClose={() => setViewTarget(null)} />
+      <RecordDrawer target={viewTarget} onClose={closeViewTarget} />
 
       {/* Paste a lead anywhere on the board to start a deal from it. */}
       <DealQuickCreate />

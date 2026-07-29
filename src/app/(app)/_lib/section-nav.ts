@@ -70,6 +70,8 @@ export const SECTION_NAVS: SectionNav[] = [
       { key: "/crm/people", label: "People", icon: "person" },
       { key: "/crm/companies", label: "Companies", icon: "domain" },
       { key: "/crm/deals", label: "Deals", icon: "target" },
+      { key: "/crm/campaigns", label: "Campaigns", icon: "campaign" },
+      { key: "/crm/reminders", label: "Reminders", icon: "alarm" },
       { key: "/crm/reports", label: "Reports", icon: "bar_chart" },
       { type: "divider" },
       { key: "/crm/tasks", label: "Tasks", icon: "task_alt" },

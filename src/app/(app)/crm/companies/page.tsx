@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import {
   App,
   Button,
@@ -29,11 +29,11 @@ import {
   CRM_CURRENCIES,
   crmMoney,
   type CrmCompany,
-  type CrmTargetRef,
 } from "@/features/app-crm/types";
 import { errMsg } from "@/lib/err";
 import { MIcon } from "../_components/m-icon";
 import { RecordDrawer } from "../_components/record-drawer";
+import { useRecordDeepLink } from "../_lib/record-deep-link";
 import { CrmToggle } from "../_components/crm-toggle";
 import { FormSection } from "../_components/form-section";
 import {
@@ -75,6 +75,16 @@ type CompanyFormValues = {
 };
 
 export default function CrmCompaniesPage() {
+  // `useSearchParams` behind the ?m= deep link forces a client bailout — it
+  // has to sit under Suspense or the production static pass errors out.
+  return (
+    <Suspense fallback={null}>
+      <CrmCompaniesPageInner />
+    </Suspense>
+  );
+}
+
+function CrmCompaniesPageInner() {
   const { token } = theme.useToken();
   const { message } = App.useApp();
   const { data: companies, isLoading } = useCrmCompanies();
@@ -90,7 +100,9 @@ export default function CrmCompaniesPage() {
   const [showDeleted, setShowDeleted] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CrmCompany | null>(null);
-  const [viewTarget, setViewTarget] = useState<CrmTargetRef | null>(null);
+  /** Seeded from `?m=` so a reminder notification opens this record. */
+  const [viewTarget, setViewTarget, closeViewTarget] =
+    useRecordDeepLink("company");
   const [confirmRow, setConfirmRow] = useState<string | null>(null);
   const [form] = Form.useForm<CompanyFormValues>();
 
@@ -630,7 +642,7 @@ export default function CrmCompaniesPage() {
         </Form>
       </Drawer>
 
-      <RecordDrawer target={viewTarget} onClose={() => setViewTarget(null)} />
+      <RecordDrawer target={viewTarget} onClose={closeViewTarget} />
     </div>
   );
 }

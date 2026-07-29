@@ -7,7 +7,7 @@
  * from AntD tokens — never add one of those here.
  */
 
-import type { CrmTargetType } from "@/features/app-crm/types";
+import type { CrmLeadStatus, CrmTargetType } from "@/features/app-crm/types";
 
 /**
  * Semantic accents shared by every stat tile in the module. A metric keeps its
@@ -23,7 +23,39 @@ export const CRM_ACCENT = {
   deal: "#14b8a6",
   /** Tasks completed / anything "done". */
   done: "#16a34a",
+  /**
+   * Campaigns and campaign money — "Spend this month" is `campaign` on the
+   * dashboard AND on the campaigns page. Amber rather than the deal teal
+   * because a campaign is spend, not a pipeline object.
+   */
+  campaign: "#b45309",
 } as const;
+
+/** The campaign glyph, alongside the accent so the pair never drifts. */
+export const CAMPAIGN_ICON = "campaign";
+
+/**
+ * A glyph per lead status.
+ *
+ * Seven statuses share five chip tones, so colour alone collides: New and
+ * Qualified are both `accent`, Contacted and Not interested are both `neutral`.
+ * On a board card the pill is the only fast signal, so every status also carries
+ * its own glyph and the pairs separate without relying on colour at all.
+ */
+export const LEAD_STATUS_ICON: Record<CrmLeadStatus, string> = {
+  new: "fiber_new",
+  contacted: "call",
+  follow_up: "alarm",
+  qualified: "verified",
+  not_interested: "do_not_disturb_on",
+  junk: "block",
+  converted: "check_circle",
+};
+
+/** Safe lookup for a stored status string (falls back to "new"'s glyph). */
+export function leadStatusIcon(value: CrmLeadStatus): string {
+  return LEAD_STATUS_ICON[value] ?? LEAD_STATUS_ICON.new;
+}
 
 export type EntityMeta = {
   /** Material Symbols glyph. */
