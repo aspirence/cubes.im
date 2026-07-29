@@ -11,6 +11,7 @@ import {
 } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import { useChatDraftsStore } from "@/store/chat-drafts-store";
 import type { Database } from "@/types/database";
 
 /** The public.users profile row (id === auth.uid()). */
@@ -163,10 +164,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback<AuthContextValue["signOut"]>(async () => {
     const { error } = await supabase.auth.signOut();
-    if (!error && mountedRef.current) {
-      setSession(null);
-      setUser(null);
-      setProfile(null);
+    if (!error) {
+      // Chat drafts persist in localStorage keyed by conversation only — wipe
+      // them so the next account on this browser can't read them.
+      useChatDraftsStore.persist.clearStorage();
+      useChatDraftsStore.setState({ drafts: {}, threadDrafts: {} });
+      if (mountedRef.current) {
+        setSession(null);
+        setUser(null);
+        setProfile(null);
+      }
     }
     return { error: error ? friendlyError(error) : null };
   }, [supabase]);

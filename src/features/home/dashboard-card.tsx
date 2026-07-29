@@ -22,7 +22,7 @@ import { useAnalyticsCapabilities, clampCardForViewer } from "./analytics-access
 import {
   visibleTasks,
   groupTasks,
-  computeMetric,
+  tasksForMetric,
   tasksInGroup,
   paletteFor,
 } from "./dashboard-engine";
@@ -64,8 +64,12 @@ function MetricBody({
   myTeamMemberId: string | undefined;
 }) {
   const { token } = theme.useToken();
+  const [drillOpen, setDrillOpen] = useState(false);
   const metric = card.metric ?? "open";
-  const value = computeMetric(tasks, card.filter, metric, myTeamMemberId);
+  // The tile's number IS this list's length, so the drill-down can never
+  // disagree with the figure the user clicked.
+  const drilled = tasksForMetric(tasks, card.filter, metric, myTeamMemberId);
+  const value = drilled.length;
   const label = METRIC_OPTIONS.find((m) => m.value === metric)?.label ?? "";
   const tone =
     metric === "overdue" && value > 0
@@ -74,18 +78,46 @@ function MetricBody({
         ? "#3a9d6e"
         : token.colorText;
   return (
-    <div style={{ padding: "18px 18px 20px" }}>
-      <div
-        className="font-mono"
-        style={{ fontSize: 34, fontWeight: 700, letterSpacing: "-1.5px", color: tone, lineHeight: 1 }}
+    <>
+      <button
+        type="button"
+        onClick={() => setDrillOpen(true)}
+        aria-label={`View the ${value} ${label} tasks`}
+        title="View tasks"
+        style={{
+          display: "block",
+          width: "100%",
+          textAlign: "left",
+          padding: "18px 18px 20px",
+          border: "none",
+          background: "transparent",
+          cursor: "pointer",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = token.colorFillQuaternary;
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = "transparent";
+        }}
       >
-        {value}
-      </div>
-      <div style={{ marginTop: 6, fontSize: 12.5, color: token.colorTextTertiary }}>
-        {label}
-        {card.filter.scope === "me" ? " · you" : ""}
-      </div>
-    </div>
+        <div
+          className="font-mono"
+          style={{ fontSize: 34, fontWeight: 700, letterSpacing: "-1.5px", color: tone, lineHeight: 1 }}
+        >
+          {value}
+        </div>
+        <div style={{ marginTop: 6, fontSize: 12.5, color: token.colorTextTertiary }}>
+          {label}
+          {card.filter.scope === "me" ? " · you" : ""}
+        </div>
+      </button>
+      <ChartDrillDown
+        open={drillOpen}
+        title={card.title === label ? label : `${label} · ${card.title}`}
+        tasks={drilled}
+        onClose={() => setDrillOpen(false)}
+      />
+    </>
   );
 }
 

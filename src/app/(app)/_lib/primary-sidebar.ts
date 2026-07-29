@@ -51,6 +51,14 @@ export const CORE_PRIMARY_SIDEBAR_ITEMS: PrimarySidebarItem[] = [
     kind: "core",
   },
   {
+    id: "/reporting/time",
+    key: "/reporting/time",
+    base: "/reporting",
+    icon: "timer",
+    label: "Time",
+    kind: "core",
+  },
+  {
     id: "/workflows",
     key: "/workflows",
     base: "/workflows",

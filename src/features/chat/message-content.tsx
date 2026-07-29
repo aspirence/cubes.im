@@ -1,12 +1,99 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Image, theme } from "antd";
 import type { ChatAttachment } from "@/features/chat/use-chat";
-import { LinkPreviews, LinkifiedText } from "@/features/links/link-preview";
+import { LinkPreviews, LinkifiedText, URL_RE } from "@/features/links/link-preview";
 
 // Chat and project docs share one link implementation.
 export { LinkifiedText };
+
+/**
+ * Message body renderer: URLs become links (via LinkifiedText) and `@Name`
+ * occurrences matching a team member's name render as accent-colored mentions.
+ * URLs are opaque — mention matching never runs inside them (an address like
+ * `https://x.com/@Alice` stays a plain link). The `@` must sit at the start of
+ * a segment or after whitespace/punctuation (never inside a word), the longest
+ * matching name at each `@` wins ("@Design Ops" beats "@Design"), and a word
+ * boundary must follow so "@Ali" doesn't light up inside "@Alice".
+ */
+export function ChatMessageText({
+  text,
+  memberNames,
+}: {
+  text: string;
+  memberNames: string[];
+}) {
+  const parts = useMemo(() => {
+    const out: { key: string; text: string; mention: boolean }[] = [];
+    const sorted = [...memberNames]
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length);
+    if (sorted.length === 0) return [{ key: "t0", text, mention: false }];
+
+    // Mention-match ONE non-URL segment; `keyBase` keeps keys unique per segment.
+    const scanMentions = (seg: string, keyBase: string) => {
+      let i = 0;
+      let last = 0;
+      while (i < seg.length) {
+        if (
+          seg[i] === "@" &&
+          // Word boundary BEFORE the @: segment start, whitespace or punctuation.
+          (i === 0 || !/[\p{L}\p{N}_]/u.test(seg[i - 1]))
+        ) {
+          const rest = seg.slice(i + 1);
+          const hit = sorted.find((n) => {
+            if (!rest.startsWith(n)) return false;
+            const after = rest.charAt(n.length);
+            return after === "" || !/[\p{L}\p{N}_]/u.test(after);
+          });
+          if (hit) {
+            if (i > last)
+              out.push({
+                key: `${keyBase}t${last}`,
+                text: seg.slice(last, i),
+                mention: false,
+              });
+            out.push({ key: `${keyBase}m${i}`, text: `@${hit}`, mention: true });
+            i += hit.length + 1;
+            last = i;
+            continue;
+          }
+        }
+        i += 1;
+      }
+      if (last < seg.length)
+        out.push({ key: `${keyBase}t${last}`, text: seg.slice(last), mention: false });
+    };
+
+    // Split by URL first; URL segments pass through untouched (LinkifiedText
+    // turns them into anchors below).
+    const re = new RegExp(URL_RE.source, "gi");
+    let cursor = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > cursor) scanMentions(text.slice(cursor, m.index), `s${cursor}`);
+      out.push({ key: `u${m.index}`, text: m[0], mention: false });
+      cursor = m.index + m[0].length;
+    }
+    if (cursor < text.length) scanMentions(text.slice(cursor), `s${cursor}`);
+    return out;
+  }, [text, memberNames]);
+
+  return (
+    <>
+      {parts.map((p) =>
+        p.mention ? (
+          <span key={p.key} style={{ color: "#4a4ad0", fontWeight: 650 }}>
+            {p.text}
+          </span>
+        ) : (
+          <LinkifiedText key={p.key} text={p.text} />
+        ),
+      )}
+    </>
+  );
+}
 
 const isImage = (a: ChatAttachment) =>
   a.type.startsWith("image/") || /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(a.url);

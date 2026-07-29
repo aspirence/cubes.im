@@ -6454,6 +6454,28 @@ export type Database = {
           user_name: string
         }[]
       }
+      time_analytics: {
+        Args: {
+          p_team_id: string
+          p_user_id?: string
+          p_from?: string
+          p_to?: string
+        }
+        Returns: {
+          log_id: string
+          task_id: string
+          task_name: string
+          project_id: string
+          project_name: string
+          project_color: string | null
+          user_id: string
+          user_name: string
+          avatar_url: string | null
+          seconds: number
+          is_billable: boolean
+          logged_at: string
+        }[]
+      }
       request_regularization: {
         Args: { p_date: string; p_in: string; p_out: string; p_reason?: string }
         Returns: string

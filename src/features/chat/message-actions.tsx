@@ -13,9 +13,28 @@ const EMOJI_PICKER = [
   "📌", "📎", "🎯", "✨", "🤔", "😅", "😍", "🥳", "😴", "🫡",
 ];
 
-function MIcon({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
+function MIcon({
+  name,
+  size = 16,
+  color,
+  fill,
+}: {
+  name: string;
+  size?: number;
+  color?: string;
+  fill?: boolean;
+}) {
   return (
-    <span className="material-symbols-rounded" aria-hidden style={{ fontSize: size, lineHeight: 1, color }}>
+    <span
+      className="material-symbols-rounded"
+      aria-hidden
+      style={{
+        fontSize: size,
+        lineHeight: 1,
+        color,
+        fontVariationSettings: fill ? "'FILL' 1" : undefined,
+      }}
+    >
       {name}
     </span>
   );
@@ -23,20 +42,36 @@ function MIcon({ name, size = 16, color }: { name: string; size?: number; color?
 
 /**
  * The toolbar that appears over a message on hover: quick reactions, the full
- * emoji picker, and (for your own messages) edit / delete.
+ * emoji picker, reply-in-thread, pin, save, and (where allowed) edit / delete.
  */
 export function MessageHoverActions({
   mine,
+  canDelete,
+  pinned,
+  saved,
   onReact,
+  onReply,
+  onTogglePin,
+  onToggleSave,
   onEdit,
   onDelete,
   onCopy,
+  onMarkUnread,
 }: {
   mine: boolean;
+  /** Delete shows for the author AND for team admins on others' messages. */
+  canDelete: boolean;
+  pinned: boolean;
+  saved: boolean;
   onReact: (emoji: string) => void;
+  onReply: () => void;
+  onTogglePin: () => void;
+  onToggleSave: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onCopy: () => void;
+  /** Top-level messages only: rewind the read cursor to this message. */
+  onMarkUnread?: () => void;
 }) {
   const { token } = theme.useToken();
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -45,7 +80,7 @@ export function MessageHoverActions({
     label: string,
     icon: string,
     onClick: () => void,
-    danger = false,
+    opts?: { danger?: boolean; fill?: boolean; color?: string },
   ) => (
     <Tooltip title={label}>
       <button
@@ -59,13 +94,15 @@ export function MessageHoverActions({
           background: "transparent",
           borderRadius: 6,
           cursor: "pointer",
-          color: danger ? token.colorError : token.colorTextSecondary,
+          color: opts?.danger
+            ? token.colorError
+            : (opts?.color ?? token.colorTextSecondary),
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        <MIcon name={icon} size={16} />
+        <MIcon name={icon} size={16} fill={opts?.fill} />
       </button>
     </Tooltip>
   );
@@ -146,9 +183,18 @@ export function MessageHoverActions({
         {btn("More reactions", "add_reaction", () => setPickerOpen(true))}
       </Popover>
 
+      {btn("Reply in thread", "reply", onReply)}
+      {btn(pinned ? "Unpin" : "Pin", pinned ? "keep_off" : "keep", onTogglePin, {
+        color: pinned ? "#4a4ad0" : undefined,
+      })}
+      {btn(saved ? "Remove from saved" : "Save for later", "bookmark", onToggleSave, {
+        fill: saved,
+        color: saved ? "#4a4ad0" : undefined,
+      })}
       {btn("Copy text", "content_copy", onCopy)}
+      {onMarkUnread ? btn("Mark unread", "mark_chat_unread", onMarkUnread) : null}
       {mine ? btn("Edit", "edit", onEdit) : null}
-      {mine ? btn("Delete", "delete", onDelete, true) : null}
+      {canDelete ? btn("Delete", "delete", onDelete, { danger: true }) : null}
     </div>
   );
 }

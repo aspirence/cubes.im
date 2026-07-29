@@ -348,6 +348,68 @@ export function tasksInGroup(
   });
 }
 
+/**
+ * The tasks behind a metric card — the drill-down twin of the old
+ * `computeMetric`, so the number on the tile and the list it opens can never
+ * disagree (`computeMetric` is just this list's length). Sorted so the list
+ * reads as a worklist: nearest due date first (no-date last); the completed
+ * metric shows the most recently finished first.
+ */
+export function tasksForMetric(
+  tasks: TeamTaskWithProject[],
+  filter: CardFilter,
+  metric: MetricKind,
+  myTeamMemberId: string | undefined,
+): TeamTaskWithProject[] {
+  const pop = scopeTasks(tasks, filter, myTeamMemberId);
+  const today = startOfToday();
+  const { start, end } = weekBounds();
+
+  const byDue = (a: TeamTaskWithProject, b: TeamTaskWithProject) =>
+    (a.end_date ?? "9999").localeCompare(b.end_date ?? "9999");
+
+  switch (metric) {
+    case "open":
+      return pop.filter(isOpen).sort(byDue);
+    case "overdue":
+      return pop
+        .filter(
+          (t) => isOpen(t) && t.end_date && dayjs(t.end_date).isBefore(today),
+        )
+        .sort(byDue);
+    case "due-today":
+      return pop.filter(
+        (t) => isOpen(t) && t.end_date && dayjs(t.end_date).isSame(today, "day"),
+      );
+    case "due-week":
+      return pop
+        .filter((t) => {
+          if (!isOpen(t) || !t.end_date) return false;
+          const d = dayjs(t.end_date);
+          return !d.isBefore(start) && d.isBefore(end);
+        })
+        .sort(byDue);
+    case "in-progress":
+      return pop
+        .filter((t) => isOpen(t) && t.status?.category?.is_doing)
+        .sort(byDue);
+    case "completed-week":
+      return pop
+        .filter((t) => {
+          if (!t.done || !t.completed_at) return false;
+          const c = dayjs(t.completed_at);
+          return !c.isBefore(start) && c.isBefore(end);
+        })
+        .sort((a, b) =>
+          (b.completed_at ?? "").localeCompare(a.completed_at ?? ""),
+        );
+    case "total":
+      return pop;
+    default:
+      return [];
+  }
+}
+
 /** Computes a single metric over the scoped population (its own completion/due). */
 export function computeMetric(
   tasks: TeamTaskWithProject[],
@@ -355,40 +417,7 @@ export function computeMetric(
   metric: MetricKind,
   myTeamMemberId: string | undefined,
 ): number {
-  const pop = scopeTasks(tasks, filter, myTeamMemberId);
-  const today = startOfToday();
-  const { start, end } = weekBounds();
-
-  switch (metric) {
-    case "open":
-      return pop.filter(isOpen).length;
-    case "overdue":
-      return pop.filter(
-        (t) => isOpen(t) && t.end_date && dayjs(t.end_date).isBefore(today),
-      ).length;
-    case "due-today":
-      return pop.filter(
-        (t) => isOpen(t) && t.end_date && dayjs(t.end_date).isSame(today, "day"),
-      ).length;
-    case "due-week":
-      return pop.filter((t) => {
-        if (!isOpen(t) || !t.end_date) return false;
-        const d = dayjs(t.end_date);
-        return !d.isBefore(start) && d.isBefore(end);
-      }).length;
-    case "in-progress":
-      return pop.filter((t) => isOpen(t) && t.status?.category?.is_doing).length;
-    case "completed-week":
-      return pop.filter((t) => {
-        if (!t.done || !t.completed_at) return false;
-        const c = dayjs(t.completed_at);
-        return !c.isBefore(start) && c.isBefore(end);
-      }).length;
-    case "total":
-      return pop.length;
-    default:
-      return 0;
-  }
+  return tasksForMetric(tasks, filter, metric, myTeamMemberId).length;
 }
 
 /** Distinct status + priority names present in the loaded team tasks (for filter menus). */

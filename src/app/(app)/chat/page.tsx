@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Avatar, Badge, Skeleton, theme } from "antd";
+import { Avatar, Badge, Button, Skeleton, Tooltip, theme } from "antd";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import {
@@ -12,7 +12,11 @@ import {
   type ChatChannelSummary,
 } from "@/features/chat/use-chat";
 import { useIsTeamAdmin } from "@/features/team-members/use-team-members";
-import { NewChannelModal, NewDmModal } from "./_components/chat-sidebar";
+import {
+  ChatSavedModal,
+  NewChannelModal,
+  NewDmModal,
+} from "./_components/chat-sidebar";
 
 dayjs.extend(relativeTime);
 
@@ -142,6 +146,7 @@ export default function ChatIndexPage() {
 
   const [channelModal, setChannelModal] = useState(false);
   const [dmModal, setDmModal] = useState(false);
+  const [savedModal, setSavedModal] = useState(false);
 
   const list = channels ?? [];
 
@@ -190,18 +195,34 @@ export default function ChatIndexPage() {
       <>
         <div
           style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
             padding: "16px 16px 10px",
             borderBottom: `1px solid ${token.colorSplit}`,
           }}
         >
-          <h1 style={{ margin: 0, fontSize: 19, fontWeight: 700, color: token.colorText }}>
+          <h1 style={{ margin: 0, fontSize: 19, fontWeight: 700, color: token.colorText, flex: 1 }}>
             Chat
           </h1>
+          <Tooltip title="Saved messages">
+            <Button
+              type="text"
+              size="small"
+              aria-label="Saved messages"
+              onClick={() => setSavedModal(true)}
+              icon={<MIcon name="bookmark" size={18} color={token.colorTextSecondary} />}
+            />
+          </Tooltip>
         </div>
         <div>
           {list.map((c: ChatChannelSummary) => {
             const label =
-              c.kind === "dm" ? (c.other_user_name ?? "Direct message") : (c.name ?? "Channel");
+              c.kind === "dm"
+                ? (c.other_user_name ?? "Direct message")
+                : c.kind === "group"
+                  ? (c.member_names ?? "Group")
+                  : (c.name ?? "Channel");
             const unread = c.unread_count > 0;
             return (
               <a
@@ -235,7 +256,7 @@ export default function ChatIndexPage() {
                       justifyContent: "center",
                     }}
                   >
-                    <MIcon name="tag" size={18} color="#4a4ad0" />
+                    <MIcon name={c.kind === "group" ? "group" : "tag"} size={18} color="#4a4ad0" />
                   </span>
                 )}
                 <span style={{ minWidth: 0, flex: 1 }}>
@@ -289,6 +310,7 @@ export default function ChatIndexPage() {
             );
           })}
         </div>
+        <ChatSavedModal open={savedModal} onClose={() => setSavedModal(false)} />
       </>,
     );
   }

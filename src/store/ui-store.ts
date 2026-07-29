@@ -18,6 +18,7 @@ export const DEFAULT_SIDEBAR_PINNED_ITEM_IDS = [
   "/home",
   "/chat",
   "/schedule",
+  "/reporting/time",
   "/workflows",
   "/people",
   "/apps",
@@ -72,7 +73,7 @@ export const useUIStore = create<UIState>()(
       // Bump when a NEW item is added to the default rail so it reaches users
       // who already have a persisted (older) pinned set — otherwise the saved
       // localStorage value hides the new default forever.
-      version: 1,
+      version: 2,
       migrate: (persisted) => {
         const s = (persisted ?? {}) as {
           themeMode?: UIState["themeMode"];
@@ -87,6 +88,12 @@ export const useUIStore = create<UIState>()(
           const anchor = ids.indexOf("/schedule");
           if (anchor >= 0) ids.splice(anchor + 1, 0, "/workflows");
           else ids.splice(Math.min(1, ids.length), 0, "/workflows");
+        }
+        // v2: Time analytics rail item (added after the first release).
+        if (!ids.includes("/reporting/time")) {
+          const anchor = ids.indexOf("/schedule");
+          if (anchor >= 0) ids.splice(anchor + 1, 0, "/reporting/time");
+          else ids.splice(Math.min(1, ids.length), 0, "/reporting/time");
         }
         return { ...s, sidebarPinnedItemIds: ids };
       },
