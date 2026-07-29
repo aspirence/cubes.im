@@ -45,8 +45,14 @@ const EMPTY: ParsedFields = {
 
 const EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/;
 const EMAIL_RE_G = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
-/** Loose international phone; the digit-count guard below rejects the rest. */
-const PHONE_RE = /(?:\+\d{1,3}[\s-]?)?(?:\(?\d{2,5}\)?[\s.-]){1,4}\d{2,6}/;
+/**
+ * Loose international phone. Two shapes: separated ("+1 (415) 555-0198",
+ * tried first so it matches whole) and a bare run of digits, which is how a
+ * number actually arrives when someone copies it out of WhatsApp. The
+ * digit-count guard below rejects the rest.
+ */
+const PHONE_RE =
+  /(?:\+\d{1,3}[\s-]?)?(?:\(?\d{2,5}\)?[\s.-]){1,4}\d{2,6}|\+?\d{10,15}/;
 /** The last label must be an alphabetic TLD, or "2.5 lakh" reads as a host. */
 const URL_RE = /\b(?:https?:\/\/)?(?:www\.)?((?:[a-z0-9-]+\.)+[a-z]{2,24})\b(?:\/\S*)?/i;
 /** Dates must be removed before the phone scan or 2026-08-15 reads as a number. */
@@ -321,7 +327,9 @@ export function parsePastedDeal(raw: string, now: Dayjs = dayjs()): ParsedDeal {
         out.email ??= EMAIL_RE.exec(value)?.[0] ?? null;
         break;
       case "phone":
-        out.phone ??= PHONE_RE.exec(value)?.[0]?.trim() ?? null;
+        // The label already said "phone", so an unparseable value is still
+        // the number the user meant — keep it rather than dropping it.
+        out.phone ??= PHONE_RE.exec(value)?.[0]?.trim() ?? value;
         break;
       case "domain": {
         const host = URL_RE.exec(value)?.[1]?.toLowerCase() ?? null;
@@ -423,5 +431,9 @@ export function parsePastedDeal(raw: string, now: Dayjs = dayjs()): ParsedDeal {
 
 /** True when the blob yielded enough to be worth opening the dialog for. */
 export function hasUsefulSignal(parsed: ParsedDeal): boolean {
-  return Boolean(parsed.name || parsed.email || parsed.companyName);
+  // A bare phone number is the most common paste of all — a number copied out
+  // of WhatsApp IS the lead, even with nothing else attached to it.
+  return Boolean(
+    parsed.name || parsed.email || parsed.phone || parsed.companyName,
+  );
 }

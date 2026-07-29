@@ -23,6 +23,7 @@ import { crmPersonName } from "@/features/app-crm/types";
 import { errMsg } from "@/lib/err";
 import { MIcon } from "./m-icon";
 import { SoftChip, fallbackDealName } from "../_lib/ui";
+import { useCrmPrefsStore } from "../_lib/crm-prefs-store";
 import {
   hasUsefulSignal,
   parsePastedDeal,
@@ -104,6 +105,8 @@ export function DealQuickCreate({
   const [parsed, setParsed] = useState<ParsedDeal | null>(null);
   const [showRaw, setShowRaw] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const lastCompanyId = useCrmPrefsStore((s) => s.lastCompanyId);
+  const setLastCompanyId = useCrmPrefsStore((s) => s.setLastCompanyId);
 
   const { data: stages } = useCrmStages();
   const { data: companies } = useCrmCompanies();
@@ -200,7 +203,15 @@ export function DealQuickCreate({
       // A pasted date wins; otherwise today, since a lead captured now is
       // usually being worked now.
       close_date: active.closeDate ? dayjs(active.closeDate) : dayjs(),
-      company_id: matchedCompany?.id ?? (canCreateCompany ? CREATE_NEW : null),
+      // Nothing in the paste identified a company? Fall back to the one used
+      // last time — leads tend to arrive in runs for the same account.
+      company_id:
+        matchedCompany?.id ??
+        (canCreateCompany
+          ? CREATE_NEW
+          : (liveCompanies.some((c) => c.id === lastCompanyId)
+              ? lastCompanyId
+              : null)),
       contact_id: matchedPerson?.id ?? (canCreateContact ? CREATE_NEW : null),
       owner_id: user?.id ?? null,
     };
@@ -211,6 +222,8 @@ export function DealQuickCreate({
     matchedPerson,
     canCreateCompany,
     canCreateContact,
+    liveCompanies,
+    lastCompanyId,
     user?.id,
   ]);
 
@@ -318,6 +331,8 @@ export function DealQuickCreate({
         position: Math.max(0, ...stageDeals.map((d) => d.position)) + 1,
       });
 
+      // Remember the account so the next capture defaults to it.
+      setLastCompanyId(companyId);
       message.success(
         active.raw ? "Deal created from your clipboard." : "Deal created.",
       );

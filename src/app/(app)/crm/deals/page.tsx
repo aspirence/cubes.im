@@ -88,6 +88,7 @@ import {
   fallbackDealName,
   tint,
 } from "../_lib/ui";
+import { useCrmPrefsStore } from "../_lib/crm-prefs-store";
 
 /** The board's "no stage" pseudo-column id (column ids are `col:<id>`). */
 const NO_STAGE = "none";
@@ -404,6 +405,8 @@ export default function CrmDealsPage() {
   const { data: companies } = useCrmCompanies();
   const { data: people } = useCrmPeople();
   const { data: members } = useTeamMembers();
+  const lastCompanyId = useCrmPrefsStore((s) => s.lastCompanyId);
+  const setLastCompanyId = useCrmPrefsStore((s) => s.setLastCompanyId);
   const createDeal = useCreateCrmDeal();
   const updateDeal = useUpdateCrmDeal();
   const moveDeal = useMoveCrmDeal();
@@ -581,6 +584,10 @@ export default function CrmDealsPage() {
       // Most deals are captured for something happening now; today is the
       // useful default and a wrong date is one click away.
       close_date: dayjs(),
+      // Leads arrive in runs for the same account — default to the last one.
+      company_id: (companies ?? []).some((c) => c.id === lastCompanyId)
+        ? lastCompanyId
+        : null,
     });
     setFormOpen(true);
   };
@@ -639,6 +646,8 @@ export default function CrmDealsPage() {
         });
         message.success("Deal created.");
       }
+      // Remember the account so the next capture defaults to it.
+      setLastCompanyId(patch.company_id);
       setFormOpen(false);
     } catch (err) {
       message.error(errMsg(err, "Failed to save deal."));
