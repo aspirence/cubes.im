@@ -45,6 +45,7 @@ import {
 import { errMsg } from "@/lib/err";
 import { MIcon } from "./m-icon";
 import { DealGlyph } from "./deal-glyph";
+import { PhoneWithCopy } from "./phone-cell";
 import { ENTITY_META } from "./entity-meta";
 import { CrmListRow } from "./list-row";
 import {
@@ -380,7 +381,7 @@ export function RecordDrawer({
       {
         key: "phone",
         label: "Mobile number",
-        children: d.phone ? <a href={`tel:${d.phone}`}>{d.phone}</a> : "—",
+        children: <PhoneWithCopy phone={d.phone} size={13} fallback="—" />,
       },
       { key: "company", label: "Company", children: d.company?.name || "—" },
       {

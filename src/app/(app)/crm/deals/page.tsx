@@ -89,6 +89,7 @@ import {
   tint,
 } from "../_lib/ui";
 import { useCrmPrefsStore } from "../_lib/crm-prefs-store";
+import { PhoneWithCopy } from "../_components/phone-cell";
 
 /** The board's "no stage" pseudo-column id (column ids are `col:<id>`). */
 const NO_STAGE = "none";
@@ -243,6 +244,13 @@ function DealCard({
               {crmDateShort(deal.close_date)}
             </span>
           ) : null}
+        </div>
+      ) : null}
+
+      {/* Calling is the next action on most cards — number and copy inline. */}
+      {deal.phone ? (
+        <div style={{ marginTop: 6 }}>
+          <PhoneWithCopy phone={deal.phone} size={11.5} />
         </div>
       ) : null}
     </div>
@@ -883,7 +891,7 @@ export default function CrmDealsPage() {
             }}
             // Sum of the fixed column widths — anything smaller and AntD's
             // fixed table layout squeezes every column instead of scrolling.
-            scroll={{ x: 1000 }}
+            scroll={{ x: 1180 }}
             locale={{
               emptyText: isLoading ? (
                 <div style={{ height: 120 }} />
@@ -964,6 +972,20 @@ export default function CrmDealsPage() {
                     </span>
                   );
                 },
+              },
+              {
+                title: "Mobile",
+                key: "phone",
+                width: 180,
+                render: (_, d) => (
+                  <PhoneWithCopy
+                    phone={d.phone}
+                    size={13}
+                    fallback={
+                      <span style={{ color: token.colorTextQuaternary }}>—</span>
+                    }
+                  />
+                ),
               },
               {
                 title: "Owner",

@@ -18,6 +18,7 @@ import { MIcon } from "../_components/m-icon";
 import { RecordDrawer } from "../_components/record-drawer";
 import { DealQuickCreate, PasteDealHint } from "../_components/paste-deal";
 import { DealGlyph } from "../_components/deal-glyph";
+import { PhoneWithCopy } from "../_components/phone-cell";
 import { CRM_ACCENT, NO_STAGE_COLOR } from "../_components/entity-meta";
 import { CONTENT_GRID, TILE_GRID } from "../_components/layout";
 import { CrmListRow } from "../_components/list-row";
@@ -463,6 +464,13 @@ export default function CrmDashboardPage() {
                         {crmDate(d.close_date)}
                       </span>
                     </div>
+                    {/* The number is what the row is usually opened FOR, so
+                        it sits on the row with its own copy button. */}
+                    {d.phone ? (
+                      <div style={{ marginTop: 2 }}>
+                        <PhoneWithCopy phone={d.phone} />
+                      </div>
+                    ) : null}
                   </div>
                   {overdue ? (
                     <SoftChip
