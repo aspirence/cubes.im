@@ -62,6 +62,23 @@ export const SECTION_NAVS: SectionNav[] = [
     ],
   },
   {
+    base: "/crm",
+    title: "CRM",
+    icon: "hub",
+    items: [
+      { key: "/crm/dashboard", label: "Dashboard", icon: "space_dashboard" },
+      { key: "/crm/people", label: "People", icon: "person" },
+      { key: "/crm/companies", label: "Companies", icon: "domain" },
+      { key: "/crm/deals", label: "Deals", icon: "target" },
+      { key: "/crm/reports", label: "Reports", icon: "bar_chart" },
+      { type: "divider" },
+      { key: "/crm/tasks", label: "Tasks", icon: "task_alt" },
+      { key: "/crm/notes", label: "Notes", icon: "sticky_note_2" },
+      { type: "divider" },
+      { key: "/crm/settings", label: "Settings", icon: "settings" },
+    ],
+  },
+  {
     base: "/settings",
     title: "Settings",
     icon: "settings",

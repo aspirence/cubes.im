@@ -1,0 +1,187 @@
+"use client";
+
+import { useMemo } from "react";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { createClient } from "@/lib/supabase/client";
+import { useActiveTeam } from "@/features/teams/use-teams";
+import type { CrmDeal, CrmDealWithRefs } from "./types";
+
+const dealsKey = (teamId: string | undefined) => ["crm-deals", teamId] as const;
+
+export type CrmDealPatch = Partial<
+  Omit<CrmDeal, "id" | "team_id" | "created_at" | "updated_at" | "created_by">
+>;
+
+/** All the active team's deals (soft-deleted included), board-ordered. */
+export function useCrmDeals() {
+  const supabase = useMemo(() => createClient(), []);
+  const { data: activeTeam } = useActiveTeam();
+  const teamId = activeTeam?.id;
+  return useQuery({
+    queryKey: dealsKey(teamId),
+    enabled: Boolean(teamId),
+    queryFn: async (): Promise<CrmDealWithRefs[]> => {
+      const { data, error } = await supabase
+        .from("app_crm_deals")
+        .select(
+          `*, company:app_crm_companies ( id, name ),
+              contact:app_crm_people ( id, first_name, last_name )`,
+        )
+        .eq("team_id", teamId as string)
+        .order("position", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as unknown as CrmDealWithRefs[];
+    },
+  });
+}
+
+export function useCreateCrmDeal() {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+  const { data: activeTeam } = useActiveTeam();
+  const teamId = activeTeam?.id;
+  return useMutation({
+    mutationFn: async (input: CrmDealPatch & { name: string }) => {
+      if (!teamId) throw new Error("No active team");
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const { data, error } = await supabase
+        .from("app_crm_deals")
+        .insert({ ...input, team_id: teamId, created_by: user?.id ?? null })
+        .select("*")
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: dealsKey(teamId) });
+    },
+  });
+}
+
+export function useUpdateCrmDeal() {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+  const { data: activeTeam } = useActiveTeam();
+  const teamId = activeTeam?.id;
+  return useMutation({
+    mutationFn: async (input: { id: string; patch: CrmDealPatch }) => {
+      const { error } = await supabase
+        .from("app_crm_deals")
+        .update(input.patch)
+        .eq("id", input.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: dealsKey(teamId) });
+    },
+  });
+}
+
+/**
+ * Kanban drop: writes stage + fractional position with an optimistic cache
+ * update so the card doesn't snap back while the write is in flight.
+ */
+export function useMoveCrmDeal() {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+  const { data: activeTeam } = useActiveTeam();
+  const teamId = activeTeam?.id;
+  return useMutation({
+    mutationFn: async (input: {
+      id: string;
+      stage_id: string | null;
+      position: number;
+    }) => {
+      const { error } = await supabase
+        .from("app_crm_deals")
+        .update({ stage_id: input.stage_id, position: input.position })
+        .eq("id", input.id);
+      if (error) throw error;
+    },
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: dealsKey(teamId) });
+      const previous = queryClient.getQueryData<CrmDealWithRefs[]>(
+        dealsKey(teamId),
+      );
+      queryClient.setQueryData<CrmDealWithRefs[]>(dealsKey(teamId), (old) =>
+        (old ?? [])
+          .map((d) =>
+            d.id === input.id
+              ? { ...d, stage_id: input.stage_id, position: input.position }
+              : d,
+          )
+          .sort((a, b) => a.position - b.position),
+      );
+      return { previous };
+    },
+    onError: (_err, _input, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(dealsKey(teamId), context.previous);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: dealsKey(teamId) });
+    },
+  });
+}
+
+/** Soft delete / restore. */
+export function useSetCrmDealDeleted() {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+  const { data: activeTeam } = useActiveTeam();
+  const teamId = activeTeam?.id;
+  return useMutation({
+    mutationFn: async (input: { id: string; deleted: boolean }) => {
+      const { error } = await supabase
+        .from("app_crm_deals")
+        .update({
+          deleted_at: input.deleted ? new Date().toISOString() : null,
+        })
+        .eq("id", input.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: dealsKey(teamId) });
+    },
+  });
+}
+
+/** Permanent destroy + polymorphic target cleanup. */
+export function useDestroyCrmDeal() {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+  const { data: activeTeam } = useActiveTeam();
+  const teamId = activeTeam?.id;
+  return useMutation({
+    mutationFn: async (id: string) => {
+      for (const table of [
+        "app_crm_task_targets",
+        "app_crm_note_targets",
+      ] as const) {
+        const { error } = await supabase
+          .from(table)
+          .delete()
+          .eq("target_type", "deal")
+          .eq("target_id", id);
+        if (error) throw error;
+      }
+      const { error } = await supabase
+        .from("app_crm_deals")
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: dealsKey(teamId) });
+      queryClient.invalidateQueries({ queryKey: ["crm-tasks", teamId] });
+      queryClient.invalidateQueries({ queryKey: ["crm-notes", teamId] });
+    },
+  });
+}

@@ -311,6 +311,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const hrAppEnabled = Boolean(
     installedApps?.some((entry) => entry.app_key === "hr" && entry.enabled),
   );
+  const crmAppEnabled = Boolean(
+    installedApps?.some((entry) => entry.app_key === "crm" && entry.enabled),
+  );
 
   const { profile, user } = useAuth();
 
@@ -332,7 +335,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // secondary sidebar, and force the primary sidebar to a rail.
   const rawSectionNav = getSectionNav(pathname);
   const sectionNav =
-    pathname.startsWith("/hr") && !hrAppEnabled ? null : rawSectionNav;
+    (pathname.startsWith("/hr") && !hrAppEnabled) ||
+    (pathname.startsWith("/crm") && !crmAppEnabled)
+      ? null
+      : rawSectionNav;
   // Canvas/app routes (the workflow builder, first-party apps like Video
   // Review) run full-bleed: no secondary sidebar and the primary sidebar
   // pinned to its rail so the app owns the width.

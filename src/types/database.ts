@@ -351,6 +351,602 @@ export type Database = {
           },
         ]
       }
+      app_crm_admins: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          team_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          team_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          team_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_crm_admins_team_id_fk"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_admins_user_id_fk"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_admins_created_by_fk"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_crm_stages: {
+        Row: {
+          color: string
+          created_at: string
+          id: string
+          name: string
+          position: number
+          team_id: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          id?: string
+          name: string
+          position?: number
+          team_id: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          id?: string
+          name?: string
+          position?: number
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_crm_stages_team_id_fk"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_crm_companies: {
+        Row: {
+          account_owner_id: string | null
+          address_city: string | null
+          address_country: string | null
+          address_state: string | null
+          address_street: string | null
+          address_zip: string | null
+          annual_revenue: number | null
+          client_id: string | null
+          created_at: string
+          created_by: string | null
+          currency_code: string
+          deleted_at: string | null
+          domain: string | null
+          employees: number | null
+          icp: boolean
+          id: string
+          linkedin_url: string | null
+          name: string
+          team_id: string
+          updated_at: string
+        }
+        Insert: {
+          account_owner_id?: string | null
+          address_city?: string | null
+          address_country?: string | null
+          address_state?: string | null
+          address_street?: string | null
+          address_zip?: string | null
+          annual_revenue?: number | null
+          client_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency_code?: string
+          deleted_at?: string | null
+          domain?: string | null
+          employees?: number | null
+          icp?: boolean
+          id?: string
+          linkedin_url?: string | null
+          name: string
+          team_id: string
+          updated_at?: string
+        }
+        Update: {
+          account_owner_id?: string | null
+          address_city?: string | null
+          address_country?: string | null
+          address_state?: string | null
+          address_street?: string | null
+          address_zip?: string | null
+          annual_revenue?: number | null
+          client_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency_code?: string
+          deleted_at?: string | null
+          domain?: string | null
+          employees?: number | null
+          icp?: boolean
+          id?: string
+          linkedin_url?: string | null
+          name?: string
+          team_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_crm_companies_team_id_fk"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_companies_account_owner_fk"
+            columns: ["account_owner_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_companies_client_id_fk"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_companies_created_by_fk"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_crm_people: {
+        Row: {
+          avatar_url: string | null
+          city: string | null
+          company_id: string | null
+          created_at: string
+          created_by: string | null
+          deleted_at: string | null
+          email: string | null
+          first_name: string
+          id: string
+          job_title: string | null
+          last_name: string
+          linkedin_url: string | null
+          phone: string | null
+          team_id: string
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          city?: string | null
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          email?: string | null
+          first_name?: string
+          id?: string
+          job_title?: string | null
+          last_name?: string
+          linkedin_url?: string | null
+          phone?: string | null
+          team_id: string
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          city?: string | null
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          email?: string | null
+          first_name?: string
+          id?: string
+          job_title?: string | null
+          last_name?: string
+          linkedin_url?: string | null
+          phone?: string | null
+          team_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_crm_people_team_id_fk"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_people_company_id_fk"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "app_crm_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_people_created_by_fk"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_crm_deals: {
+        Row: {
+          amount: number | null
+          close_date: string | null
+          company_id: string | null
+          contact_id: string | null
+          created_at: string
+          created_by: string | null
+          currency_code: string
+          deleted_at: string | null
+          id: string
+          name: string
+          owner_id: string | null
+          position: number
+          stage_id: string | null
+          team_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount?: number | null
+          close_date?: string | null
+          company_id?: string | null
+          contact_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency_code?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          owner_id?: string | null
+          position?: number
+          stage_id?: string | null
+          team_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number | null
+          close_date?: string | null
+          company_id?: string | null
+          contact_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency_code?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          owner_id?: string | null
+          position?: number
+          stage_id?: string | null
+          team_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_crm_deals_team_id_fk"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_deals_stage_id_fk"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "app_crm_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_deals_company_id_fk"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "app_crm_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_deals_contact_id_fk"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "app_crm_people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_deals_owner_id_fk"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_deals_created_by_fk"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_crm_tasks: {
+        Row: {
+          assignee_id: string | null
+          body: string | null
+          created_at: string
+          created_by: string | null
+          deleted_at: string | null
+          due_at: string | null
+          id: string
+          status: string
+          team_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assignee_id?: string | null
+          body?: string | null
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          due_at?: string | null
+          id?: string
+          status?: string
+          team_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          assignee_id?: string | null
+          body?: string | null
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          due_at?: string | null
+          id?: string
+          status?: string
+          team_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_crm_tasks_team_id_fk"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_tasks_assignee_id_fk"
+            columns: ["assignee_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_tasks_created_by_fk"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_crm_notes: {
+        Row: {
+          body: string | null
+          created_at: string
+          created_by: string | null
+          deleted_at: string | null
+          id: string
+          team_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          id?: string
+          team_id: string
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          id?: string
+          team_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_crm_notes_team_id_fk"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_notes_created_by_fk"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_crm_task_targets: {
+        Row: {
+          created_at: string
+          id: string
+          target_id: string
+          target_type: string
+          task_id: string
+          team_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          target_id: string
+          target_type: string
+          task_id: string
+          team_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          target_id?: string
+          target_type?: string
+          task_id?: string
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_crm_task_targets_team_id_fk"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_task_targets_task_id_fk"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "app_crm_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_crm_note_targets: {
+        Row: {
+          created_at: string
+          id: string
+          note_id: string
+          target_id: string
+          target_type: string
+          team_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          note_id: string
+          target_id: string
+          target_type: string
+          team_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          note_id?: string
+          target_id?: string
+          target_type?: string
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_crm_note_targets_team_id_fk"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_note_targets_note_id_fk"
+            columns: ["note_id"]
+            isOneToOne: false
+            referencedRelation: "app_crm_notes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_crm_activities: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          event: string
+          id: string
+          properties: Json
+          target_id: string
+          target_type: string
+          team_id: string
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          event: string
+          id?: string
+          properties?: Json
+          target_id: string
+          target_type: string
+          team_id: string
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          event?: string
+          id?: string
+          properties?: Json
+          target_id?: string
+          target_type?: string
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_crm_activities_team_id_fk"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_activities_actor_id_fk"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       app_connection_secrets: {
         Row: {
           connection_id: string
@@ -5726,6 +6322,7 @@ export type Database = {
         Args: { _date: string; _employee_id: string }
         Returns: number
       }
+      is_crm_admin: { Args: { _team_id: string }; Returns: boolean }
       is_hr_admin: { Args: { _org_id: string }; Returns: boolean }
       is_org_admin: { Args: { _org_id: string }; Returns: boolean }
       is_org_member: { Args: { _org_id: string }; Returns: boolean }

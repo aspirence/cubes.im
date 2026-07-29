@@ -143,6 +143,20 @@ export const APP_CATALOG: AppDescriptor[] = [
     featured: true,
   },
   {
+    key: "crm",
+    name: "Cubes CRM",
+    tagline: "People, companies, and a deal pipeline — your sales workspace",
+    description:
+      "A Twenty-inspired CRM inside Cubes: contacts and companies with rich profiles, a drag-and-drop deal pipeline with per-stage totals, CRM tasks and notes attached to any record, and a full activity timeline. Access is owner-controlled — the workspace owner installs it and grants CRM access to the admins who run sales.",
+    icon: "hub",
+    color: "#0ea5e9",
+    category: "Sales",
+    coreAccess: ["clients", "members"],
+    route: "/crm/dashboard",
+    status: "available",
+    featured: true,
+  },
+  {
     key: "mcp",
     name: "MCP",
     tagline: "Connect Claude directly to your workspace",

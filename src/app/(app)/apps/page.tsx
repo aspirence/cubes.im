@@ -264,6 +264,42 @@ function AppCenterInner() {
     content = renderSection("search", `Results for “${query.trim()}”`, searchResults);
   } else if (view === "featured") {
     content = renderSection("featured", "Featured", featuredCards, "Our favorite and most popular integrations.");
+  } else if (view === "installed") {
+    const installedCards: CardItem[] = [
+      ...availableApps
+        .filter((app) => isInstalled(app))
+        .map((app) => ({ kind: "app" as const, app })),
+      ...CONNECTABLE_INTEGRATIONS.filter((it) => isConnected(it)).map((it) => ({
+        kind: "integration" as const,
+        it,
+      })),
+    ];
+    content =
+      installedCards.length === 0 ? (
+        <div
+          style={{
+            margin: "48px 0",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 6,
+            textAlign: "center",
+          }}
+        >
+          <MIcon name="deployed_code" size={30} color={token.colorTextQuaternary} />
+          <div style={{ fontWeight: 600, color: token.colorText }}>Nothing installed yet</div>
+          <div style={{ fontSize: 12.5, color: token.colorTextTertiary }}>
+            Browse Featured or All Apps and install your first app.
+          </div>
+        </div>
+      ) : (
+        renderSection(
+          "installed",
+          "Installed",
+          installedCards,
+          "First-party apps installed for this workspace, plus connected integrations.",
+        )
+      );
   } else if (view === CUBES_KEY) {
     content = renderSection(
       "cubes",
