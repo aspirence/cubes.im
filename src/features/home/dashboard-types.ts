@@ -196,6 +196,25 @@ export const METRIC_OPTIONS: { value: MetricKind; label: string }[] = [
   { value: "total", label: "Total tasks" },
 ];
 
+/**
+ * The label a metric should wear under the header's global time lens: window
+ * metrics rename to match the active period ("Due this week" → "Due today"),
+ * because the lens also swaps the window they measure (see tasksForMetric's
+ * windowOverride). Timeless metrics keep their name.
+ */
+export function metricLabelForRange(
+  metric: MetricKind,
+  rangeKey: string,
+  rangeLabel: string,
+): string {
+  const base = METRIC_OPTIONS.find((m) => m.value === metric)?.label ?? "";
+  if (rangeKey === "all") return base;
+  const period = rangeLabel.toLowerCase();
+  if (metric === "due-week" || metric === "due-today") return `Due ${period}`;
+  if (metric === "completed-week") return `Completed ${period}`;
+  return base;
+}
+
 export const DUE_FILTER_OPTIONS: { value: DueFilter; label: string }[] = [
   { value: "any", label: "Any due date" },
   { value: "overdue", label: "Overdue" },

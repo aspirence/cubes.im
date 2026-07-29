@@ -26,7 +26,19 @@ import {
   tasksInGroup,
   paletteFor,
 } from "./dashboard-engine";
-import { METRIC_OPTIONS, type DashboardCard } from "./dashboard-types";
+import type { Bounds } from "./date-range";
+import {
+  METRIC_OPTIONS,
+  metricLabelForRange,
+  type DashboardCard,
+} from "./dashboard-types";
+
+/** The header's global time lens, threaded down to range-aware cards. */
+export interface GlobalRangeLens {
+  key: string;
+  label: string;
+  bounds: Bounds | null;
+}
 
 const { Text } = Typography;
 
@@ -58,19 +70,29 @@ function MetricBody({
   card,
   tasks,
   myTeamMemberId,
+  globalRange,
 }: {
   card: DashboardCard;
   tasks: TeamTaskWithProject[];
   myTeamMemberId: string | undefined;
+  globalRange?: GlobalRangeLens;
 }) {
   const { token } = theme.useToken();
   const [drillOpen, setDrillOpen] = useState(false);
   const metric = card.metric ?? "open";
   // The tile's number IS this list's length, so the drill-down can never
   // disagree with the figure the user clicked.
-  const drilled = tasksForMetric(tasks, card.filter, metric, myTeamMemberId);
+  const drilled = tasksForMetric(
+    tasks,
+    card.filter,
+    metric,
+    myTeamMemberId,
+    globalRange?.bounds ?? null,
+  );
   const value = drilled.length;
-  const label = METRIC_OPTIONS.find((m) => m.value === metric)?.label ?? "";
+  const label = globalRange
+    ? metricLabelForRange(metric, globalRange.key, globalRange.label)
+    : (METRIC_OPTIONS.find((m) => m.value === metric)?.label ?? "");
   const tone =
     metric === "overdue" && value > 0
       ? "#e0663f"
@@ -494,6 +516,7 @@ export function DashboardCardView({
   bodyHeight,
   onEdit,
   onRemove,
+  globalRange,
 }: {
   card: DashboardCard;
   tasks: TeamTaskWithProject[];
@@ -506,6 +529,8 @@ export function DashboardCardView({
   bodyHeight?: number;
   onEdit: () => void;
   onRemove: () => void;
+  /** Header time lens — window metrics re-measure and re-label against it. */
+  globalRange?: GlobalRangeLens;
 }) {
   const { token } = theme.useToken();
   const caps = useAnalyticsCapabilities();
@@ -526,6 +551,15 @@ export function DashboardCardView({
           ? { minHeight: bodyHeight }
           : { height: bodyHeight, overflowY: "auto" };
   const taskDriven = card.kind === "chart" || card.kind === "metric" || card.kind === "tasks";
+  // Stock metric titles follow the global lens ("Due this week" → "Due today");
+  // a custom title is the user's own wording and stays untouched.
+  const displayTitle = (() => {
+    if (card.kind !== "metric" || !globalRange) return card.title;
+    const metric = card.metric ?? "open";
+    const base = METRIC_OPTIONS.find((m) => m.value === metric)?.label ?? "";
+    if (card.title !== base) return card.title;
+    return metricLabelForRange(metric, globalRange.key, globalRange.label);
+  })();
   return (
     <section
       style={{
@@ -547,7 +581,7 @@ export function DashboardCardView({
       >
         {editMode && dragHandle ? dragHandle : null}
         <Text strong style={{ fontSize: 13.5, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {card.title}
+          {displayTitle}
         </Text>
         {/* The clamp narrows WHAT the card shows but leaves the title alone
             (it's the user's text) — so when it changed anything, say so here
@@ -573,7 +607,12 @@ export function DashboardCardView({
             <Skeleton active paragraph={{ rows: 3 }} />
           </div>
         ) : card.kind === "metric" ? (
-          <MetricBody card={card} tasks={tasks} myTeamMemberId={myTeamMemberId} />
+          <MetricBody
+            card={card}
+            tasks={tasks}
+            myTeamMemberId={myTeamMemberId}
+            globalRange={globalRange}
+          />
         ) : card.kind === "chart" ? (
           <ChartBody card={card} tasks={tasks} myTeamMemberId={myTeamMemberId} height={bodyHeight} />
         ) : card.kind === "tasks" ? (

@@ -3597,16 +3597,19 @@ export type Database = {
       user_dashboards: {
         Row: {
           layout: Json
+          prefs: Json
           updated_at: string
           user_id: string
         }
         Insert: {
           layout?: Json
+          prefs?: Json
           updated_at?: string
           user_id: string
         }
         Update: {
           layout?: Json
+          prefs?: Json
           updated_at?: string
           user_id?: string
         }

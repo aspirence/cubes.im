@@ -6,6 +6,7 @@ import {
   Button,
   Dropdown,
   Segmented,
+  Select,
   Switch,
   Typography,
   theme,
@@ -33,7 +34,12 @@ import { CSS } from "@dnd-kit/utilities";
 import { useAuth } from "@/features/auth/use-auth";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
 import { useAllTeamTasks } from "@/features/tasks/use-all-tasks";
-import { useDashboardCards, useSaveDashboardCards } from "@/features/home/use-dashboard";
+import {
+  useDashboardCards,
+  useSaveDashboardCards,
+  useDashboardPrefs,
+  useSaveDashboardPrefs,
+} from "@/features/home/use-dashboard";
 import { GettingStarted } from "@/features/home/getting-started";
 import { DashboardCardView } from "@/features/home/dashboard-card";
 import { CardConfigDrawer } from "@/features/home/card-config-drawer";
@@ -103,6 +109,7 @@ function SortableCard({
   onRemove,
   onResize,
   snapHeights,
+  globalRange,
 }: {
   card: DashboardCard;
   editMode: boolean;
@@ -114,6 +121,7 @@ function SortableCard({
   onResize: (id: string, w: number, h: number | undefined) => void;
   /** Other cards' heights — magnetic targets so rows line up exactly. */
   snapHeights: number[];
+  globalRange?: DashboardCardProps["globalRange"];
 }) {
   const { token } = theme.useToken();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -252,6 +260,7 @@ function SortableCard({
           bodyHeight={height}
           onEdit={onEdit}
           onRemove={onRemove}
+          globalRange={globalRange}
         />
       </div>
       {editMode
@@ -307,14 +316,43 @@ export default function HomePage() {
   const { data: teamTasks, isLoading: tasksLoading } = useAllTeamTasks();
   const tasks = useMemo(() => teamTasks ?? [], [teamTasks]);
 
-  // Global time-range lens: narrows the task universe every card computes from.
+  // Global lenses: time range + person — narrow the task universe every card
+  // computes from. Saved prefs (if any) seed them once on load.
   const [range, setRange] = useState<RangeKey>("all");
+  const [assigneeId, setAssigneeId] = useState<string | null>(null);
+  const { data: prefs, isError: prefsError } = useDashboardPrefs();
+  const savePrefs = useSaveDashboardPrefs();
+  const [prefsAdopted, setPrefsAdopted] = useState(false);
+  // Adopt saved prefs exactly once (render-time reset idiom, as in app-shell).
+  // A failed read (e.g. schema not migrated yet) adopts empty prefs so the
+  // filter controls — including Save — still work.
+  if (!prefsAdopted && (prefs !== undefined || prefsError)) {
+    setPrefsAdopted(true);
+    if (prefs?.range && RANGE_OPTIONS.some((o) => o.key === prefs.range)) {
+      setRange(prefs.range as RangeKey);
+    }
+    if (prefs?.assigneeId) setAssigneeId(prefs.assigneeId);
+  }
   const rangeLabel = RANGE_OPTIONS.find((o) => o.key === range)?.label ?? "All time";
   const bounds = useMemo(() => rangeBounds(range), [range]);
-  const scopedTasks = useMemo(
-    () => (bounds ? tasks.filter((t) => taskInRange(t, bounds)) : tasks),
-    [tasks, bounds],
+  const scopedTasks = useMemo(() => {
+    let list = bounds ? tasks.filter((t) => taskInRange(t, bounds)) : tasks;
+    if (assigneeId) {
+      list = list.filter((t) =>
+        t.assignees.some((a) => a.team_member_id === assigneeId),
+      );
+    }
+    return list;
+  }, [tasks, bounds, assigneeId]);
+  // Threaded to metric cards so window tiles re-measure + re-label to the lens.
+  const globalRange = useMemo(
+    () => ({ key: range, label: rangeLabel, bounds }),
+    [range, rangeLabel, bounds],
   );
+  const filterDirty =
+    prefsAdopted &&
+    ((prefs?.range ?? "all") !== range ||
+      (prefs?.assigneeId ?? null) !== assigneeId);
 
   const { data: cardsData } = useDashboardCards();
   const cards = useMemo(() => cardsData ?? defaultDashboardCards(), [cardsData]);
@@ -425,6 +463,24 @@ export default function HomePage() {
           ) : null}
           {showCompany ? null : (
             <>
+              {/* Person lens — view the whole dashboard through one member's
+                  work. Hidden for viewers without team analytics scope. */}
+              {analyticsCaps.assigneeDimension ? (
+                <Select
+                  showSearch
+                  optionFilterProp="label"
+                  value={assigneeId ?? ""}
+                  onChange={(v) => setAssigneeId(v === "" ? null : v)}
+                  options={[
+                    { value: "", label: "Everyone" },
+                    ...(members ?? [])
+                      .filter((m) => m.active && m.user)
+                      .map((m) => ({ value: m.id, label: m.user!.name })),
+                  ]}
+                  style={{ minWidth: 150 }}
+                  aria-label="Filter dashboard by person"
+                />
+              ) : null}
               {/* Time-range lens — narrows the task universe every card computes from. */}
               <Dropdown
                 trigger={["click"]}
@@ -446,6 +502,30 @@ export default function HomePage() {
                   {rangeLabel}
                 </Button>
               </Dropdown>
+              {/* Persist the lens so the same filter greets them next visit;
+                  only offered when the current lens differs from the saved one. */}
+              {filterDirty ? (
+                <Button
+                  type="primary"
+                  ghost
+                  loading={savePrefs.isPending}
+                  onClick={() =>
+                    savePrefs.mutate(
+                      { range, assigneeId },
+                      {
+                        onSuccess: () =>
+                          message.success("Filter saved — it will load like this next time."),
+                        onError: (err) =>
+                          message.error(
+                            err instanceof Error ? err.message : "Failed to save filter.",
+                          ),
+                      },
+                    )
+                  }
+                >
+                  Save filter
+                </Button>
+              ) : null}
               {editMode ? (
                 <>
                   <Dropdown menu={templateMenu} trigger={["click"]}>
@@ -536,6 +616,7 @@ export default function HomePage() {
                   tasks={scopedTasks}
                   tasksLoading={tasksLoading}
                   myTeamMemberId={myTeamMemberId}
+                  globalRange={globalRange}
                   onEdit={() => {
                     setEditingCard(card);
                     setConfigOpen(true);

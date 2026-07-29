@@ -1,5 +1,6 @@
 import dayjs from "dayjs";
 import type { TeamTaskWithProject } from "@/features/tasks/use-all-tasks";
+import type { Bounds } from "./date-range";
 import type {
   CardFilter,
   GroupBy,
@@ -360,6 +361,13 @@ export function tasksForMetric(
   filter: CardFilter,
   metric: MetricKind,
   myTeamMemberId: string | undefined,
+  /**
+   * When the dashboard's global time lens is active, window metrics
+   * (due-week / due-today / completed-week) measure against ITS bounds
+   * instead of their built-in week/day windows, so the tile matches the
+   * label the header lens implies ("Due today", "Completed this month").
+   */
+  windowOverride?: Bounds | null,
 ): TeamTaskWithProject[] {
   const pop = scopeTasks(tasks, filter, myTeamMemberId);
   const today = startOfToday();
@@ -367,6 +375,14 @@ export function tasksForMetric(
 
   const byDue = (a: TeamTaskWithProject, b: TeamTaskWithProject) =>
     (a.end_date ?? "9999").localeCompare(b.end_date ?? "9999");
+
+  const inWindow = (iso: string | null | undefined): boolean => {
+    if (!windowOverride || !iso) return false;
+    const t = new Date(iso).getTime();
+    return (
+      !Number.isNaN(t) && t >= windowOverride.start && t < windowOverride.end
+    );
+  };
 
   switch (metric) {
     case "open":
@@ -384,10 +400,16 @@ export function tasksForMetric(
         )
         .sort(byDue);
     case "due-today":
+      if (windowOverride) {
+        return pop.filter((t) => isOpen(t) && inWindow(t.end_date)).sort(byDue);
+      }
       return pop.filter(
         (t) => isOpen(t) && t.end_date && dayjs(t.end_date).isSame(today, "day"),
       );
     case "due-week":
+      if (windowOverride) {
+        return pop.filter((t) => isOpen(t) && inWindow(t.end_date)).sort(byDue);
+      }
       return pop
         .filter((t) => {
           if (!isOpen(t) || !t.end_date) return false;
@@ -400,6 +422,13 @@ export function tasksForMetric(
         .filter((t) => isOpen(t) && t.status?.category?.is_doing)
         .sort(byDue);
     case "completed-week":
+      if (windowOverride) {
+        return pop
+          .filter((t) => Boolean(t.done) && inWindow(t.completed_at))
+          .sort((a, b) =>
+            (b.completed_at ?? "").localeCompare(a.completed_at ?? ""),
+          );
+      }
       return pop
         .filter((t) => {
           if (!t.done || !t.completed_at) return false;

@@ -158,3 +158,60 @@ export function useSaveDashboardCards() {
     },
   });
 }
+
+/** The header's saved global filter (time range + person lens). */
+export interface DashboardPrefs {
+  range?: string;
+  assigneeId?: string | null;
+}
+
+const prefsKey = (userId: string | undefined) =>
+  ["dashboard-prefs", userId] as const;
+
+/** The user's saved dashboard filter prefs ({} until they save one). */
+export function useDashboardPrefs() {
+  const supabase = useMemo(() => createClient(), []);
+  const { user } = useAuth();
+  const userId = user?.id;
+
+  return useQuery({
+    queryKey: prefsKey(userId),
+    enabled: Boolean(userId),
+    queryFn: async (): Promise<DashboardPrefs> => {
+      const { data, error } = await supabase
+        .from("user_dashboards")
+        .select("prefs")
+        .eq("user_id", userId as string)
+        .maybeSingle();
+      if (error) throw error;
+      const prefs = data?.prefs;
+      return prefs && typeof prefs === "object" && !Array.isArray(prefs)
+        ? (prefs as DashboardPrefs)
+        : {};
+    },
+  });
+}
+
+/** Saves the global filter so the same lens greets the user next visit.
+ *  `layout` has a DB default, so a prefs-only upsert is safe on first save. */
+export function useSaveDashboardPrefs() {
+  const supabase = useMemo(() => createClient(), []);
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const userId = user?.id;
+
+  return useMutation({
+    mutationFn: async (prefs: DashboardPrefs): Promise<void> => {
+      if (!userId) throw new Error("Not signed in");
+      const { error } = await supabase.from("user_dashboards").upsert({
+        user_id: userId,
+        prefs: prefs as unknown as Json,
+        updated_at: new Date().toISOString(),
+      });
+      if (error) throw error;
+    },
+    onSuccess: (_void, prefs) => {
+      queryClient.setQueryData(prefsKey(userId), prefs);
+    },
+  });
+}
