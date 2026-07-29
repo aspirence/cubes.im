@@ -97,7 +97,17 @@ export function useDashboardCards() {
       if (Array.isArray(layout)) {
         const cards = layout
           .map(parseCard)
-          .filter((c): c is DashboardCard => c !== null);
+          .filter((c): c is DashboardCard => c !== null)
+          // The stock "Open tasks" tile became "To do" (open-but-not-started).
+          // Convert stored layouts that still carry the untouched default card;
+          // renamed or reconfigured cards are the user's own and stay as-is.
+          .map((c) =>
+            c.kind === "metric" &&
+            c.metric === "open" &&
+            c.title === "Open tasks"
+              ? { ...c, metric: "todo" as const, title: "To do" }
+              : c,
+          );
         // A genuinely-empty saved array means the user cleared the dashboard —
         // honor it. Only fall back to defaults when the row is absent or the
         // stored array is a legacy/non-parseable form (non-empty → 0 cards).

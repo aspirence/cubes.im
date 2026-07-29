@@ -48,6 +48,7 @@ export type DueFilter =
   | "no-date";
 export type MetricKind =
   | "open"
+  | "todo"
   | "overdue"
   | "due-today"
   | "due-week"
@@ -186,6 +187,7 @@ export const GROUP_BY_OPTIONS: { value: GroupBy; label: string }[] = [
 
 export const METRIC_OPTIONS: { value: MetricKind; label: string }[] = [
   { value: "open", label: "Open tasks" },
+  { value: "todo", label: "To do" },
   { value: "overdue", label: "Overdue" },
   { value: "due-today", label: "Due today" },
   { value: "due-week", label: "Due this week" },
@@ -257,7 +259,7 @@ function metricCard(
 export function defaultDashboardCards(): DashboardCard[] {
   cardSeq = 0;
   return [
-    metricCard("Open tasks", "open"),
+    metricCard("To do", "todo"),
     metricCard("Overdue", "overdue"),
     metricCard("Due this week", "due-week"),
     metricCard("Completed this week", "completed-week"),

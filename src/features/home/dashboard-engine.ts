@@ -371,6 +371,12 @@ export function tasksForMetric(
   switch (metric) {
     case "open":
       return pop.filter(isOpen).sort(byDue);
+    case "todo":
+      // Open tasks sitting in a "to do" status category (not yet started) —
+      // narrower than `open`, which also counts doing/review/backlog.
+      return pop
+        .filter((t) => isOpen(t) && t.status?.category?.is_todo)
+        .sort(byDue);
     case "overdue":
       return pop
         .filter(
