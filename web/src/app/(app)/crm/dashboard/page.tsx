@@ -1,7 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { App, Button, Space, Spin, Tooltip, theme } from "antd";
+import {
+  App,
+  Button,
+  Select,
+  Spin,
+  Switch,
+  Tooltip,
+  theme,
+} from "antd";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import { EChart, CHART_FONT } from "@/features/home/echart";
@@ -22,8 +30,10 @@ import {
   useCrmReminders,
 } from "@/features/app-crm/use-crm-reminders";
 import {
+  CRM_LEAD_STATUSES,
   crmLeadStatusMeta,
   type CrmActivity,
+  type CrmLeadStatus,
   type CrmTargetRef,
 } from "@/features/app-crm/types";
 import { errMsg } from "@/lib/err";
@@ -31,23 +41,21 @@ import { MIcon } from "../_components/m-icon";
 import { RecordDrawer } from "../_components/record-drawer";
 import { DealQuickCreate, PasteDealHint } from "../_components/paste-deal";
 import { DealGlyph } from "../_components/deal-glyph";
-import { PhoneWithCopy } from "../_components/phone-cell";
 import { openReminders } from "../_components/reminder-controls";
 import {
-  CRM_ACCENT,
   NO_STAGE_COLOR,
   leadStatusIcon,
 } from "../_components/entity-meta";
-import { CONTENT_GRID, TILE_GRID } from "../_components/layout";
+import { CONTENT_GRID } from "../_components/layout";
 import { CrmListRow } from "../_components/list-row";
-import { LeadStatusPicker } from "../_components/lead-status-picker";
+import { KpiStrip } from "../_components/kpi-strip";
+import { DealsTable } from "../_components/deals-table";
 import {
   CrmPageHeader,
   EmptyState,
   EntityAvatar,
   Panel,
   SoftChip,
-  StatTile,
   crmDate,
   crmDateTime,
   crmFromNow,
@@ -177,8 +185,28 @@ export default function CrmDashboardPage() {
   );
 
   const monthStart = dayjs().startOf("month");
-  const addedThisMonth = (rows: { created_at: string }[]) =>
-    rows.filter((r) => dayjs(r.created_at).isAfter(monthStart)).length;
+  /**
+   * This month's additions against last month's, as the KPI strip's delta.
+   *
+   * Compared against the WHOLE of last month, not the same slice of it: on the
+   * 3rd that reads as a big drop, which is honest — the month genuinely is
+   * behind — and the alternative (month-to-date vs month-to-date) invents a
+   * comparison nobody asked for.
+   */
+  const lastMonthStart = useMemo(
+    () => monthStart.subtract(1, "month"),
+    [monthStart],
+  );
+  const monthDelta = (rows: { created_at: string }[]) => {
+    let current = 0;
+    let previous = 0;
+    for (const r of rows) {
+      const at = dayjs(r.created_at);
+      if (at.isAfter(monthStart)) current += 1;
+      else if (at.isAfter(lastMonthStart)) previous += 1;
+    }
+    return { current, delta: current - previous };
+  };
 
   /**
    * The reminder desk: MY undismissed reminders, soonest first (the hook sorts
@@ -305,25 +333,82 @@ export default function CrmDashboardPage() {
   );
 
   // Overdue first, then the next closes — the "what needs attention" list.
-  /**
-   * The "Deals" panel: everything live, ordered by how much it wants
-   * attention — dated deals soonest-first (so overdue leads the list), then
-   * the undated ones by recency. Undated deals used to be invisible here.
-   */
-  const dealRows = useMemo(
-    () =>
-      [...liveDeals]
-        .sort((a, b) => {
-          if (a.close_date && b.close_date) {
-            return a.close_date.localeCompare(b.close_date);
-          }
-          if (a.close_date) return -1;
-          if (b.close_date) return 1;
-          return b.created_at.localeCompare(a.created_at);
-        })
-        .slice(0, 8),
-    [liveDeals],
+  /* ------------------------------------------------ lead-desk controls */
+
+  const [statusFilter, setStatusFilter] = useState<"ALL" | CrmLeadStatus>("ALL");
+  const [sortBy, setSortBy] = useState<"attention" | "newest" | "name">(
+    "attention",
   );
+  const [showStats, setShowStats] = useState(true);
+
+  /** The table's rows: the live deals under the toolbar's filter and sort. */
+  const visibleDeals = useMemo(() => {
+    const rows =
+      statusFilter === "ALL"
+        ? liveDeals
+        : liveDeals.filter(
+            (d) => crmLeadStatusMeta(d.status).value === statusFilter,
+          );
+    const sorted = [...rows];
+    if (sortBy === "newest") {
+      sorted.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    } else if (sortBy === "name") {
+      sorted.sort((a, b) => a.name.localeCompare(b.name));
+    } else {
+      // "Needs attention": dated deals soonest first (so overdue leads), then
+      // the undated ones by recency.
+      sorted.sort((a, b) => {
+        if (a.close_date && b.close_date) {
+          return a.close_date.localeCompare(b.close_date);
+        }
+        if (a.close_date) return -1;
+        if (b.close_date) return 1;
+        return b.created_at.localeCompare(a.created_at);
+      });
+    }
+    return sorted;
+  }, [liveDeals, statusFilter, sortBy]);
+
+  /** Exactly what the table is showing, as CSV. */
+  const exportDeals = () => {
+    const cell = (v: string | number) => {
+      const s = String(v);
+      return /["\n,]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const stageName = new Map((stages ?? []).map((s) => [s.id, s.name]));
+    const header = [
+      "Deal",
+      "Company",
+      "Contact",
+      "Mobile",
+      "Status",
+      "Stage",
+      "Close date",
+    ];
+    const lines = visibleDeals.map((d) =>
+      [
+        cell(d.name),
+        cell(d.company?.name ?? ""),
+        cell(crmPersonName(d.contact)),
+        cell(d.phone ?? ""),
+        cell(crmLeadStatusMeta(d.status).label),
+        cell(d.stage_id ? (stageName.get(d.stage_id) ?? "") : ""),
+        cell(d.close_date ?? ""),
+      ].join(","),
+    );
+    const csv = [header.map(cell).join(","), ...lines].join("\r\n");
+    const url = URL.createObjectURL(
+      new Blob([csv], { type: "text/csv;charset=utf-8;" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `crm-deals-${dayjs().format("YYYY-MM-DD")}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
 
   // Tooltip chrome tracks the theme so dark mode stays legible.
   const chartTooltip = useMemo(
@@ -448,70 +533,137 @@ export default function CrmDashboardPage() {
         }
       />
 
-      <div style={TILE_GRID}>
-        <StatTile
-          icon="person"
-          color={CRM_ACCENT.person}
-          label="People"
-          value={peopleLoading ? "—" : livePeople.length}
-          hint={
-            peopleLoading ? undefined : `+${addedThisMonth(livePeople)} this month`
-          }
-          onClick={() => router.push("/crm/people")}
+      {/* Toolbar: what the screen shows, then what you can do to it. */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+          marginBottom: 14,
+        }}
+      >
+        <Select
+          size="middle"
+          value={statusFilter}
+          onChange={setStatusFilter}
+          style={{ minWidth: 150 }}
+          options={[
+            { value: "ALL", label: "All statuses" },
+            ...CRM_LEAD_STATUSES.map((s) => ({
+              value: s.value,
+              label: s.label,
+            })),
+          ]}
         />
-        <StatTile
-          icon="domain"
-          color={CRM_ACCENT.company}
-          label="Companies"
-          value={companiesLoading ? "—" : liveCompanies.length}
-          hint={
-            companiesLoading
-              ? undefined
-              : `+${addedThisMonth(liveCompanies)} this month`
-          }
-          onClick={() => router.push("/crm/companies")}
+        <Select
+          size="middle"
+          value={sortBy}
+          onChange={setSortBy}
+          style={{ minWidth: 168 }}
+          options={[
+            { value: "attention", label: "Sort: needs attention" },
+            { value: "newest", label: "Sort: newest first" },
+            { value: "name", label: "Sort: name A–Z" },
+          ]}
         />
-        <StatTile
-          icon="handshake"
-          color={CRM_ACCENT.deal}
-          label="Open deals"
-          value={dealsLoading ? "—" : liveDeals.length}
-          hint={
-            dealsLoading ? undefined : `+${addedThisMonth(liveDeals)} this month`
-          }
-          onClick={() => router.push("/crm/deals")}
-        />
-        <StatTile
-          icon="alarm"
-          /* Red only when something is genuinely late — otherwise the amber of
-             the "Follow up" lead status, so the two read as the same idea. */
-          color={myReminders.overdue > 0 ? token.colorError : token.colorWarning}
-          label="Reminders due"
-          value={remindersLoading || authLoading ? "—" : myReminders.due}
-          hint={
-            remindersLoading || authLoading
-              ? undefined
-              : myReminders.overdue > 0
-                ? `${myReminders.overdue} overdue · ${myReminders.today} today`
-                : `${myReminders.today} due today`
-          }
-          onClick={() => router.push("/crm/reminders")}
-        />
-        <StatTile
-          icon="payments"
-          color={CRM_ACCENT.campaign}
-          label="Spend this month"
-          value={
-            campaignsLoading || spendLoading
-              ? "—"
-              : crmMoney(spendThisMonth.total, spendThisMonth.currency)
-          }
-          hint={
-            campaignsLoading || spendLoading ? undefined : spendThisMonth.hint
-          }
-          onClick={() => router.push("/crm/campaigns")}
-        />
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 13,
+            color: token.colorTextSecondary,
+          }}
+        >
+          Show statistics
+          <Switch size="small" checked={showStats} onChange={setShowStats} />
+        </span>
+        <span style={{ flex: 1 }} />
+        <Button
+          icon={<MIcon name="download" size={16} />}
+          onClick={exportDeals}
+          disabled={visibleDeals.length === 0}
+        >
+          Export
+        </Button>
+        <Button
+          type="primary"
+          icon={<MIcon name="add" size={16} />}
+          onClick={() => setDealFormOpen(true)}
+        >
+          New deal
+        </Button>
       </div>
+
+      {showStats ? (
+        <div style={{ marginBottom: 16 }}>
+          <KpiStrip
+            items={[
+              {
+                key: "people",
+                label: "People",
+                hint: "Contacts in the CRM, excluding deleted ones.",
+                value: livePeople.length,
+                loading: peopleLoading,
+                delta: { value: monthDelta(livePeople).delta },
+                onClick: () => router.push("/crm/people"),
+              },
+              {
+                key: "companies",
+                label: "Companies",
+                hint: "Accounts in the CRM, excluding deleted ones.",
+                value: liveCompanies.length,
+                loading: companiesLoading,
+                delta: { value: monthDelta(liveCompanies).delta },
+                onClick: () => router.push("/crm/companies"),
+              },
+              {
+                key: "deals",
+                label: "Open deals",
+                hint: "Every live deal, whatever its stage or status.",
+                value: liveDeals.length,
+                loading: dealsLoading,
+                delta: { value: monthDelta(liveDeals).delta },
+                onClick: () => router.push("/crm/deals"),
+              },
+              {
+                key: "reminders",
+                label: "Reminders due",
+                hint: "Your own reminders that have come up — overdue plus today.",
+                value: myReminders.due,
+                loading: remindersLoading || authLoading,
+                delta: null,
+                footnote:
+                  myReminders.overdue > 0
+                    ? `${myReminders.overdue} overdue · ${myReminders.today} today`
+                    : `${myReminders.today} due today`,
+                onClick: () => router.push("/crm/reminders"),
+              },
+              {
+                key: "spend",
+                label: "Spend this month",
+                hint: "Daily campaign spend logged this month, budgeted days included.",
+                value: crmMoney(spendThisMonth.total, spendThisMonth.currency),
+                loading: campaignsLoading || spendLoading,
+                delta: null,
+                footnote: spendThisMonth.hint,
+                onClick: () => router.push("/crm/campaigns"),
+              },
+            ]}
+          />
+        </div>
+      ) : null}
+
+      {/* The lead desk itself — every deal, selectable in bulk. */}
+      <Panel padding={0} style={{ marginBottom: 16 }}>
+        <DealsTable
+          deals={visibleDeals}
+          stages={stages ?? []}
+          loading={dealsLoading}
+          onOpen={(id) => setDrawerTarget({ type: "deal", id })}
+        />
+      </Panel>
 
       <div style={CONTENT_GRID}>
         <Panel
@@ -547,98 +699,6 @@ export default function CrmDashboardPage() {
               option={chartOption}
               height={Math.max(180, stageRows.length * 44)}
             />
-          )}
-        </Panel>
-
-        <Panel
-          title="Deals"
-          extra={
-            <Space size={4}>
-              <Tooltip title="New deal">
-                <Button
-                  type="text"
-                  size="small"
-                  aria-label="New deal"
-                  icon={<MIcon name="add" size={16} />}
-                  onClick={() => setDealFormOpen(true)}
-                />
-              </Tooltip>
-              <Button
-                type="link"
-                size="small"
-                style={{ paddingInline: 0 }}
-                onClick={() => router.push("/crm/deals")}
-              >
-                All deals
-              </Button>
-            </Space>
-          }
-          padding={dealsLoading || dealRows.length === 0 ? 8 : 0}
-        >
-          {dealsLoading ? (
-            <PanelSpin />
-          ) : dealRows.length === 0 ? (
-            <EmptyState
-              compact
-              icon="target"
-              title="No deals yet"
-              description="Paste a lead anywhere on this page, or create one — the ones needing attention soonest sit at the top."
-              action={
-                <Button type="primary" onClick={() => setDealFormOpen(true)}>
-                  Create a deal
-                </Button>
-              }
-            />
-          ) : (
-            dealRows.map((d, index) => {
-              const overdue = d.close_date
-                ? dayjs(d.close_date).isBefore(dayjs(), "day")
-                : false;
-              return (
-                <CrmListRow
-                  key={d.id}
-                  first={index === 0}
-                  onClick={() => setDrawerTarget({ type: "deal", id: d.id })}
-                >
-                  <DealGlyph name={d.name} size={28} />
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={primaryLine}>{d.name}</div>
-                    <div style={mutedLine}>
-                      {d.company?.name ? `${d.company.name} · ` : ""}
-                      <span
-                        style={{
-                          color: overdue
-                            ? token.colorError
-                            : token.colorTextTertiary,
-                        }}
-                      >
-                        {d.close_date ? crmDate(d.close_date) : "No close date"}
-                      </span>
-                    </div>
-                    {/* The number is what the row is usually opened FOR, so
-                        it sits on the row with its own copy button. */}
-                    {d.phone ? (
-                      <div style={{ marginTop: 2 }}>
-                        <PhoneWithCopy phone={d.phone} />
-                      </div>
-                    ) : null}
-                  </div>
-                  {/* Where the card sits on the board is the stage; this is how
-                      the LEAD itself is doing — and it is editable right here,
-                      because triaging a list is mostly moving statuses. */}
-                  <LeadStatusPicker dealId={d.id} status={d.status} />
-                  {overdue ? (
-                    <SoftChip
-                      tone="danger"
-                      icon="schedule"
-                      style={{ flex: "none" }}
-                    >
-                      Overdue
-                    </SoftChip>
-                  ) : null}
-                </CrmListRow>
-              );
-            })
           )}
         </Panel>
 
