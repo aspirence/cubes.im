@@ -16,6 +16,7 @@ export function CrmListRow({
   children,
   first = false,
   onClick,
+  pressed,
   hover = true,
   align = "center",
   style,
@@ -25,6 +26,12 @@ export function CrmListRow({
   first?: boolean;
   /** Makes the row a button (pointer + keyboard activation). */
   onClick?: () => void;
+  /**
+   * For rows that toggle something on and off rather than navigating. Without
+   * it a screen reader announces a filter that is currently applied exactly
+   * like one that isn't.
+   */
+  pressed?: boolean;
   /** Hover surface. Turn off for rows that are neither clickable nor actionable. */
   hover?: boolean;
   align?: React.CSSProperties["alignItems"];
@@ -74,6 +81,7 @@ export function CrmListRow({
     <button
       type="button"
       className={CRM_HOVER_ROW_CLASS}
+      aria-pressed={pressed}
       onClick={onClick}
       {...litProps}
       style={{

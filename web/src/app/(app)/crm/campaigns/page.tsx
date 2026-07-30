@@ -18,6 +18,7 @@ import {
   theme,
 } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
+import { EChart, CHART_FONT } from "@/features/home/echart";
 import {
   useCreateCrmCampaign,
   useCrmCampaignSpend,
@@ -34,6 +35,7 @@ import {
   CRM_CAMPAIGN_CHANNELS,
   CRM_CAMPAIGN_STATUSES,
   CRM_CURRENCIES,
+  CRM_LEAD_STATUSES,
   crmCampaignStatusMeta,
   crmLeadStatusMeta,
   type CrmCampaign,
@@ -45,6 +47,7 @@ import { errMsg } from "@/lib/err";
 import { MIcon } from "../_components/m-icon";
 import { CrmToggle } from "../_components/crm-toggle";
 import { CrmListRow } from "../_components/list-row";
+import { KpiStrip, type KpiItem } from "../_components/kpi-strip";
 import { CampaignGlyph } from "../_components/deal-glyph";
 import { FormSection } from "../_components/form-section";
 import { CRM_ACCENT, leadStatusIcon } from "../_components/entity-meta";
@@ -133,6 +136,55 @@ function costPerLead(
   return leads > 0 ? crmMoneyPrecise(spend / leads, currency) : "—";
 }
 
+/** How many days of day-by-day history the trend chart shows. */
+const TREND_DAYS = 14;
+
+/**
+ * The window the trend covers: the last `days` days the campaign was actually
+ * live. Running past `ended_on` would draw a tail of zero-spend days that reads
+ * as a campaign that stopped working rather than one that stopped, and running
+ * before `started_on` invents history it never had.
+ */
+function trendWindow(campaign: CrmCampaign, days: number) {
+  const today = dayjs().startOf("day");
+  const ended = campaign.ended_on ? dayjs(campaign.ended_on) : null;
+  const end = ended && ended.isBefore(today, "day") ? ended : today;
+  const started = campaign.started_on ? dayjs(campaign.started_on) : null;
+  let start = end.subtract(days - 1, "day");
+  if (started && started.isAfter(start, "day")) start = started;
+  return { start, end };
+}
+
+/** Spend and billable leads landing inside a closed day range, inclusive. */
+function windowTotals(
+  spend: CrmCampaignSpend[],
+  leads: CrmDealWithRefs[],
+  from: Dayjs,
+  to: Dayjs,
+) {
+  const money = spend
+    .filter((r) => {
+      const on = dayjs(r.spend_on);
+      return !on.isBefore(from, "day") && !on.isAfter(to, "day");
+    })
+    .reduce((sum, r) => sum + Number(r.amount ?? 0), 0);
+  const inRange = leads.filter((d) => {
+    const at = dayjs(d.created_at);
+    return !at.isBefore(from, "day") && !at.isAfter(to, "day");
+  });
+  return { money, leads: inRange.length, billable: billableLeads(inRange) };
+}
+
+/**
+ * Percent change, rounded, with the "there was nothing to grow from" case
+ * handled: 0 → 5 is not "+Infinity%", it has no percentage at all, so the
+ * caller gets null and shows no chip rather than a nonsense one.
+ */
+function pctDelta(now: number, before: number): number | null {
+  if (before <= 0) return null;
+  return Math.round(((now - before) / before) * 100);
+}
+
 /** "12 Mar 2025 → 30 Apr 2025", with either end open. */
 function dateRange(
   started: string | null,
@@ -214,7 +266,12 @@ function CampaignDetail({
   const { token } = theme.useToken();
   const { message } = App.useApp();
   const router = useRouter();
-  const { data: spend, isLoading } = useCrmCampaignSpend(campaign.id);
+  const {
+    data: spend,
+    isLoading,
+    isError: spendError,
+    refetch: refetchSpend,
+  } = useCrmCampaignSpend(campaign.id);
   const upsertSpend = useUpsertCampaignSpend();
   const deleteSpend = useDeleteCampaignSpend();
 
@@ -222,12 +279,114 @@ function CampaignDetail({
   const [amount, setAmount] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [confirmSpendId, setConfirmSpendId] = useState<string | null>(null);
+  /** Set by clicking a row in the lead mix — the breakdown IS the filter. */
+  const [leadFilter, setLeadFilter] = useState<"ALL" | string>("ALL");
 
   const rows = useMemo(() => spend ?? [], [spend]);
   const total = useMemo(() => sumSpend(rows), [rows]);
   /** Cost per lead divides by the leads that were real — see `billableLeads`. */
   const billable = useMemo(() => billableLeads(leads), [leads]);
   const junk = leads.length - billable;
+  const qualified = useMemo(
+    () =>
+      leads.filter((d) => {
+        const v = crmLeadStatusMeta(d.status).value;
+        return v === "qualified" || v === "converted";
+      }).length,
+    [leads],
+  );
+
+  /**
+   * Last seven days against the seven before them.
+   *
+   * A campaign's lifetime cost per lead is an average over everything it ever
+   * did, so it barely moves — which makes it useless for the only question
+   * anyone opens this drawer with: is it getting worse *right now*? These are
+   * the numbers that answer that.
+   */
+  const trend = useMemo(() => {
+    const { end } = trendWindow(campaign, TREND_DAYS);
+    const recent = windowTotals(rows, leads, end.subtract(6, "day"), end);
+    const prior = windowTotals(
+      rows,
+      leads,
+      end.subtract(13, "day"),
+      end.subtract(7, "day"),
+    );
+    const cplNow = recent.billable > 0 ? recent.money / recent.billable : null;
+    const cplPrior = prior.billable > 0 ? prior.money / prior.billable : null;
+    return {
+      recent,
+      prior,
+      cplNow,
+      cplPrior,
+      spendPct: pctDelta(recent.money, prior.money),
+      leadsPct: pctDelta(recent.leads, prior.leads),
+      cplPct:
+        cplNow !== null && cplPrior !== null ? pctDelta(cplNow, cplPrior) : null,
+    };
+  }, [campaign, rows, leads]);
+
+  /** Day-by-day money out and leads in — the two series the chart overlays. */
+  const daily = useMemo(() => {
+    const { start, end } = trendWindow(campaign, TREND_DAYS);
+    if (start.isAfter(end, "day")) return [];
+    const span = end.diff(start, "day") + 1;
+    const days = Array.from({ length: span }, (_, i) => start.add(i, "day"));
+    const spendByDay = new Map<string, number>();
+    for (const r of rows) {
+      const key = dayjs(r.spend_on).format("YYYY-MM-DD");
+      spendByDay.set(key, (spendByDay.get(key) ?? 0) + Number(r.amount ?? 0));
+    }
+    const leadsByDay = new Map<string, number>();
+    for (const d of leads) {
+      const key = dayjs(d.created_at).format("YYYY-MM-DD");
+      leadsByDay.set(key, (leadsByDay.get(key) ?? 0) + 1);
+    }
+    return days.map((d) => {
+      const key = d.format("YYYY-MM-DD");
+      return {
+        label: d.format("D MMM"),
+        spend: spendByDay.get(key) ?? 0,
+        leads: leadsByDay.get(key) ?? 0,
+      };
+    });
+  }, [campaign, rows, leads]);
+
+  const hasTrendData = daily.some((d) => d.spend > 0 || d.leads > 0);
+
+  const visibleLeads = useMemo(
+    () =>
+      leadFilter === "ALL"
+        ? leads
+        : leads.filter((d) => crmLeadStatusMeta(d.status).value === leadFilter),
+    [leads, leadFilter],
+  );
+
+  /** Lead mix, biggest bucket first, with each bucket's share of spend. */
+  const statusMix = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const d of leads) {
+      const v = crmLeadStatusMeta(d.status).value;
+      counts.set(v, (counts.get(v) ?? 0) + 1);
+    }
+    return CRM_LEAD_STATUSES.filter((meta) => (counts.get(meta.value) ?? 0) > 0)
+      .map((meta) => {
+        const count = counts.get(meta.value) ?? 0;
+        return {
+          ...meta,
+          count,
+          share: leads.length > 0 ? count / leads.length : 0,
+          // Junk was never bought, so it carries no cost — spreading spend
+          // over it would price the real leads too cheaply.
+          cost:
+            meta.value === "junk" || billable === 0 || spendError
+              ? null
+              : (total / billable) * count,
+        };
+      })
+      .sort((a, b) => b.count - a.count);
+  }, [leads, billable, total, spendError]);
   const dayKey = day.format("YYYY-MM-DD");
   const existing = rows.find((r) => r.spend_on === dayKey) ?? null;
 
@@ -261,8 +420,292 @@ function CampaignDetail({
     ? `${crmDate(existing.spend_on)} already has ${crmMoney(Number(existing.amount), campaign.currency_code)} — saving overwrites it.`
     : "One row per day. Re-entering a day overwrites it.";
 
+  const kpis: KpiItem[] = [
+    {
+      key: "spend",
+      label: "Total spend",
+      value: spendError ? "—" : crmMoney(total, campaign.currency_code),
+      hint: "Every day logged against this campaign, including days the nightly sweep filled in from its daily budget.",
+      compare: "last 7d",
+      delta:
+        spendError || trend.spendPct === null
+          ? null
+          : { value: trend.spendPct, percent: true, goodWhenUp: false },
+      footnote: spendError
+        ? "Spend didn't load"
+        : trend.spendPct === null
+          ? `${crmMoney(trend.recent.money, campaign.currency_code)} in the last 7 days`
+          : undefined,
+      loading: isLoading,
+    },
+    {
+      key: "leads",
+      label: "Leads",
+      value: leads.length,
+      hint:
+        junk > 0
+          ? `${billable} billable, ${junk} junk. Junk never counts towards cost per lead.`
+          : "Deals attributed to this campaign.",
+      compare: "last 7d",
+      delta:
+        trend.leadsPct === null
+          ? null
+          : { value: trend.leadsPct, percent: true },
+      footnote:
+        trend.leadsPct === null
+          ? `${trend.recent.leads} in the last 7 days`
+          : undefined,
+    },
+    {
+      key: "cpl",
+      label: "Cost per lead",
+      value: spendError
+        ? "—"
+        : costPerLead(total, billable, campaign.currency_code),
+      hint: "Total spend ÷ leads that weren't junk.",
+      compare: "last 7d",
+      delta:
+        spendError || trend.cplPct === null
+          ? null
+          : { value: trend.cplPct, percent: true, goodWhenUp: false },
+      footnote: spendError
+        ? "Spend didn't load"
+        : trend.cplPct === null
+          ? trend.cplNow !== null
+            ? `${crmMoneyPrecise(trend.cplNow, campaign.currency_code)} in the last 7 days`
+            : "Not enough recent leads to compare"
+          : undefined,
+      loading: isLoading,
+    },
+    {
+      key: "qualified",
+      label: "Cost per qualified",
+      // The number a campaign is actually judged on: a hundred cheap leads
+      // that never qualify cost more than ten expensive ones that do.
+      value: spendError
+        ? "—"
+        : costPerLead(total, qualified, campaign.currency_code),
+      hint: "Total spend ÷ leads now qualified or converted. The number that decides whether this campaign is worth running.",
+      delta: null,
+      footnote: spendError
+        ? "Spend didn't load"
+        : qualified > 0
+          ? `${qualified} of ${leads.length} qualified or converted`
+          : "Nothing qualified from this campaign yet",
+      loading: isLoading,
+    },
+  ];
+
+  const axisText = {
+    fontFamily: CHART_FONT,
+    fontSize: 11,
+    color: token.colorTextTertiary,
+  };
+
+  const trendOption = {
+    grid: { left: 4, right: 4, top: 26, bottom: 0, containLabel: true },
+    legend: {
+      top: 0,
+      itemWidth: 12,
+      itemHeight: 8,
+      textStyle: { ...axisText, color: token.colorTextSecondary },
+      data: ["Spend", "Leads"],
+    },
+    tooltip: {
+      trigger: "axis" as const,
+      backgroundColor: token.colorBgElevated,
+      borderColor: token.colorBorderSecondary,
+      textStyle: { fontFamily: CHART_FONT, fontSize: 12, color: token.colorText },
+    },
+    xAxis: {
+      type: "category" as const,
+      data: daily.map((d) => d.label),
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { ...axisText, interval: daily.length > 10 ? 1 : 0 },
+    },
+    yAxis: [
+      {
+        type: "value" as const,
+        axisLabel: {
+          ...axisText,
+          formatter: (v: number) =>
+            v >= 100000
+              ? `${Math.round(v / 1000)}k`
+              : v >= 1000
+                ? `${(v / 1000).toFixed(1)}k`
+                : String(v),
+        },
+        splitLine: { lineStyle: { color: token.colorSplit } },
+      },
+      {
+        type: "value" as const,
+        minInterval: 1,
+        axisLabel: axisText,
+        splitLine: { show: false },
+      },
+    ],
+    series: [
+      {
+        name: "Spend",
+        type: "bar" as const,
+        data: daily.map((d) => d.spend),
+        barMaxWidth: 16,
+        itemStyle: { color: token.colorFillSecondary, borderRadius: [3, 3, 0, 0] },
+      },
+      {
+        name: "Leads",
+        type: "line" as const,
+        yAxisIndex: 1,
+        data: daily.map((d) => d.leads),
+        smooth: true,
+        symbolSize: 5,
+        lineStyle: { width: 2, color: CRM_ACCENT.deal },
+        itemStyle: { color: CRM_ACCENT.deal },
+      },
+    ],
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <KpiStrip items={kpis} />
+
+      <Panel
+        title="Spend against leads"
+        padding={14}
+        extra={
+          daily.length > 0 ? (
+            <span style={{ fontSize: 12, color: token.colorTextTertiary }}>
+              Last {daily.length} day{daily.length === 1 ? "" : "s"}
+            </span>
+          ) : null
+        }
+      >
+        {isLoading ? (
+          <div style={{ height: 180 }} />
+        ) : spendError ? (
+          <ErrorState
+            compact
+            title="Couldn't load the spend behind this chart"
+            onRetry={() => void refetchSpend()}
+          />
+        ) : hasTrendData ? (
+          <>
+            {/* Two axes on purpose: money and lead counts share no scale, and
+                forcing them onto one flattens whichever is smaller into the
+                floor — which is exactly the line you came here to read. */}
+            <EChart option={trendOption} height={180} />
+            <p
+              style={{
+                margin: "8px 0 0",
+                fontSize: 11.5,
+                lineHeight: 1.5,
+                color: token.colorTextTertiary,
+              }}
+            >
+              Bars are what you spent each day; the line is how many leads
+              arrived. Bars climbing while the line stays flat is the campaign
+              getting more expensive.
+            </p>
+          </>
+        ) : (
+          <EmptyState
+            compact
+            icon="show_chart"
+            title="Nothing to plot yet"
+            description="Log a day of spend, or attribute a lead to this campaign, and the trend fills in."
+          />
+        )}
+      </Panel>
+
+      <Panel padding={0} title="Lead mix">
+        {statusMix.length === 0 ? (
+          <EmptyState
+            compact
+            icon="donut_small"
+            title="No leads to break down"
+            description="Point a deal at this campaign and its status shows up here."
+          />
+        ) : (
+          statusMix.map((row, index) => (
+            <CrmListRow
+              key={row.value}
+              first={index === 0}
+              pressed={leadFilter === row.value}
+              onClick={() =>
+                setLeadFilter((current) =>
+                  current === row.value ? "ALL" : row.value,
+                )
+              }
+              style={
+                leadFilter === row.value
+                  ? { background: token.colorFillTertiary }
+                  : undefined
+              }
+            >
+              <SoftChip
+                tone={row.tone}
+                icon={leadStatusIcon(row.value)}
+                style={{ flex: "none", width: 132 }}
+              >
+                {row.label}
+              </SoftChip>
+              {/* The share bar carries the comparison the numbers can't: which
+                  bucket this campaign mostly produces, at a glance. */}
+              <span
+                style={{
+                  flex: 1,
+                  minWidth: 40,
+                  height: 6,
+                  borderRadius: 999,
+                  background: token.colorFillQuaternary,
+                  overflow: "hidden",
+                }}
+              >
+                <span
+                  style={{
+                    display: "block",
+                    width: `${Math.max(3, Math.round(row.share * 100))}%`,
+                    height: "100%",
+                    borderRadius: 999,
+                    background:
+                      row.value === "junk"
+                        ? token.colorTextQuaternary
+                        : CRM_ACCENT.deal,
+                  }}
+                />
+              </span>
+              <span
+                style={{
+                  flex: "none",
+                  width: 56,
+                  textAlign: "right",
+                  fontWeight: 600,
+                  fontVariantNumeric: "tabular-nums",
+                  color: token.colorText,
+                }}
+              >
+                {row.count}
+              </span>
+              <span
+                style={{
+                  flex: "none",
+                  width: 84,
+                  textAlign: "right",
+                  fontSize: 12,
+                  fontVariantNumeric: "tabular-nums",
+                  color: token.colorTextTertiary,
+                }}
+              >
+                {row.cost === null
+                  ? "—"
+                  : crmMoney(row.cost, campaign.currency_code)}
+              </span>
+            </CrmListRow>
+          ))
+        )}
+      </Panel>
+
       <Panel padding={14}>
         <OverviewGrid>
           <OverviewField label="Channel">
@@ -273,27 +716,6 @@ function CampaignDetail({
           </OverviewField>
           <OverviewField label="Running" span={2}>
             {dateRange(campaign.started_on, campaign.ended_on)}
-          </OverviewField>
-          <OverviewField label="Total spend">
-            {crmMoney(total, campaign.currency_code)}
-          </OverviewField>
-          <OverviewField label="Leads">
-            {leads.length}
-            {junk > 0 ? (
-              <span style={{ color: token.colorTextTertiary }}>
-                {" "}
-                · {junk} junk
-              </span>
-            ) : null}
-          </OverviewField>
-          <OverviewField label="Cost per lead">
-            {costPerLead(total, billable, campaign.currency_code)}
-            {junk > 0 ? (
-              <span style={{ color: token.colorTextTertiary, fontSize: 12 }}>
-                {" "}
-                (junk excluded)
-              </span>
-            ) : null}
           </OverviewField>
           <OverviewField label="Created">
             {crmDate(campaign.created_at)}
@@ -318,7 +740,7 @@ function CampaignDetail({
               fontVariantNumeric: "tabular-nums",
             }}
           >
-            {crmMoney(total, campaign.currency_code)}
+            {spendError ? "—" : crmMoney(total, campaign.currency_code)}
           </span>
         }
       >
@@ -377,6 +799,12 @@ function CampaignDetail({
 
         {isLoading ? (
           <div style={{ height: 88 }} />
+        ) : spendError ? (
+          <ErrorState
+            compact
+            title="Couldn't load this campaign's spend"
+            onRetry={() => void refetchSpend()}
+          />
         ) : rows.length === 0 ? (
           <EmptyState
             compact
@@ -475,9 +903,20 @@ function CampaignDetail({
         padding={0}
         title="Leads"
         extra={
-          <span style={{ fontSize: 12.5, color: token.colorTextTertiary }}>
-            {leads.length} attributed
-          </span>
+          leadFilter === "ALL" ? (
+            <span style={{ fontSize: 12.5, color: token.colorTextTertiary }}>
+              {leads.length} attributed
+            </span>
+          ) : (
+            <Button
+              size="small"
+              type="text"
+              icon={<MIcon name="filter_alt_off" size={15} />}
+              onClick={() => setLeadFilter("ALL")}
+            >
+              {`${visibleLeads.length} ${crmLeadStatusMeta(leadFilter).label.toLowerCase()}`}
+            </Button>
+          )
         }
       >
         {leads.length === 0 ? (
@@ -487,8 +926,20 @@ function CampaignDetail({
             title="No leads from this campaign yet"
             description="Deals point at a campaign from the deal form — pick this one and it shows up here."
           />
+        ) : visibleLeads.length === 0 ? (
+          <EmptyState
+            compact
+            icon="filter_alt_off"
+            title={`No ${crmLeadStatusMeta(leadFilter).label.toLowerCase()} leads`}
+            description="That status has no leads on this campaign right now."
+            action={
+              <Button onClick={() => setLeadFilter("ALL")}>
+                Show all {leads.length}
+              </Button>
+            }
+          />
         ) : (
-          leads.map((deal, index) => {
+          visibleLeads.map((deal, index) => {
             const status = crmLeadStatusMeta(deal.status);
             return (
               <CrmListRow
