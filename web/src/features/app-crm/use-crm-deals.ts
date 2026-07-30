@@ -83,6 +83,14 @@ export function useCreateCrmDeal() {
   });
 }
 
+/**
+ * Writes a patch and **proves** it landed: PostgREST does not error when an
+ * update matches zero rows (a wrong id, or a row RLS hides), so without
+ * selecting the row back a rejected write resolves as a success and the caller
+ * shows a value the database never took. `onSuccess` returns the invalidation
+ * so `mutateAsync` only settles once the list has refetched — the inline
+ * editors rely on that to release their optimistic hold without a flash.
+ */
 export function useUpdateCrmDeal() {
   const supabase = useMemo(() => createClient(), []);
   const queryClient = useQueryClient();
@@ -90,14 +98,22 @@ export function useUpdateCrmDeal() {
   const teamId = activeTeam?.id;
   return useMutation({
     mutationFn: async (input: { id: string; patch: CrmDealPatch }) => {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("app_crm_deals")
         .update(input.patch)
-        .eq("id", input.id);
+        .eq("id", input.id)
+        .select("id")
+        .maybeSingle();
       if (error) throw error;
+      if (!data) throw new Error("That deal could not be updated.");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: dealsKey(teamId) });
+      // The timeline is trigger-written, so every update adds a row to it.
+      // Not awaited: the drawer's Timeline tab can catch up on its own.
+      void queryClient.invalidateQueries({
+        queryKey: ["crm-activities", teamId],
+      });
+      return queryClient.invalidateQueries({ queryKey: dealsKey(teamId) });
     },
   });
 }

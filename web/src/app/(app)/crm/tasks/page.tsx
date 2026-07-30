@@ -55,6 +55,7 @@ import {
 } from "../_components/drawer-footer";
 import {
   CrmPageHeader,
+  CrmSearch,
   CrmToolbar,
   EmptyState,
   EntityAvatar,
@@ -121,6 +122,12 @@ export default function CrmTasksPage() {
     "ALL",
   );
   const [onlyMine, setOnlyMine] = useState(false);
+  const [search, setSearch] = useState("");
+  const [dueFilter, setDueFilter] = useState<
+    "ALL" | "OVERDUE" | "TODAY" | "WEEK" | "NONE"
+  >("ALL");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CrmTaskWithTargets | null>(null);
   const [viewTarget, setViewTarget] = useState<CrmTargetRef | null>(null);
@@ -150,11 +157,60 @@ export default function CrmTasksPage() {
     [tasks, onlyMine, user?.id],
   );
 
-  const rows = useMemo(
-    () =>
-      scoped.filter((t) => statusFilter === "ALL" || t.status === statusFilter),
-    [scoped, statusFilter],
-  );
+  /**
+   * Applies one change to every selected task. Partial failure is the normal
+   * failure here (a row someone else deleted, an RLS refusal), so it reports
+   * how many landed rather than pretending the whole batch died.
+   */
+  const runBulk = async (
+    label: string,
+    apply: (id: string) => Promise<unknown>,
+  ) => {
+    const ids = selected;
+    setBulkBusy(true);
+    const results = await Promise.allSettled(ids.map(apply));
+    setBulkBusy(false);
+    setSelected([]);
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed === 0) {
+      message.success(`${label} · ${ids.length} task${ids.length === 1 ? "" : "s"}`);
+    } else {
+      message.warning(`${label} · ${ids.length - failed} done, ${failed} failed`);
+    }
+  };
+
+  /** Overdue / today / this week — the question a task list is actually asked. */
+  const matchesDue = (t: CrmTaskWithTargets): boolean => {
+    if (dueFilter === "ALL") return true;
+    if (!t.due_at) return dueFilter === "NONE";
+    if (dueFilter === "NONE") return false;
+    const at = dayjs(t.due_at);
+    const now = dayjs();
+    if (dueFilter === "OVERDUE") return at.isBefore(now) && t.status !== "DONE";
+    if (dueFilter === "TODAY") return at.isSame(now, "day");
+    // WEEK: anything landing between now and seven days out.
+    return !at.isBefore(now, "day") && !at.isAfter(now.add(7, "day"), "day");
+  };
+
+  const rows = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return scoped
+      .filter((t) => statusFilter === "ALL" || t.status === statusFilter)
+      .filter(matchesDue)
+      .filter((t) => {
+        if (!needle) return true;
+        // Searching a task list means searching what it is ATTACHED to as
+        // much as its title — "everything on Acme" is the real question.
+        const linked = t.targets
+          .map((x) => recordName(x.target_type, x.target_id) ?? "")
+          .join(" ");
+        return `${t.title} ${t.body ?? ""} ${linked}`
+          .toLowerCase()
+          .includes(needle);
+      });
+    // `matchesDue` closes over dueFilter, which is in the dependency list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scoped, statusFilter, dueFilter, search, recordName]);
 
   const counts = useMemo(() => {
     const now = dayjs();
@@ -284,6 +340,42 @@ export default function CrmTasksPage() {
     }
     const label =
       statusFilter === "ALL" ? null : statusMeta(statusFilter).label;
+    // A search that finds nothing is its own thing — offering "create a task"
+    // there answers a question nobody asked.
+    if (search.trim()) {
+      return (
+        <EmptyState
+          compact
+          icon="search_off"
+          title="No tasks match that search"
+          description="Searches cover a task's title, its notes, and the records it is attached to."
+          action={<Button onClick={() => setSearch("")}>Clear search</Button>}
+        />
+      );
+    }
+    if (dueFilter !== "ALL") {
+      return (
+        <EmptyState
+          compact
+          icon="event_available"
+          title={
+            dueFilter === "OVERDUE"
+              ? "Nothing overdue"
+              : dueFilter === "TODAY"
+                ? "Nothing due today"
+                : dueFilter === "WEEK"
+                  ? "Nothing due this week"
+                  : "Everything here has a due date"
+          }
+          description="Change the due-date filter to see the rest."
+          action={
+            <Button onClick={() => setDueFilter("ALL")}>
+              Any due date
+            </Button>
+          }
+        />
+      );
+    }
     if (onlyMine) {
       return (
         <EmptyState
@@ -338,6 +430,24 @@ export default function CrmTasksPage() {
             })),
           ]}
         />
+        <Select
+          value={dueFilter}
+          onChange={setDueFilter}
+          style={{ minWidth: 150 }}
+          options={[
+            { value: "ALL", label: "Any due date" },
+            { value: "OVERDUE", label: "Overdue" },
+            { value: "TODAY", label: "Due today" },
+            { value: "WEEK", label: "Due this week" },
+            { value: "NONE", label: "No due date" },
+          ]}
+        />
+        <CrmSearch
+          value={search}
+          onChange={setSearch}
+          placeholder="Search tasks and what they're on…"
+          width={260}
+        />
         <CrmToggle
           checked={onlyMine}
           onChange={setOnlyMine}
@@ -391,6 +501,11 @@ export default function CrmTasksPage() {
           size="middle"
           loading={isLoading}
           dataSource={rows}
+          rowSelection={{
+            selectedRowKeys: selected,
+            onChange: (keys) => setSelected(keys as string[]),
+            preserveSelectedRowKeys: true,
+          }}
           pagination={{
             pageSize: 25,
             hideOnSinglePage: true,
@@ -720,6 +835,85 @@ export default function CrmTasksPage() {
             },
           ]}
         />
+
+        {/* Bulk bar — a task list is worked in batches ("these six are done"),
+            and doing that one row at a time is the whole cost of the screen. */}
+        {selected.length > 0 ? (
+          <div
+            style={{
+              position: "sticky",
+              bottom: 16,
+              zIndex: 5,
+              margin: "0 auto 16px",
+              width: "fit-content",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "8px 10px",
+              borderRadius: 10,
+              background: token.colorBgElevated,
+              border: `1px solid ${token.colorBorder}`,
+              boxShadow: token.boxShadowSecondary,
+            }}
+          >
+            <span
+              style={{
+                fontSize: 12.5,
+                fontWeight: 600,
+                color: token.colorText,
+              }}
+            >
+              {selected.length} selected
+            </span>
+            <span
+              style={{ width: 1, height: 18, background: token.colorSplit }}
+            />
+            {CRM_TASK_STATUSES.map((s) => (
+              <Button
+                key={s.value}
+                size="small"
+                disabled={bulkBusy}
+                icon={<MIcon name={STATUS_META[s.value].icon} size={15} />}
+                onClick={() =>
+                  void runBulk(`Marked ${s.label.toLowerCase()}`, (id) =>
+                    updateTask.mutateAsync({
+                      id,
+                      patch: { status: s.value },
+                    }),
+                  )
+                }
+              >
+                {s.label}
+              </Button>
+            ))}
+            <Popconfirm
+              title={`Delete ${selected.length} task${selected.length === 1 ? "" : "s"}?`}
+              okText="Delete"
+              okButtonProps={{ danger: true }}
+              onConfirm={() =>
+                void runBulk("Deleted", (id) => deleteTask.mutateAsync(id))
+              }
+            >
+              <Button
+                size="small"
+                danger
+                disabled={bulkBusy}
+                icon={<MIcon name="delete" size={15} />}
+              >
+                Delete
+              </Button>
+            </Popconfirm>
+            <Tooltip title="Clear selection">
+              <Button
+                size="small"
+                type="text"
+                aria-label="Clear selection"
+                onClick={() => setSelected([])}
+                icon={<MIcon name="close" size={15} />}
+              />
+            </Tooltip>
+          </div>
+        ) : null}
       </Panel>
 
       <Drawer

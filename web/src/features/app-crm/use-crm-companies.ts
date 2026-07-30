@@ -65,6 +65,13 @@ export function useCreateCrmCompany() {
   });
 }
 
+/**
+ * Writes a patch and **proves** it landed — PostgREST reports no error when an
+ * update matches zero rows (wrong id, or a row RLS hides), so the row is
+ * selected back. `onSuccess` returns the invalidation so `mutateAsync` settles
+ * only once the list has refetched; the inline editors release their
+ * optimistic hold on that.
+ */
 export function useUpdateCrmCompany() {
   const supabase = useMemo(() => createClient(), []);
   const queryClient = useQueryClient();
@@ -72,14 +79,22 @@ export function useUpdateCrmCompany() {
   const teamId = activeTeam?.id;
   return useMutation({
     mutationFn: async (input: { id: string; patch: CrmCompanyPatch }) => {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("app_crm_companies")
         .update(input.patch)
-        .eq("id", input.id);
+        .eq("id", input.id)
+        .select("id")
+        .maybeSingle();
       if (error) throw error;
+      if (!data) throw new Error("That company could not be updated.");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: companiesKey(teamId) });
+      // Updates are trigger-written to the timeline; refresh it in the
+      // background rather than making the write wait on it.
+      void queryClient.invalidateQueries({
+        queryKey: ["crm-activities", teamId],
+      });
+      return queryClient.invalidateQueries({ queryKey: companiesKey(teamId) });
     },
   });
 }

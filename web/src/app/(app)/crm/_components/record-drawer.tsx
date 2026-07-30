@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   App,
   Button,
@@ -15,9 +15,21 @@ import {
   theme,
 } from "antd";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
-import { useCrmCompanies } from "@/features/app-crm/use-crm-companies";
-import { useCrmDeals } from "@/features/app-crm/use-crm-deals";
-import { useCrmPeople } from "@/features/app-crm/use-crm-people";
+import {
+  useCrmCompanies,
+  useUpdateCrmCompany,
+  type CrmCompanyPatch,
+} from "@/features/app-crm/use-crm-companies";
+import {
+  useCrmDeals,
+  useUpdateCrmDeal,
+  type CrmDealPatch,
+} from "@/features/app-crm/use-crm-deals";
+import {
+  useCrmPeople,
+  useUpdateCrmPerson,
+  type CrmPersonPatch,
+} from "@/features/app-crm/use-crm-people";
 import { useCrmStages } from "@/features/app-crm/use-crm-stages";
 import { useCrmCampaigns } from "@/features/app-crm/use-crm-campaigns";
 import { useCrmRecordActivities } from "@/features/app-crm/use-crm-activities";
@@ -34,6 +46,7 @@ import {
 } from "@/features/app-crm/use-crm-tasks";
 import { useRecordReminders } from "@/features/app-crm/use-crm-reminders";
 import {
+  CRM_CURRENCIES,
   CRM_TASK_STATUSES,
   crmLeadStatusMeta,
   crmMoney,
@@ -49,6 +62,17 @@ import { errMsg } from "@/lib/err";
 import { MIcon } from "./m-icon";
 import { DealGlyph } from "./deal-glyph";
 import { PhoneWithCopy } from "./phone-cell";
+import { LeadStatusPicker } from "./lead-status-picker";
+import {
+  InlineBool,
+  InlineDate,
+  InlineEditScope,
+  InlineEmpty,
+  InlineNumber,
+  InlineSelect,
+  InlineText,
+  type InlineOption,
+} from "./inline-edit";
 import { ENTITY_META, leadStatusIcon } from "./entity-meta";
 import { CrmListRow } from "./list-row";
 import {
@@ -89,11 +113,9 @@ function activityText(activity: CrmActivity): string {
     case "created":
       return "created this record";
     case "updated": {
-      const fields = Array.isArray(props.fields)
-        ? (props.fields as string[]).map((f) =>
-            f.replace(/_id$/, "").replace(/_/g, " "),
-          )
-        : [];
+      const fields = activityFields(activity).map((f) =>
+        f.replace(/_id$/, "").replace(/_/g, " "),
+      );
       return fields.length > 0
         ? `updated ${fields.join(", ")}`
         : "updated this record";
@@ -119,6 +141,49 @@ function activityText(activity: CrmActivity): string {
   }
 }
 
+function activityFields(activity: CrmActivity): string[] {
+  const props = (activity.properties ?? {}) as Record<string, unknown>;
+  return Array.isArray(props.fields) ? (props.fields as string[]) : [];
+}
+
+/**
+ * A run of `updated` rows by one person, close together, reads as one edit.
+ *
+ * Editing in place commits a field at a time and the timeline is written by a
+ * row trigger, so filling in a company's five address parts used to produce
+ * "updated address street", "updated address city", … where the old modal Save
+ * produced a single line. Consecutive same-actor updates inside this window are
+ * folded back into one entry with the union of their fields.
+ */
+const UPDATE_MERGE_WINDOW_MS = 2 * 60 * 1000;
+
+function mergeUpdateRuns(list: CrmActivity[]): CrmActivity[] {
+  const out: CrmActivity[] = [];
+  for (const a of list) {
+    const prev = out[out.length - 1];
+    const mergeable =
+      prev &&
+      prev.event === "updated" &&
+      a.event === "updated" &&
+      prev.actor_id === a.actor_id &&
+      Math.abs(
+        new Date(prev.created_at).getTime() - new Date(a.created_at).getTime(),
+      ) <= UPDATE_MERGE_WINDOW_MS;
+    if (!mergeable) {
+      out.push(a);
+      continue;
+    }
+    const fields = Array.from(
+      new Set([...activityFields(prev), ...activityFields(a)]),
+    );
+    out[out.length - 1] = {
+      ...prev,
+      properties: { ...(prev.properties as object), fields },
+    };
+  }
+  return out;
+}
+
 /** One field of the Overview definition grid. */
 type OverviewItem = {
   key: string;
@@ -133,6 +198,20 @@ const ELLIPSIS: React.CSSProperties = {
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
 };
+
+/**
+ * Keeps whatever the record already points at pickable in an inline select.
+ * Options are built from live records only, so a deal attached to a
+ * soft-deleted company would otherwise open its editor showing a raw id.
+ */
+function withCurrent(
+  options: InlineOption[],
+  currentId: string | null,
+  currentLabel: string,
+): InlineOption[] {
+  if (!currentId || options.some((o) => o.value === currentId)) return options;
+  return [...options, { value: currentId, label: currentLabel }];
+}
 
 /** Tab label with the linked-record count as a quiet pill. */
 function TabLabel({
@@ -164,6 +243,183 @@ function TabLabel({
           {count}
         </span>
       ) : null}
+    </span>
+  );
+}
+
+/** Muted inline text — a separator, a unit, an unfilled sub-field's name. */
+function Muted({
+  children,
+  faint = false,
+}: {
+  children: React.ReactNode;
+  faint?: boolean;
+}) {
+  const { token } = theme.useToken();
+  return (
+    <span
+      style={{
+        color: faint ? token.colorTextQuaternary : token.colorTextTertiary,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+/**
+ * The only schemes a stored URL is allowed to become a live link with. These
+ * fields are freely editable in place now, and `<a href="javascript:…">` is a
+ * working script URL that React only warns about — so anything that isn't
+ * plain web navigation renders as text instead.
+ */
+function safeHref(url: string): string | null {
+  const raw = url.trim();
+  if (!raw) return null;
+  const candidates = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)
+    ? [raw]
+    : [`https://${raw}`];
+  for (const candidate of candidates) {
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        return parsed.href;
+      }
+    } catch {
+      /* not a URL — fall through and render as text */
+    }
+  }
+  return null;
+}
+
+/** True for anything `safeHref` would refuse — used to reject a bad edit. */
+function validateUrl(next: string): string | null {
+  if (!next) return null;
+  return safeHref(next) ? null : "That doesn't look like a web address.";
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validateEmail(next: string): string | null {
+  if (!next) return null;
+  return EMAIL_RE.test(next) ? null : "That doesn't look like an email address.";
+}
+
+const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
+
+function validateDomain(next: string): string | null {
+  if (!next) return null;
+  // Accept a pasted URL too — people paste "https://acme.com/" constantly.
+  const bare = next.replace(/^[a-z]+:\/\//i, "").replace(/\/.*$/, "");
+  return DOMAIN_RE.test(bare) ? null : "That doesn't look like a domain.";
+}
+
+/**
+ * A URL field at rest: still a link, when the stored string is one. The click
+ * is swallowed so following it doesn't also open the editor — the pencil
+ * beside it does that. Focus is drawn here because globals.css suppresses
+ * outlines project-wide.
+ */
+function UrlValue({ url }: { url: string }) {
+  const { token } = theme.useToken();
+  const [focused, setFocused] = useState(false);
+  if (!url) return <InlineEmpty />;
+  const href = safeHref(url);
+  if (!href) return <span style={ELLIPSIS}>{url}</span>;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      style={{
+        ...ELLIPSIS,
+        display: "inline-block",
+        maxWidth: "100%",
+        borderRadius: 4,
+        boxShadow: focused ? `0 0 0 2px ${token.colorPrimaryBorder}` : undefined,
+      }}
+    >
+      {url}
+    </a>
+  );
+}
+
+/**
+ * Annual revenue and the currency it is in — two controls, one number.
+ *
+ * They share a component because they share a rendering: the figure is
+ * formatted with the currency, so editing the currency has to move the symbol
+ * on the figure straight away. Reading `currency_code` off the record instead
+ * would leave the new code sitting in muted text next to the old symbol until
+ * the refetch lands.
+ */
+function CompanyRevenueField({
+  company,
+  currencyOptions,
+  save,
+}: {
+  company: CrmCompany;
+  currencyOptions: InlineOption[];
+  save: (patch: CrmCompanyPatch) => Promise<void>;
+}) {
+  const stored = company.currency_code;
+  const [currency, setCurrency] = useState(stored);
+  const [seen, setSeen] = useState(stored);
+  // The record moved under us (refetch, or another record opened) — it wins.
+  if (seen !== stored) {
+    setSeen(stored);
+    setCurrency(stored);
+  }
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: 14,
+        maxWidth: "100%",
+      }}
+    >
+      <InlineNumber
+        label="Annual revenue"
+        value={company.annual_revenue}
+        min={0}
+        placeholder="1000000"
+        errorText="Couldn't save the revenue."
+        onSave={(next) => save({ annual_revenue: next })}
+        renderValue={(v) =>
+          v === null ? (
+            <InlineEmpty />
+          ) : (
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>
+              {crmMoney(v, currency)}
+            </span>
+          )
+        }
+      />
+      {/* The unit the figure is in, editable on its own. */}
+      <InlineSelect
+        label="Currency"
+        value={stored}
+        options={currencyOptions}
+        showSearch={false}
+        errorText="Couldn't change the currency."
+        onSave={async (next) => {
+          const code = next ?? "USD";
+          setCurrency(code);
+          try {
+            await save({ currency_code: code });
+          } catch (err) {
+            setCurrency(stored);
+            throw err;
+          }
+        }}
+        renderValue={(v) => <Muted>{v ?? "USD"}</Muted>}
+      />
     </span>
   );
 }
@@ -217,6 +473,9 @@ export function RecordDrawer({
   const deleteTask = useDeleteCrmTask();
   const createNote = useCreateCrmNote();
   const deleteNote = useDeleteCrmNote();
+  const updateDeal = useUpdateCrmDeal();
+  const updatePerson = useUpdateCrmPerson();
+  const updateCompany = useUpdateCrmCompany();
 
   const [newTask, setNewTask] = useState("");
   const [newNoteTitle, setNewNoteTitle] = useState("");
@@ -254,6 +513,91 @@ export function RecordDrawer({
         ? companiesLoading
         : dealsLoading
     : false;
+
+  /**
+   * A record in the Deleted bin is shown, not edited — restore it first. Every
+   * CRM record type carries the same soft-delete column.
+   */
+  const recordDeleted = Boolean(
+    (record as { deleted_at?: string | null } | null)?.deleted_at,
+  );
+
+  const recordId = target?.id ?? null;
+
+  /* The three inline-edit writers. Each control owns its own pending/error
+     state, so these only need to hand the patch to the mutation — and must
+     never resolve without writing: a silent success would leave the typed
+     value on screen as though it had been saved. */
+  const saveDeal = useCallback(
+    async (patch: CrmDealPatch) => {
+      if (!recordId) throw new Error("No record is open.");
+      await updateDeal.mutateAsync({ id: recordId, patch });
+    },
+    [recordId, updateDeal],
+  );
+
+  const savePerson = useCallback(
+    async (patch: CrmPersonPatch) => {
+      if (!recordId) throw new Error("No record is open.");
+      await updatePerson.mutateAsync({ id: recordId, patch });
+    },
+    [recordId, updatePerson],
+  );
+
+  const saveCompany = useCallback(
+    async (patch: CrmCompanyPatch) => {
+      if (!recordId) throw new Error("No record is open.");
+      await updateCompany.mutateAsync({ id: recordId, patch });
+    },
+    [recordId, updateCompany],
+  );
+
+  /* Option lists for the relation pickers — live records only; `withCurrent`
+     re-adds whatever the record already points at. */
+  const stageOptions = useMemo<InlineOption[]>(
+    () => (stages ?? []).map((s) => ({ value: s.id, label: s.name })),
+    [stages],
+  );
+
+  const companyOptions = useMemo<InlineOption[]>(
+    () =>
+      (companies ?? [])
+        .filter((c) => !c.deleted_at)
+        .map((c) => ({ value: c.id, label: c.name })),
+    [companies],
+  );
+
+  const peopleOptions = useMemo<InlineOption[]>(
+    () =>
+      (people ?? [])
+        .filter((p) => !p.deleted_at)
+        .map((p) => ({
+          value: p.id,
+          label: crmPersonName(p) || "Unnamed person",
+        })),
+    [people],
+  );
+
+  const campaignOptions = useMemo<InlineOption[]>(
+    () =>
+      (campaigns ?? [])
+        .filter((c) => !c.deleted_at)
+        .map((c) => ({ value: c.id, label: c.name })),
+    [campaigns],
+  );
+
+  const memberOptions = useMemo<InlineOption[]>(
+    () =>
+      (members ?? [])
+        .filter((m) => m.active && m.user)
+        .map((m) => ({ value: m.user!.id, label: m.user!.name })),
+    [members],
+  );
+
+  const currencyOptions = useMemo<InlineOption[]>(
+    () => CRM_CURRENCIES.map((c) => ({ value: c, label: c })),
+    [],
+  );
 
   const title = useMemo(() => {
     if (!target || !record) return "";
@@ -299,16 +643,125 @@ export function RecordDrawer({
     [linkedReminders],
   );
 
+  /** One line per edit, not one per field — see {@link mergeUpdateRuns}. */
+  const timeline = useMemo(
+    () => mergeUpdateRuns(activities ?? []),
+    [activities],
+  );
+
   const overviewItems = useMemo<OverviewItem[]>(() => {
     if (!target || !record) return [];
+
     if (target.type === "person") {
       const p = record as CrmPersonWithCompany;
       return [
-        { key: "email", label: "Email", children: p.email || "—" },
-        { key: "phone", label: "Phone", children: p.phone || "—" },
-        { key: "job", label: "Job title", children: p.job_title || "—" },
-        { key: "company", label: "Company", children: p.company?.name || "—" },
-        { key: "city", label: "City", children: p.city || "—" },
+        {
+          key: "first_name",
+          label: "First name",
+          children: (
+            <InlineText
+              label="First name"
+              value={p.first_name}
+              placeholder="First name"
+              // A person is listed by their name everywhere; blanking it here
+              // restores rather than leaving an unnamed row behind.
+              required
+              errorText="Couldn't save the first name."
+              onSave={(next) => savePerson({ first_name: next })}
+            />
+          ),
+        },
+        {
+          key: "last_name",
+          label: "Last name",
+          children: (
+            <InlineText
+              label="Last name"
+              value={p.last_name}
+              placeholder="Last name"
+              errorText="Couldn't save the last name."
+              // `first_name`/`last_name` are NOT NULL DEFAULT '' — a cleared
+              // one writes "" on purpose, not the `next || null` the nullable
+              // text columns below use.
+              onSave={(next) => savePerson({ last_name: next })}
+            />
+          ),
+        },
+        {
+          key: "email",
+          label: "Email",
+          children: (
+            <InlineText
+              label="Email"
+              value={p.email}
+              inputMode="email"
+              placeholder="name@company.com"
+              validate={validateEmail}
+              errorText="Couldn't save the email."
+              onSave={(next) => savePerson({ email: next || null })}
+            />
+          ),
+        },
+        {
+          key: "phone",
+          label: "Phone",
+          children: (
+            <InlineText
+              label="Phone"
+              value={p.phone}
+              inputMode="tel"
+              maxLength={40}
+              placeholder="+1 555 000 0000"
+              errorText="Couldn't save the phone number."
+              onSave={(next) => savePerson({ phone: next || null })}
+            />
+          ),
+        },
+        {
+          key: "job",
+          label: "Job title",
+          children: (
+            <InlineText
+              label="Job title"
+              value={p.job_title}
+              placeholder="e.g. Head of Design"
+              errorText="Couldn't save the job title."
+              onSave={(next) => savePerson({ job_title: next || null })}
+            />
+          ),
+        },
+        {
+          key: "company",
+          label: "Company",
+          children: (
+            <InlineSelect
+              label="Company"
+              value={p.company_id}
+              options={withCurrent(
+                companyOptions,
+                p.company_id,
+                p.company?.name ?? "Unknown company",
+              )}
+              allowClear
+              placeholder="Select a company"
+              errorText="Couldn't change the company."
+              onSave={(next) => savePerson({ company_id: next })}
+            />
+          ),
+        },
+        {
+          key: "city",
+          label: "City",
+          children: (
+            <InlineText
+              label="City"
+              value={p.city}
+              placeholder="City"
+              errorText="Couldn't save the city."
+              onSave={(next) => savePerson({ city: next || null })}
+            />
+          ),
+        },
         {
           key: "created",
           label: "Created",
@@ -318,93 +771,266 @@ export function RecordDrawer({
           key: "li",
           label: "LinkedIn",
           span: 2,
-          children: p.linkedin_url ? (
-            <a href={p.linkedin_url} target="_blank" rel="noreferrer">
-              {p.linkedin_url}
-            </a>
-          ) : (
-            "—"
+          children: (
+            <InlineText
+              label="LinkedIn"
+              value={p.linkedin_url}
+              inputMode="url"
+              placeholder="https://linkedin.com/in/…"
+              validate={validateUrl}
+              errorText="Couldn't save the LinkedIn URL."
+              onSave={(next) => savePerson({ linkedin_url: next || null })}
+              renderValue={(v) => <UrlValue url={v} />}
+            />
           ),
         },
       ];
     }
+
     if (target.type === "company") {
       const c = record as CrmCompany;
-      const address = [
-        c.address_street,
-        c.address_city,
-        c.address_state,
-        c.address_zip,
-        c.address_country,
-      ]
-        .filter(Boolean)
-        .join(", ");
+      /** Street → country, each part editable where it reads. */
+      const addressParts: {
+        label: string;
+        value: string | null;
+        save: (next: string) => Promise<void>;
+      }[] = [
+        {
+          label: "Street",
+          value: c.address_street,
+          save: (next) => saveCompany({ address_street: next || null }),
+        },
+        {
+          label: "City",
+          value: c.address_city,
+          save: (next) => saveCompany({ address_city: next || null }),
+        },
+        {
+          label: "State",
+          value: c.address_state,
+          save: (next) => saveCompany({ address_state: next || null }),
+        },
+        {
+          label: "ZIP",
+          value: c.address_zip,
+          save: (next) => saveCompany({ address_zip: next || null }),
+        },
+        {
+          label: "Country",
+          value: c.address_country,
+          save: (next) => saveCompany({ address_country: next || null }),
+        },
+      ];
       return [
-        { key: "domain", label: "Domain", children: c.domain || "—" },
+        {
+          key: "name",
+          label: "Name",
+          children: (
+            <InlineText
+              label="Name"
+              value={c.name}
+              placeholder="Company name"
+              required
+              errorText="Couldn't save the name."
+              onSave={(next) => saveCompany({ name: next })}
+            />
+          ),
+        },
+        {
+          key: "domain",
+          label: "Domain",
+          children: (
+            <InlineText
+              label="Domain"
+              value={c.domain}
+              inputMode="url"
+              placeholder="acme.com"
+              validate={validateDomain}
+              errorText="Couldn't save the domain."
+              onSave={(next) => saveCompany({ domain: next || null })}
+            />
+          ),
+        },
         {
           key: "revenue",
           label: "Annual revenue",
-          children:
-            c.annual_revenue === null
-              ? "—"
-              : crmMoney(c.annual_revenue, c.currency_code),
+          children: (
+            <CompanyRevenueField
+              company={c}
+              currencyOptions={currencyOptions}
+              save={saveCompany}
+            />
+          ),
         },
         {
           key: "employees",
           label: "Employees",
-          children: c.employees ?? "—",
+          children: (
+            <InlineNumber
+              label="Employees"
+              value={c.employees}
+              min={0}
+              // `employees` is an `integer` column — a typed "12.5" would come
+              // back as a Postgres cast error.
+              precision={0}
+              placeholder="25"
+              errorText="Couldn't save the headcount."
+              onSave={(next) => saveCompany({ employees: next })}
+            />
+          ),
         },
         {
           key: "icp",
           label: "ICP",
-          children: c.icp ? (
-            <SoftChip tone="success" icon="star">
-              Ideal customer
-            </SoftChip>
-          ) : (
-            "—"
+          children: (
+            <InlineBool
+              label="Ideal customer"
+              value={c.icp}
+              errorText="Couldn't change the ICP flag."
+              onSave={(next) => saveCompany({ icp: next })}
+              renderValue={(v) =>
+                v ? (
+                  <SoftChip tone="success" icon="star">
+                    Ideal customer
+                  </SoftChip>
+                ) : (
+                  <InlineEmpty />
+                )
+              }
+            />
           ),
         },
         {
           key: "owner",
           label: "Account owner",
-          children: c.account_owner_id ? userName(c.account_owner_id) : "—",
+          children: (
+            <InlineSelect
+              label="Account owner"
+              value={c.account_owner_id}
+              options={withCurrent(
+                memberOptions,
+                c.account_owner_id,
+                userName(c.account_owner_id),
+              )}
+              allowClear
+              placeholder="Team member who owns this account"
+              errorText="Couldn't change the account owner."
+              onSave={(next) => saveCompany({ account_owner_id: next })}
+            />
+          ),
         },
         {
           key: "created",
           label: "Created",
           children: crmDate(c.created_at),
         },
-        { key: "address", label: "Address", span: 2, children: address || "—" },
+        {
+          key: "address",
+          label: "Address",
+          span: 2,
+          children: (
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 14,
+                maxWidth: "100%",
+              }}
+            >
+              {addressParts.map((part, index) => (
+                <span
+                  key={part.label}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 2,
+                    minWidth: 0,
+                  }}
+                >
+                  <InlineText
+                    label={part.label}
+                    value={part.value}
+                    placeholder={part.label}
+                    errorText="Couldn't save the address."
+                    onSave={part.save}
+                    renderValue={(v) =>
+                      v ? <span>{v}</span> : <Muted faint>{part.label}</Muted>
+                    }
+                  />
+                  {index < addressParts.length - 1 ? (
+                    <Muted faint>,</Muted>
+                  ) : null}
+                </span>
+              ))}
+            </span>
+          ),
+        },
         {
           key: "li",
           label: "LinkedIn",
           span: 2,
-          children: c.linkedin_url ? (
-            <a href={c.linkedin_url} target="_blank" rel="noreferrer">
-              {c.linkedin_url}
-            </a>
-          ) : (
-            "—"
+          children: (
+            <InlineText
+              label="LinkedIn"
+              value={c.linkedin_url}
+              inputMode="url"
+              placeholder="https://linkedin.com/company/…"
+              validate={validateUrl}
+              errorText="Couldn't save the LinkedIn URL."
+              onSave={(next) => saveCompany({ linkedin_url: next || null })}
+              renderValue={(v) => <UrlValue url={v} />}
+            />
           ),
         },
       ];
     }
+
     const d = record as CrmDealWithRefs;
-    const stage = (stages ?? []).find((s) => s.id === d.stage_id);
     const status = crmLeadStatusMeta(d.status);
     // Soft-deleted campaigns still resolve: a lead keeps the name it arrived on.
     const campaign = (campaigns ?? []).find((c) => c.id === d.campaign_id);
     return [
       {
+        key: "name",
+        label: "Name",
+        span: 2,
+        children: (
+          <InlineText
+            label="Name"
+            value={d.name}
+            placeholder="Deal name"
+            // `app_crm_deals.name` is NOT NULL with a 1-300 length check, and
+            // the card, the row and this drawer's own title all read from it.
+            required
+            errorText="Couldn't save the name."
+            onSave={(next) => saveDeal({ name: next })}
+          />
+        ),
+      },
+      {
         key: "stage",
         label: "Stage",
-        children: stage ? (
-          <SoftChip tone="custom" color={stage.color}>
-            {stage.name}
-          </SoftChip>
-        ) : (
-          <SoftChip>No stage</SoftChip>
+        children: (
+          <InlineSelect
+            label="Stage"
+            value={d.stage_id}
+            options={stageOptions}
+            allowClear
+            placeholder="No stage"
+            errorText="Couldn't change the stage."
+            onSave={(next) => saveDeal({ stage_id: next })}
+            renderValue={(id) => {
+              const s = (stages ?? []).find((x) => x.id === id);
+              return s ? (
+                <SoftChip tone="custom" color={s.color}>
+                  {s.name}
+                </SoftChip>
+              ) : (
+                <SoftChip>No stage</SoftChip>
+              );
+            }}
+          />
         ),
       },
       // The two first-class lead fields. Opening a lead from a reminder has to
@@ -413,41 +1039,129 @@ export function RecordDrawer({
       {
         key: "status",
         label: "Status",
-        children: (
+        children: recordDeleted ? (
           <SoftChip tone={status.tone} icon={leadStatusIcon(status.value)}>
             {status.label}
           </SoftChip>
+        ) : (
+          // The chip *is* the control everywhere else in the CRM; the drawer
+          // uses the same picker rather than a second implementation.
+          <LeadStatusPicker dealId={d.id} status={d.status} />
         ),
       },
       {
         key: "campaign",
         label: "Campaign",
-        children: campaign
-          ? campaign.deleted_at
-            ? `${campaign.name} (deleted)`
-            : campaign.name
-          : "—",
+        children: (
+          <InlineSelect
+            label="Campaign"
+            value={d.campaign_id}
+            options={withCurrent(
+              campaignOptions,
+              d.campaign_id,
+              campaign ? `${campaign.name} (deleted)` : "Unknown campaign",
+            )}
+            allowClear
+            placeholder="Where the lead came from"
+            errorText="Couldn't change the campaign."
+            onSave={(next) => saveDeal({ campaign_id: next })}
+            renderValue={(id) => {
+              const c = (campaigns ?? []).find((x) => x.id === id);
+              if (!c) return <InlineEmpty />;
+              return <span>{c.deleted_at ? `${c.name} (deleted)` : c.name}</span>;
+            }}
+          />
+        ),
       },
       {
         key: "close",
         label: "Close date",
-        children: crmDate(d.close_date),
+        children: (
+          <InlineDate
+            label="Close date"
+            value={d.close_date}
+            placeholder="Close date"
+            errorText="Couldn't change the close date."
+            onSave={(next) => saveDeal({ close_date: next })}
+          />
+        ),
       },
       {
         key: "phone",
         label: "Mobile number",
-        children: <PhoneWithCopy phone={d.phone} size={13} fallback="—" />,
+        children: (
+          <InlineText
+            label="Mobile number"
+            value={d.phone}
+            inputMode="tel"
+            maxLength={40}
+            placeholder="+91 98765 43210"
+            errorText="Couldn't save the number."
+            onSave={(next) => saveDeal({ phone: next || null })}
+            // Keeps the call link and the copy button — both swallow their own
+            // clicks, so following them never opens the editor.
+            renderValue={(v) => (
+              <PhoneWithCopy phone={v} size={13} fallback={<InlineEmpty />} />
+            )}
+          />
+        ),
       },
-      { key: "company", label: "Company", children: d.company?.name || "—" },
+      {
+        key: "company",
+        label: "Company",
+        children: (
+          <InlineSelect
+            label="Company"
+            value={d.company_id}
+            options={withCurrent(
+              companyOptions,
+              d.company_id,
+              d.company?.name ?? "Unknown company",
+            )}
+            allowClear
+            placeholder="Company"
+            errorText="Couldn't change the company."
+            onSave={(next) => saveDeal({ company_id: next })}
+          />
+        ),
+      },
       {
         key: "contact",
         label: "Point of contact",
-        children: crmPersonName(d.contact) || "—",
+        children: (
+          <InlineSelect
+            label="Point of contact"
+            value={d.contact_id}
+            options={withCurrent(
+              peopleOptions,
+              d.contact_id,
+              crmPersonName(d.contact) || "Unknown person",
+            )}
+            allowClear
+            placeholder="Person"
+            errorText="Couldn't change the point of contact."
+            onSave={(next) => saveDeal({ contact_id: next })}
+          />
+        ),
       },
       {
         key: "owner",
         label: "Owner",
-        children: d.owner_id ? userName(d.owner_id) : "—",
+        children: (
+          <InlineSelect
+            label="Owner"
+            value={d.owner_id}
+            options={withCurrent(
+              memberOptions,
+              d.owner_id,
+              userName(d.owner_id),
+            )}
+            allowClear
+            placeholder="Team member"
+            errorText="Couldn't change the owner."
+            onSave={(next) => saveDeal({ owner_id: next })}
+          />
+        ),
       },
       {
         key: "created",
@@ -455,7 +1169,23 @@ export function RecordDrawer({
         children: crmDate(d.created_at),
       },
     ];
-  }, [target, record, stages, campaigns, userName]);
+  }, [
+    target,
+    record,
+    recordDeleted,
+    stages,
+    campaigns,
+    stageOptions,
+    campaignOptions,
+    companyOptions,
+    peopleOptions,
+    memberOptions,
+    currencyOptions,
+    userName,
+    saveDeal,
+    savePerson,
+    saveCompany,
+  ]);
 
   const handleAddTask = async () => {
     const trimmed = newTask.trim();
@@ -654,6 +1384,11 @@ export function RecordDrawer({
         />
       ) : (
         <Tabs
+          // Keyed by the record, not just by field name: the Drawer destroys
+          // its children only *after* the exit motion, so closing one record
+          // and opening another inside that window would otherwise reuse the
+          // same inline controls — and their in-flight edit state with them.
+          key={target ? `${target.type}:${target.id}` : "none"}
           defaultActiveKey="overview"
           tabBarStyle={{ marginBottom: 14 }}
           items={[
@@ -662,17 +1397,37 @@ export function RecordDrawer({
               label: "Overview",
               children: (
                 <Panel padding={14}>
-                  <OverviewGrid>
-                    {overviewItems.map((item) => (
-                      <OverviewField
-                        key={item.key}
-                        label={item.label}
-                        span={item.span}
+                  {/* Fields edit in place — except on a record that is in the
+                      Deleted bin, which reads back but takes no writes. */}
+                  <InlineEditScope readOnly={recordDeleted}>
+                    {recordDeleted ? (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          marginBottom: 12,
+                          fontSize: 12.5,
+                          lineHeight: 1.45,
+                          color: token.colorTextTertiary,
+                        }}
                       >
-                        {item.children}
-                      </OverviewField>
-                    ))}
-                  </OverviewGrid>
+                        <MIcon name="delete" size={15} />
+                        This record is in Deleted — restore it to make changes.
+                      </div>
+                    ) : null}
+                    <OverviewGrid>
+                      {overviewItems.map((item) => (
+                        <OverviewField
+                          key={item.key}
+                          label={item.label}
+                          span={item.span}
+                        >
+                          {item.children}
+                        </OverviewField>
+                      ))}
+                    </OverviewGrid>
+                  </InlineEditScope>
                 </Panel>
               ),
             },
@@ -685,7 +1440,7 @@ export function RecordDrawer({
                 >
                   <Spin size="small" />
                 </div>
-              ) : (activities ?? []).length === 0 ? (
+              ) : timeline.length === 0 ? (
                 <EmptyState
                   compact
                   icon="history"
@@ -694,7 +1449,7 @@ export function RecordDrawer({
                 />
               ) : (
                 <Panel padding={0}>
-                  {(activities ?? []).map((a, index) => {
+                  {timeline.map((a, index) => {
                     const accent =
                       a.event === "created"
                         ? token.colorSuccess
