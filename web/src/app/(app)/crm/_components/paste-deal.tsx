@@ -57,7 +57,6 @@ type DealFormValues = {
   campaign_id?: string | null;
   close_date?: Dayjs | null;
   company_id?: string | null;
-  contact_id?: string | null;
   owner_id?: string | null;
   /** Set a personal follow-up nudge on the new deal. On by default. */
   remind?: boolean;
@@ -252,7 +251,6 @@ export function DealQuickCreate({
           : (liveCompanies.some((c) => c.id === lastCompanyId)
               ? lastCompanyId
               : null)),
-      contact_id: matchedPerson?.id ?? (canCreateContact ? CREATE_NEW : null),
       owner_id: user?.id ?? null,
       // A captured lead that nobody chases is a lost lead — so the nudge is on
       // unless the user says otherwise.
@@ -263,9 +261,7 @@ export function DealQuickCreate({
     active,
     stages,
     matchedCompany,
-    matchedPerson,
     canCreateCompany,
-    canCreateContact,
     liveCompanies,
     lastCompanyId,
     liveCampaigns,
@@ -281,24 +277,6 @@ export function DealQuickCreate({
       ...liveCompanies.map((c) => ({ value: c.id, label: c.name })),
     ],
     [canCreateCompany, parsed?.companyName, liveCompanies],
-  );
-
-  const contactOptions = useMemo(
-    () => [
-      ...(canCreateContact
-        ? [
-            {
-              value: CREATE_NEW,
-              label: `Create “${parsed?.personName ?? parsed?.email}”`,
-            },
-          ]
-        : []),
-      ...livePeople.map((p) => ({
-        value: p.id,
-        label: crmPersonName(p) || p.email || "Unnamed",
-      })),
-    ],
-    [canCreateContact, parsed?.personName, parsed?.email, livePeople],
   );
 
   const memberOptions = useMemo(
@@ -346,8 +324,11 @@ export function DealQuickCreate({
 
       const phone = values.phone?.trim() || null;
 
-      let contactId = values.contact_id ?? null;
-      if (contactId === CREATE_NEW) {
+      // No contact picker on this dialog any more — a fast capture should not
+      // stop to ask. A paste that identified a person is still real data
+      // though, so link them, creating the record when the CRM lacks it.
+      let contactId = matchedPerson?.id ?? null;
+      if (!contactId && canCreateContact) {
         const [first, ...rest] = (active.personName ?? "").trim().split(/\s+/);
         const created = await createPerson.mutateAsync({
           first_name: first || (active.email?.split("@")[0] ?? "New"),
@@ -408,8 +389,8 @@ export function DealQuickCreate({
 
       // Remember the account and the campaign so the next capture defaults
       // to both — a run of leads from one ad shouldn't need re-picking.
-      setLastCompanyId(companyId);
-      setLastCampaignId(values.campaign_id ?? null);
+      if (companyId) setLastCompanyId(companyId);
+      if (values.campaign_id) setLastCampaignId(values.campaign_id);
       if (reminderFailed) {
         message.warning("Deal created, but the follow-up reminder didn't save.");
       } else {
@@ -525,41 +506,38 @@ export function DealQuickCreate({
                   showSearch
                   optionFilterProp="label"
                   options={campaignOptions}
-                  placeholder="Campaign"
+                  placeholder="Which campaign?"
                   notFoundContent="No campaigns yet"
                 />
               </Form.Item>
             </Space.Compact>
 
-            <Form.Item name="company_id" label="Company">
-              <Select
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                options={companyOptions}
-                placeholder="Company"
-              />
-            </Form.Item>
-
-            <Form.Item name="contact_id" label="Point of contact">
-              <Select
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                options={contactOptions}
-                placeholder="Person"
-              />
-            </Form.Item>
-
-            <Form.Item name="owner_id" label="Owner">
-              <Select
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                options={memberOptions}
-                placeholder="Team member"
-              />
-            </Form.Item>
+            {/* Company and owner pair up: two more one-line pickers stacked
+                would push the reminder row below the fold on a laptop. */}
+            <Space.Compact style={{ width: "100%" }}>
+              <Form.Item
+                name="company_id"
+                label="Company"
+                style={{ flex: 1, marginRight: 8 }}
+              >
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  options={companyOptions}
+                  placeholder="Company"
+                />
+              </Form.Item>
+              <Form.Item name="owner_id" label="Owner" style={{ flex: 1 }}>
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  options={memberOptions}
+                  placeholder="Team member"
+                />
+              </Form.Item>
+            </Space.Compact>
 
             {/* The nudge that keeps a captured lead from going cold — a
                 personal reminder on the new deal, not a team task. */}
