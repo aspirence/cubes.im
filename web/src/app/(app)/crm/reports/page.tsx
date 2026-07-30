@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import { Button, Spin, theme } from "antd";
+import { useMemo, useState } from "react";
+import { Button, Segmented, Select, Spin, theme } from "antd";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 import { EChart, CHART_FONT, CHART_PALETTE } from "@/features/home/echart";
@@ -26,6 +26,7 @@ import { CONTENT_GRID, TILE_GRID } from "../_components/layout";
 import { closingWithin } from "../_lib/deal-metrics";
 import {
   CrmPageHeader,
+  CrmToolbar,
   EmptyState,
   ErrorState,
   Panel,
@@ -61,6 +62,23 @@ function labelOn(hex: string): string {
     ? "#fff"
     : "#111827";
 }
+
+/**
+ * How far back a report looks. "All time" stays the default: these numbers
+ * have always meant all time, and silently re-scoping a report someone has
+ * been reading for weeks is worse than making them pick.
+ */
+const RANGES = [
+  { value: "30", label: "30 days", days: 30, phrase: "in the last 30 days" },
+  { value: "90", label: "90 days", days: 90, phrase: "in the last 90 days" },
+  { value: "365", label: "12 months", days: 365, phrase: "in the last 12 months" },
+  { value: "ALL", label: "All time", days: null, phrase: "all time" },
+] as const;
+
+type RangeValue = (typeof RANGES)[number]["value"];
+
+const rangeMeta = (value: RangeValue) =>
+  RANGES.find((r) => r.value === value) ?? RANGES[3];
 
 export default function CrmReportsPage() {
   const { token } = theme.useToken();
@@ -100,9 +118,50 @@ export default function CrmReportsPage() {
     useCrmCampaignSpend();
   const { data: members } = useTeamMembers();
 
-  const liveDeals = useMemo(
+  const [range, setRange] = useState<RangeValue>("ALL");
+  const [ownerFilter, setOwnerFilter] = useState<string>("ALL");
+  const meta = rangeMeta(range);
+
+  /** `created_at` on or after this instant, or null when nothing is excluded. */
+  const since = useMemo(
+    () => (meta.days === null ? null : dayjs().subtract(meta.days, "day")),
+    [meta.days],
+  );
+  const inRange = useMemo(
+    () => (createdAt: string) =>
+      since === null || !dayjs(createdAt).isBefore(since),
+    [since],
+  );
+
+  /**
+   * Three populations, because the filters don't all apply to everything.
+   *
+   * `scopedDeals` is date-scoped only — the owner chart compares owners, so
+   * filtering it to one owner would leave it a single bar answering nothing.
+   * `ownedDeals` is owner-scoped only — "closing in 30 days" looks forward,
+   * and a lead created four months ago still closes next week.
+   */
+  const allLive = useMemo(
     () => (deals ?? []).filter((d) => !d.deleted_at),
     [deals],
+  );
+  const scopedDeals = useMemo(
+    () => allLive.filter((d) => inRange(d.created_at)),
+    [allLive, inRange],
+  );
+  const ownedDeals = useMemo(
+    () =>
+      ownerFilter === "ALL"
+        ? allLive
+        : allLive.filter((d) => (d.owner_id ?? "none") === ownerFilter),
+    [allLive, ownerFilter],
+  );
+  const liveDeals = useMemo(
+    () =>
+      ownerFilter === "ALL"
+        ? scopedDeals
+        : scopedDeals.filter((d) => (d.owner_id ?? "none") === ownerFilter),
+    [scopedDeals, ownerFilter],
   );
 
   /* ------------------------------------------------------------------ KPIs */
@@ -110,17 +169,38 @@ export default function CrmReportsPage() {
   const now = dayjs();
   const monthStart = now.startOf("month");
 
-  const newDealsThisMonth = useMemo(
-    () => liveDeals.filter((d) => dayjs(d.created_at).isAfter(monthStart)).length,
-    [liveDeals, monthStart],
-  );
+  const ownerLabel = useMemo(() => {
+    if (ownerFilter === "ALL") return "everyone";
+    if (ownerFilter === "none") return "unassigned deals";
+    const m = (members ?? []).find((x) => x.user?.id === ownerFilter);
+    return m?.user?.name ?? "this owner";
+  }, [ownerFilter, members]);
+
+  const scopeApplied = range !== "ALL" || ownerFilter !== "ALL";
+
+  /** The one sentence every scoped figure and caption hangs off. */
+  const scopeHint =
+    ownerFilter === "ALL"
+      ? meta.phrase
+      : `${ownerLabel} · ${meta.phrase}`;
+
+  /** New deals inside the scope — under "All time" that is every open deal. */
+  const newDeals = liveDeals.length;
+  // Forward-looking, so it reads the whole pipeline rather than the window.
   const closing30 = useMemo(
-    () => closingWithin(liveDeals, 30, now),
-    [liveDeals, now],
+    () => closingWithin(ownedDeals, 30, now),
+    [ownedDeals, now],
   );
   const tasksDone = useMemo(
-    () => (tasks ?? []).filter((t) => t.status === "DONE").length,
-    [tasks],
+    () =>
+      (tasks ?? []).filter(
+        (t) =>
+          t.status === "DONE" &&
+          inRange(t.created_at) &&
+          (ownerFilter === "ALL" ||
+            (t.assignee_id ?? "none") === ownerFilter),
+      ).length,
+    [tasks, inRange, ownerFilter],
   );
 
   /* ---------------------------------------------------------------- charts */
@@ -289,7 +369,9 @@ export default function CrmReportsPage() {
     const nameById = new Map<string, string>();
     for (const m of members ?? []) if (m.user) nameById.set(m.user.id, m.user.name);
     const totals = new Map<string, number>();
-    for (const d of liveDeals) {
+    // scopedDeals, not liveDeals: this is the one chart the owner picker must
+    // not narrow, or it ranks a field of one.
+    for (const d of scopedDeals) {
       const key = d.owner_id ? (nameById.get(d.owner_id) ?? "Unknown") : "Unassigned";
       totals.set(key, (totals.get(key) ?? 0) + 1);
     }
@@ -339,7 +421,7 @@ export default function CrmReportsPage() {
         ],
       },
     };
-  }, [liveDeals, members, axisText, chartTooltip, token.colorTextSecondary]);
+  }, [scopedDeals, members, axisText, chartTooltip, token.colorTextSecondary]);
 
   /**
    * Lead status is a STATE, not a category, so it wears the reserved status
@@ -595,6 +677,30 @@ export default function CrmReportsPage() {
     </Button>
   );
 
+  const clearScope = () => {
+    setRange("ALL");
+    setOwnerFilter("ALL");
+  };
+
+  /**
+   * The empty state a *filter* produced, as opposed to an empty CRM. Offering
+   * "Add deals to the pipeline" to someone whose 30-day window happens to be
+   * quiet sends them to create records they already have.
+   */
+  const scopeEmpty = (
+    <EmptyState
+      compact
+      icon="filter_alt_off"
+      title="Nothing in this range"
+      description={`No deals ${scopeHint}. Widen the range, or clear the filters to see all ${allLive.length}.`}
+      action={<Button onClick={clearScope}>Clear filters</Button>}
+    />
+  );
+
+  /** True when the CRM has deals but this scope hides them all. */
+  const hiddenByScope = scopeApplied && allLive.length > 0;
+  const hiddenByRange = range !== "ALL" && allLive.length > 0;
+
   return (
     <div style={crmPageStyle()}>
       <CrmPageHeader
@@ -622,44 +728,85 @@ export default function CrmReportsPage() {
         </div>
       ) : null}
 
+      <CrmToolbar>
+        <Segmented
+          value={range}
+          onChange={(v) => setRange(v as RangeValue)}
+          options={RANGES.map((r) => ({ value: r.value, label: r.label }))}
+        />
+        <Select
+          value={ownerFilter}
+          onChange={setOwnerFilter}
+          style={{ minWidth: 190 }}
+          options={[
+            { value: "ALL", label: "Everyone" },
+            ...(members ?? [])
+              .filter((m) => m.user)
+              .map((m) => ({ value: m.user!.id, label: m.user!.name })),
+            { value: "none", label: "Unassigned" },
+          ]}
+        />
+        {scopeApplied ? (
+          <Button
+            type="text"
+            icon={<MIcon name="filter_alt_off" size={16} />}
+            onClick={() => {
+              setRange("ALL");
+              setOwnerFilter("ALL");
+            }}
+          >
+            Clear
+          </Button>
+        ) : null}
+      </CrmToolbar>
+
       <div style={TILE_GRID}>
+        {/* Every label below names its own scope. A report whose caption says
+            "this month" while a 90-day filter is on is worse than one with no
+            filter at all — it is confidently mislabelled. */}
         <StatTile
           icon="target"
           color={CRM_ACCENT.deal}
-          label="New deals this month"
-          value={dealsLoading || dealsError ? "—" : newDealsThisMonth}
-          hint={now.format("MMMM YYYY")}
+          label={range === "ALL" ? "Open deals" : "New deals"}
+          value={dealsLoading || dealsError ? "—" : newDeals}
+          hint={scopeHint}
         />
         <StatTile
           icon="handshake"
           color={CRM_ACCENT.deal}
-          label="Open deals"
-          value={dealsLoading || dealsError ? "—" : liveDeals.length}
-          hint="everything currently in the pipeline"
+          label="In the pipeline"
+          value={dealsLoading || dealsError ? "—" : ownedDeals.length}
+          hint={
+            ownerFilter === "ALL"
+              ? "every open deal, whenever it came in"
+              : `${ownerLabel}, whenever it came in`
+          }
         />
         <StatTile
           icon="event_upcoming"
           color={CRM_ACCENT.deal}
           label="Closing in 30 days"
           value={dealsLoading || dealsError ? "—" : closing30}
-          hint="deals due to close"
+          hint="due to close — the whole pipeline, not the window"
         />
         <StatTile
           icon="task_alt"
           color={CRM_ACCENT.done}
           label="Tasks completed"
           value={tasksLoading || tasksError ? "—" : tasksDone}
-          hint="all CRM tasks marked done"
+          hint={scopeHint}
         />
       </div>
 
       <div style={CONTENT_GRID}>
         <Panel title="Stage funnel">
-          {caption("How many open deals sit in each stage of the pipeline.")}
+          {caption(`How many deals sit in each stage of the pipeline — ${scopeHint}.`)}
           {pipelineLoading ? (
             panelSpin
           ) : hasDeals ? (
             <EChart option={funnelOption} height={260} />
+          ) : hiddenByScope ? (
+            scopeEmpty
           ) : (
             <EmptyState
               compact
@@ -673,12 +820,14 @@ export default function CrmReportsPage() {
 
         <Panel title="Deals by close month">
           {caption(
-            "How many open deals are set to close in each of the next six months.",
+            `Of the deals ${scopeHint}, how many are set to close in each of the next six months.`,
           )}
           {dealsLoading ? (
             panelSpin
           ) : hasCloseDates ? (
             <EChart option={closeMonthOption} height={260} />
+          ) : hiddenByScope ? (
+            scopeEmpty
           ) : (
             <EmptyState
               compact
@@ -691,7 +840,11 @@ export default function CrmReportsPage() {
         </Panel>
 
         <Panel title="Deals by owner">
-          {caption("Who is carrying the pipeline — open deals per owner.")}
+          {caption(
+            // Deliberately ignores the owner picker: a one-bar ranking of one
+            // person answers nothing, so this panel always shows the field.
+            `Who is carrying the pipeline — deals per owner, ${meta.phrase}. Every owner, whichever one is picked above.`,
+          )}
           {dealsLoading ? (
             panelSpin
           ) : ownerOption.rows.length > 0 ? (
@@ -699,6 +852,8 @@ export default function CrmReportsPage() {
               option={ownerOption.option}
               height={Math.max(200, ownerOption.rows.length * 40)}
             />
+          ) : hiddenByRange ? (
+            scopeEmpty
           ) : (
             <EmptyState
               compact
@@ -712,7 +867,7 @@ export default function CrmReportsPage() {
 
         <Panel title="New records per month">
           {caption(
-            "How fast the database is growing — people and companies added each month.",
+            "How fast the database is growing — people and companies added each month. Always the last twelve months, whatever the range above.",
           )}
           {growthLoading ? (
             panelSpin
@@ -738,7 +893,7 @@ export default function CrmReportsPage() {
 
         <Panel title="Leads by status">
           {caption(
-            "How the leads themselves are doing — a separate question from where their cards sit on the board.",
+            `How the leads ${scopeHint} are doing — a separate question from where their cards sit on the board.`,
           )}
           {dealsLoading ? (
             panelSpin
@@ -747,6 +902,8 @@ export default function CrmReportsPage() {
               option={statusOption.option}
               height={Math.max(220, statusOption.rows.length * 34)}
             />
+          ) : hiddenByScope ? (
+            scopeEmpty
           ) : (
             <EmptyState
               compact
@@ -760,7 +917,7 @@ export default function CrmReportsPage() {
 
         <Panel title="Leads by campaign">
           {caption(
-            "Which campaigns actually produce leads — with cost per lead wherever daily spend has been logged. Junk leads count on the bar but not in the cost per lead.",
+            `Which campaigns actually produce leads ${meta.phrase} — with cost per lead wherever daily spend has been logged. Junk leads count on the bar but not in the cost per lead.`,
           )}
           {dealsLoading || campaignsLoading || spendLoading ? (
             panelSpin
@@ -769,6 +926,8 @@ export default function CrmReportsPage() {
               option={campaignOption.option}
               height={Math.max(200, campaignOption.rows.length * 40)}
             />
+          ) : hiddenByScope ? (
+            scopeEmpty
           ) : (
             <EmptyState
               compact
