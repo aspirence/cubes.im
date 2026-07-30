@@ -5,6 +5,7 @@ import {
   App,
   Button,
   Drawer,
+  Dropdown,
   Form,
   Input,
   InputNumber,
@@ -36,6 +37,7 @@ import { RecordDrawer } from "../_components/record-drawer";
 import { useRecordDeepLink } from "../_lib/record-deep-link";
 import { CrmToggle } from "../_components/crm-toggle";
 import { FormSection } from "../_components/form-section";
+import { BulkBar, useBulkRun } from "../_components/bulk-bar";
 import {
   CRM_DRAWER_BODY_STYLE,
   CRM_DRAWER_FORM_STYLE,
@@ -98,6 +100,8 @@ function CrmCompaniesPageInner() {
 
   const [search, setSearch] = useState("");
   const [showDeleted, setShowDeleted] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const bulk = useBulkRun(() => setSelected([]));
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CrmCompany | null>(null);
   /** Seeded from `?m=` so a reminder notification opens this record. */
@@ -289,6 +293,11 @@ function CrmCompaniesPageInner() {
           size="middle"
           loading={isLoading}
           dataSource={rows}
+          rowSelection={{
+            selectedRowKeys: selected,
+            onChange: (keys) => setSelected(keys as string[]),
+            preserveSelectedRowKeys: true,
+          }}
           pagination={{
             pageSize: 25,
             hideOnSinglePage: true,
@@ -498,6 +507,98 @@ function CrmCompaniesPageInner() {
             },
           ]}
         />
+
+        <BulkBar count={selected.length} onClear={() => setSelected([])}>
+          <Dropdown
+            disabled={bulk.busy || memberOptions.length === 0}
+            menu={{
+              items: [
+                ...memberOptions.map((m) => ({
+                  key: m.value,
+                  label: m.label,
+                })),
+                { type: "divider" as const },
+                { key: "__none__", label: "No owner" },
+              ],
+              onClick: ({ key }) =>
+                void bulk.run(selected, "Owner set", (id) =>
+                  updateCompany.mutateAsync({
+                    id,
+                    patch: {
+                      account_owner_id: key === "__none__" ? null : key,
+                    },
+                  }),
+                ),
+            }}
+          >
+            <Button size="small" icon={<MIcon name="person" size={15} />}>
+              Set owner
+            </Button>
+          </Dropdown>
+
+          {/* Qualifying a screenful of accounts at once is the reason ICP is a
+              flag rather than a note. */}
+          <Button
+            size="small"
+            disabled={bulk.busy}
+            icon={<MIcon name="star" size={15} />}
+            onClick={() =>
+              void bulk.run(selected, "Marked ICP", (id) =>
+                updateCompany.mutateAsync({ id, patch: { icp: true } }),
+              )
+            }
+          >
+            Mark ICP
+          </Button>
+          <Button
+            size="small"
+            disabled={bulk.busy}
+            icon={<MIcon name="star_border" size={15} />}
+            onClick={() =>
+              void bulk.run(selected, "Cleared ICP", (id) =>
+                updateCompany.mutateAsync({ id, patch: { icp: false } }),
+              )
+            }
+          >
+            Clear ICP
+          </Button>
+
+          {showDeleted ? (
+            <Button
+              size="small"
+              disabled={bulk.busy}
+              icon={<MIcon name="restore_from_trash" size={15} />}
+              onClick={() =>
+                void bulk.run(selected, "Restored", (id) =>
+                  setDeleted.mutateAsync({ id, deleted: false }),
+                )
+              }
+            >
+              Restore
+            </Button>
+          ) : (
+            <Popconfirm
+              title={`Delete ${selected.length} compan${selected.length === 1 ? "y" : "ies"}?`}
+              description="They move to Deleted and can be restored. People and deals stay, unlinked."
+              okText="Delete"
+              okButtonProps={{ danger: true }}
+              onConfirm={() =>
+                void bulk.run(selected, "Deleted", (id) =>
+                  setDeleted.mutateAsync({ id, deleted: true }),
+                )
+              }
+            >
+              <Button
+                size="small"
+                danger
+                disabled={bulk.busy}
+                icon={<MIcon name="delete" size={15} />}
+              >
+                Delete
+              </Button>
+            </Popconfirm>
+          )}
+        </BulkBar>
       </Panel>
 
       <Drawer

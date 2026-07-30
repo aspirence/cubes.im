@@ -5,6 +5,7 @@ import {
   App,
   Button,
   Drawer,
+  Dropdown,
   Form,
   Input,
   Popconfirm,
@@ -30,6 +31,7 @@ import { MIcon } from "../_components/m-icon";
 import { RecordDrawer } from "../_components/record-drawer";
 import { useRecordDeepLink } from "../_lib/record-deep-link";
 import { CrmToggle } from "../_components/crm-toggle";
+import { BulkBar, useBulkRun } from "../_components/bulk-bar";
 import { FormSection } from "../_components/form-section";
 import {
   CRM_DRAWER_BODY_STYLE,
@@ -83,6 +85,8 @@ function CrmPeoplePageInner() {
 
   const [search, setSearch] = useState("");
   const [showDeleted, setShowDeleted] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const bulk = useBulkRun(() => setSelected([]));
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CrmPersonWithCompany | null>(null);
   /** Seeded from `?m=` so a reminder notification opens this record. */
@@ -241,6 +245,11 @@ function CrmPeoplePageInner() {
           size="middle"
           loading={isLoading}
           dataSource={rows}
+          rowSelection={{
+            selectedRowKeys: selected,
+            onChange: (keys) => setSelected(keys as string[]),
+            preserveSelectedRowKeys: true,
+          }}
           pagination={{
             pageSize: 25,
             hideOnSinglePage: true,
@@ -401,6 +410,71 @@ function CrmPeoplePageInner() {
             },
           ]}
         />
+
+        <BulkBar count={selected.length} onClear={() => setSelected([])}>
+          {/* Pasted leads arrive in runs for one account, so filing a screenful
+              under a company is the move this list is actually used for. */}
+          <Dropdown
+            disabled={bulk.busy || companyOptions.length === 0}
+            menu={{
+              items: [
+                ...companyOptions.map((c) => ({
+                  key: c.value,
+                  label: c.label,
+                })),
+                { type: "divider" as const },
+                { key: "__none__", label: "No company" },
+              ],
+              onClick: ({ key }) =>
+                void bulk.run(selected, "Company set", (id) =>
+                  updatePerson.mutateAsync({
+                    id,
+                    patch: { company_id: key === "__none__" ? null : key },
+                  }),
+                ),
+            }}
+          >
+            <Button size="small" icon={<MIcon name="domain" size={15} />}>
+              Set company
+            </Button>
+          </Dropdown>
+
+          {showDeleted ? (
+            <Button
+              size="small"
+              disabled={bulk.busy}
+              icon={<MIcon name="restore_from_trash" size={15} />}
+              onClick={() =>
+                void bulk.run(selected, "Restored", (id) =>
+                  setDeleted.mutateAsync({ id, deleted: false }),
+                )
+              }
+            >
+              Restore
+            </Button>
+          ) : (
+            <Popconfirm
+              title={`Delete ${selected.length} ${selected.length === 1 ? "person" : "people"}?`}
+              description="They move to Deleted and can be restored."
+              okText="Delete"
+              okButtonProps={{ danger: true }}
+              onConfirm={() =>
+                void bulk.run(selected, "Deleted", (id) =>
+                  setDeleted.mutateAsync({ id, deleted: true }),
+                )
+              }
+            >
+              <Button
+                size="small"
+                danger
+                disabled={bulk.busy}
+                icon={<MIcon name="delete" size={15} />}
+              >
+                Delete
+              </Button>
+            </Popconfirm>
+          )}
+        </BulkBar>
       </Panel>
 
       <Drawer

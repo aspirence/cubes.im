@@ -2,14 +2,12 @@
 
 import { useMemo, useState } from "react";
 import {
-  App,
   Button,
   Dropdown,
   InputNumber,
   Popconfirm,
   Select,
   Table,
-  Tooltip,
   theme,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -24,12 +22,12 @@ import {
   type CrmLeadStatus,
   type CrmStage,
 } from "@/features/app-crm/types";
-import { errMsg } from "@/lib/err";
 import { MIcon } from "./m-icon";
 import { DealCell } from "./deal-glyph";
 import { LeadStatusPicker } from "./lead-status-picker";
 import { PhoneWithCopy } from "./phone-cell";
 import { leadStatusIcon } from "./entity-meta";
+import { BulkBar, useBulkRun } from "./bulk-bar";
 import { EntityAvatar, SoftChip, crmDate, crmPersonName } from "../_lib/ui";
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
@@ -54,7 +52,6 @@ export function DealsTable({
   onOpen: (dealId: string) => void;
 }) {
   const { token } = theme.useToken();
-  const { message } = App.useApp();
   const updateDeal = useUpdateCrmDeal();
   const setDeleted = useSetCrmDealDeleted();
 
@@ -62,7 +59,7 @@ export function DealsTable({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [goTo, setGoTo] = useState<number | null>(null);
-  const [busy, setBusy] = useState(false);
+  const bulk = useBulkRun(() => setSelected([]));
 
   const stageById = useMemo(() => {
     const map = new Map<string, CrmStage>();
@@ -72,26 +69,6 @@ export function DealsTable({
 
   const pageCount = Math.max(1, Math.ceil(deals.length / pageSize));
   const safePage = Math.min(page, pageCount);
-
-  /** Applies one change to every selected deal, then clears the selection. */
-  const runBulk = async (
-    label: string,
-    apply: (id: string) => Promise<unknown>,
-  ) => {
-    setBusy(true);
-    const results = await Promise.allSettled(selected.map(apply));
-    setBusy(false);
-    const failed = results.filter((r) => r.status === "rejected").length;
-    if (failed === 0) {
-      message.success(`${label} · ${selected.length} deal${selected.length === 1 ? "" : "s"}`);
-      setSelected([]);
-      return;
-    }
-    // Partial success is the normal failure here (RLS, a deleted row), so say
-    // how many landed rather than pretending the whole batch failed.
-    message.warning(`${label} · ${results.length - failed} done, ${failed} failed`);
-    setSelected([]);
-  };
 
   const columns: ColumnsType<CrmDealWithRefs> = [
     {
@@ -276,97 +253,63 @@ export function DealsTable({
         )}
       />
 
-      {/* Bulk bar — floats over the table only while something is selected, so
-          it never takes layout from the rows it acts on. */}
-      {selected.length > 0 ? (
-        <div
-          style={{
-            position: "sticky",
-            bottom: 16,
-            zIndex: 5,
-            margin: "0 auto",
-            width: "fit-content",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "8px 10px",
-            borderRadius: 10,
-            background: token.colorBgElevated,
-            border: `1px solid ${token.colorBorder}`,
-            boxShadow: token.boxShadowSecondary,
-          }}
-        >
-          <span style={{ fontSize: 12.5, fontWeight: 600, color: token.colorText }}>
-            {selected.length} selected
-          </span>
-          <span style={{ width: 1, height: 18, background: token.colorSplit }} />
-
-          <Dropdown
-            disabled={busy}
-            menu={{
-              items: CRM_LEAD_STATUSES.map((s) => ({
-                key: s.value,
-                label: s.label,
-                icon: <MIcon name={leadStatusIcon(s.value)} size={15} />,
-              })),
-              onClick: ({ key }) =>
-                void runBulk(`Marked ${crmLeadStatusMeta(key).label.toLowerCase()}`, (id) =>
+      <BulkBar count={selected.length} onClear={() => setSelected([])}>
+        <Dropdown
+          disabled={bulk.busy}
+          menu={{
+            items: CRM_LEAD_STATUSES.map((s) => ({
+              key: s.value,
+              label: s.label,
+              icon: <MIcon name={leadStatusIcon(s.value)} size={15} />,
+            })),
+            onClick: ({ key }) =>
+              void bulk.run(
+                selected,
+                `Marked ${crmLeadStatusMeta(key).label.toLowerCase()}`,
+                (id) =>
                   updateDeal.mutateAsync({
                     id,
                     patch: { status: key as CrmLeadStatus },
                   }),
-                ),
-            }}
-          >
-            <Button size="small" icon={<MIcon name="flag" size={15} />}>
-              Set status
-            </Button>
-          </Dropdown>
+              ),
+          }}
+        >
+          <Button size="small" icon={<MIcon name="flag" size={15} />}>
+            Set status
+          </Button>
+        </Dropdown>
 
-          <Dropdown
-            disabled={busy || stages.length === 0}
-            menu={{
-              items: stages.map((s) => ({ key: s.id, label: s.name })),
-              onClick: ({ key }) =>
-                void runBulk("Moved stage", (id) =>
-                  updateDeal.mutateAsync({ id, patch: { stage_id: key } }),
-                ),
-            }}
-          >
-            <Button size="small" icon={<MIcon name="swap_horiz" size={15} />}>
-              Move stage
-            </Button>
-          </Dropdown>
+        <Dropdown
+          disabled={bulk.busy || stages.length === 0}
+          menu={{
+            items: stages.map((s) => ({ key: s.id, label: s.name })),
+            onClick: ({ key }) =>
+              void bulk.run(selected, "Moved stage", (id) =>
+                updateDeal.mutateAsync({ id, patch: { stage_id: key } }),
+              ),
+          }}
+        >
+          <Button size="small" icon={<MIcon name="swap_horiz" size={15} />}>
+            Move stage
+          </Button>
+        </Dropdown>
 
-          <Popconfirm
-            title={`Delete ${selected.length} deal${selected.length === 1 ? "" : "s"}?`}
-            description="They move to Deleted and can be restored."
-            okText="Delete"
-            okButtonProps={{ danger: true }}
-            onConfirm={() =>
-              void runBulk("Deleted", (id) =>
-                setDeleted.mutateAsync({ id, deleted: true }).catch((err) => {
-                  throw new Error(errMsg(err, "Failed"));
-                }),
-              )
-            }
-          >
-            <Button size="small" danger icon={<MIcon name="delete" size={15} />}>
-              Delete
-            </Button>
-          </Popconfirm>
-
-          <Tooltip title="Clear selection">
-            <Button
-              size="small"
-              type="text"
-              aria-label="Clear selection"
-              onClick={() => setSelected([])}
-              icon={<MIcon name="close" size={15} />}
-            />
-          </Tooltip>
-        </div>
-      ) : null}
+        <Popconfirm
+          title={`Delete ${selected.length} deal${selected.length === 1 ? "" : "s"}?`}
+          description="They move to Deleted and can be restored."
+          okText="Delete"
+          okButtonProps={{ danger: true }}
+          onConfirm={() =>
+            void bulk.run(selected, "Deleted", (id) =>
+              setDeleted.mutateAsync({ id, deleted: true }),
+            )
+          }
+        >
+          <Button size="small" danger icon={<MIcon name="delete" size={15} />}>
+            Delete
+          </Button>
+        </Popconfirm>
+      </BulkBar>
     </div>
   );
 }
