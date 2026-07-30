@@ -7,6 +7,7 @@ import {
   Button,
   DatePicker,
   Drawer,
+  Dropdown,
   Form,
   Input,
   Popconfirm,
@@ -62,11 +63,13 @@ import { MIcon } from "../_components/m-icon";
 import { RecordDrawer } from "../_components/record-drawer";
 import { DealQuickCreate } from "../_components/paste-deal";
 import { CrmToggle } from "../_components/crm-toggle";
+import { BulkBar, useBulkRun } from "../_components/bulk-bar";
 import { LeadStatusPicker } from "../_components/lead-status-picker";
 import { DealCell } from "../_components/deal-glyph";
 import {
   CRM_ACCENT,
   NO_STAGE_COLOR,
+  leadStatusIcon,
 } from "../_components/entity-meta";
 import { TILE_GRID } from "../_components/layout";
 import { FormSection } from "../_components/form-section";
@@ -480,6 +483,13 @@ function CrmDealsPageInner() {
     useRecordDeepLink("deal");
   const [activeDeal, setActiveDeal] = useState<CrmDealWithRefs | null>(null);
   const [confirmRowId, setConfirmRowId] = useState<string | null>(null);
+  /**
+   * The table's selection. The dashboard's deal list has had bulk status and
+   * stage moves since the lead-desk work; this screen — the one people
+   * actually work leads on all day — was still one drawer at a time.
+   */
+  const [selected, setSelected] = useState<string[]>([]);
+  const bulk = useBulkRun(() => setSelected([]));
   const [form] = Form.useForm<DealFormValues>();
 
   const sensors = useSensors(
@@ -560,6 +570,24 @@ function CrmDealsPageInner() {
     for (const m of members ?? []) if (m.user) map.set(m.user.id, m.user.name);
     return (id: string | null) => (id && map.get(id)) || "—";
   }, [members]);
+
+  /**
+   * Who a batch can be handed to. "Unassigned" is on the list on purpose:
+   * taking an owner off is as much a bulk action as putting one on.
+   */
+  const ownerOptions = useMemo(
+    () => [
+      ...(members ?? [])
+        .filter((m) => m.user)
+        .map((m) => ({
+          key: m.user!.id,
+          label: m.user!.name,
+        })),
+      { type: "divider" as const, key: "sep" },
+      { key: "none", label: "Unassigned" },
+    ],
+    [members],
+  );
 
   /** Soft-deleted campaigns are included — a deal keeps the name it was won on. */
   const campaignName = useMemo(() => {
@@ -867,7 +895,11 @@ function CrmDealsPageInner() {
       <CrmToolbar>
         <Segmented
           value={view}
-          onChange={(v) => setView(v as "board" | "table")}
+          onChange={(v) => {
+            setView(v as "board" | "table");
+            // The board has no bulk bar to act on a carried-over selection.
+            setSelected([]);
+          }}
           options={[
             {
               value: "board",
@@ -924,7 +956,10 @@ function CrmDealsPageInner() {
         {view === "table" && (
           <CrmToggle
             checked={showDeleted}
-            onChange={setShowDeleted}
+            onChange={(next) => {
+              setShowDeleted(next);
+              setSelected([]);
+            }}
             label="Deleted"
           />
         )}
@@ -1061,15 +1096,23 @@ function CrmDealsPageInner() {
             }}
             // Sum of the fixed column widths — anything smaller and AntD's
             // fixed table layout squeezes every column instead of scrolling.
-            // 260 deal + 150 stage + 140 status + 160 campaign + 190 contact
-            // + 180 mobile + 150 owner + 140 close date + 110 actions.
-            scroll={{ x: 1480 }}
+            // 32 select + 260 deal + 150 stage + 140 status + 160 campaign
+            // + 190 contact + 180 mobile + 150 owner + 140 close date
+            // + 110 actions.
+            scroll={{ x: 1512 }}
             locale={{
               emptyText: isLoading ? (
                 <div style={{ height: 120 }} />
               ) : (
                 tableEmpty
               ),
+            }}
+            rowSelection={{
+              selectedRowKeys: selected,
+              onChange: (keys) => setSelected(keys as string[]),
+              // Keeps a selection alive across paging and re-sorting, which is
+              // how a hundred pasted leads actually get worked.
+              preserveSelectedRowKeys: true,
             }}
             onRow={(d) => ({
               onClick: () => setViewTarget({ type: "deal", id: d.id }),
@@ -1331,6 +1374,137 @@ function CrmDealsPageInner() {
               },
             ]}
           />
+
+          <BulkBar count={selected.length} onClear={() => setSelected([])}>
+            {showDeleted ? (
+              <>
+                <Button
+                  size="small"
+                  disabled={bulk.busy}
+                  icon={<MIcon name="restore_from_trash" size={15} />}
+                  onClick={() =>
+                    void bulk.run(selected, "Restored", (id) =>
+                      setDeleted.mutateAsync({ id, deleted: false }),
+                    )
+                  }
+                >
+                  Restore
+                </Button>
+                <Popconfirm
+                  title={`Permanently delete ${selected.length} deal${selected.length === 1 ? "" : "s"}?`}
+                  description="This cannot be undone."
+                  okText="Delete forever"
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() =>
+                    void bulk.run(selected, "Permanently deleted", (id) =>
+                      destroyDeal.mutateAsync(id),
+                    )
+                  }
+                >
+                  <Button
+                    size="small"
+                    danger
+                    disabled={bulk.busy}
+                    icon={<MIcon name="delete_forever" size={15} />}
+                  >
+                    Delete forever
+                  </Button>
+                </Popconfirm>
+              </>
+            ) : (
+              <>
+                <Dropdown
+                  disabled={bulk.busy}
+                  menu={{
+                    items: CRM_LEAD_STATUSES.map((st) => ({
+                      key: st.value,
+                      label: st.label,
+                      icon: <MIcon name={leadStatusIcon(st.value)} size={15} />,
+                    })),
+                    onClick: ({ key }) =>
+                      void bulk.run(
+                        selected,
+                        `Marked ${crmLeadStatusMeta(key).label.toLowerCase()}`,
+                        (id) =>
+                          updateDeal.mutateAsync({
+                            id,
+                            patch: { status: key as CrmLeadStatus },
+                          }),
+                      ),
+                  }}
+                >
+                  <Button size="small" icon={<MIcon name="flag" size={15} />}>
+                    Set status
+                  </Button>
+                </Dropdown>
+
+                <Dropdown
+                  disabled={bulk.busy || (stages ?? []).length === 0}
+                  menu={{
+                    items: (stages ?? []).map((st) => ({
+                      key: st.id,
+                      label: st.name,
+                    })),
+                    onClick: ({ key }) =>
+                      void bulk.run(selected, "Moved stage", (id) =>
+                        updateDeal.mutateAsync({ id, patch: { stage_id: key } }),
+                      ),
+                  }}
+                >
+                  <Button
+                    size="small"
+                    icon={<MIcon name="swap_horiz" size={15} />}
+                  >
+                    Move stage
+                  </Button>
+                </Dropdown>
+
+                {/* Handing a batch of pasted leads to whoever is calling them
+                    is the other half of the job the paste dialog started. */}
+                <Dropdown
+                  disabled={bulk.busy || ownerOptions.length === 0}
+                  menu={{
+                    items: ownerOptions,
+                    onClick: ({ key }) =>
+                      void bulk.run(selected, "Owner set", (id) =>
+                        updateDeal.mutateAsync({
+                          id,
+                          patch: { owner_id: key === "none" ? null : key },
+                        }),
+                      ),
+                  }}
+                >
+                  <Button
+                    size="small"
+                    icon={<MIcon name="person_add" size={15} />}
+                  >
+                    Assign
+                  </Button>
+                </Dropdown>
+
+                <Popconfirm
+                  title={`Delete ${selected.length} deal${selected.length === 1 ? "" : "s"}?`}
+                  description="They move to Deleted and can be restored."
+                  okText="Delete"
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() =>
+                    void bulk.run(selected, "Deleted", (id) =>
+                      setDeleted.mutateAsync({ id, deleted: true }),
+                    )
+                  }
+                >
+                  <Button
+                    size="small"
+                    danger
+                    disabled={bulk.busy}
+                    icon={<MIcon name="delete" size={15} />}
+                  >
+                    Delete
+                  </Button>
+                </Popconfirm>
+              </>
+            )}
+          </BulkBar>
         </Panel>
       )}
 
