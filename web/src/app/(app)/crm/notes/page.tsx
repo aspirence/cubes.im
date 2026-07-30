@@ -9,10 +9,12 @@ import {
   Input,
   Popconfirm,
   Segmented,
+  Select,
   Spin,
   Tooltip,
   theme,
 } from "antd";
+import { useAuth } from "@/features/auth/use-auth";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
 import {
   useCreateCrmNote,
@@ -81,6 +83,7 @@ export default function CrmNotesPage() {
   const { data: people } = useCrmPeople();
   const { data: companies } = useCrmCompanies();
   const { data: deals } = useCrmDeals();
+  const { user } = useAuth();
   const { data: members } = useTeamMembers();
   const createNote = useCreateCrmNote();
   const updateNote = useUpdateCrmNote();
@@ -88,6 +91,10 @@ export default function CrmNotesPage() {
 
   const [search, setSearch] = useState("");
   const [linkFilter, setLinkFilter] = useState<LinkFilter>("all");
+  const [authorFilter, setAuthorFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<"newest" | "oldest" | "updated">(
+    "newest",
+  );
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CrmNoteWithTargets | null>(null);
   const [viewTarget, setViewTarget] = useState<CrmTargetRef | null>(null);
@@ -120,21 +127,45 @@ export default function CrmNotesPage() {
 
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return (notes ?? []).filter((n) => {
+    const filtered = (notes ?? []).filter((n) => {
       if (
         linkFilter !== "all" &&
         !n.targets.some((t) => t.target_type === linkFilter)
       ) {
         return false;
       }
+      if (authorFilter !== "all" && n.created_by !== authorFilter) return false;
       if (!needle) return true;
-      return [n.title, n.body ?? ""].join(" ").toLowerCase().includes(needle);
+      // "Everything we wrote about Acme" is the question a note archive is
+      // actually asked, so the records a note is filed against are part of
+      // its searchable text — not just its own words.
+      const linked = n.targets
+        .map((t) => recordName(t.target_type, t.target_id) ?? "")
+        .join(" ");
+      return [n.title, n.body ?? "", linked, author(n.created_by).name]
+        .join(" ")
+        .toLowerCase()
+        .includes(needle);
     });
-  }, [notes, search, linkFilter]);
+    const sorted = [...filtered];
+    if (sortBy === "oldest") {
+      sorted.sort((a, b) => a.created_at.localeCompare(b.created_at));
+    } else if (sortBy === "updated") {
+      sorted.sort((a, b) =>
+        (b.updated_at ?? b.created_at).localeCompare(
+          a.updated_at ?? a.created_at,
+        ),
+      );
+    } else {
+      sorted.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    }
+    return sorted;
+  }, [notes, search, linkFilter, authorFilter, sortBy, recordName, author]);
 
   const clearFilters = () => {
     setSearch("");
     setLinkFilter("all");
+    setAuthorFilter("all");
   };
 
   const openCreate = () => {
@@ -292,6 +323,12 @@ export default function CrmNotesPage() {
       const needle = search.trim();
       const linked =
         linkFilter === "all" ? null : ENTITY_META[linkFilter].plural.toLowerCase();
+      const authorLabel =
+        authorFilter === "all"
+          ? null
+          : authorFilter === user?.id
+            ? "you"
+            : author(authorFilter).name;
       return (
         <Panel padding={0}>
           <EmptyState
@@ -299,11 +336,19 @@ export default function CrmNotesPage() {
             title={
               needle ? "No notes match your search" : "No notes match this filter"
             }
-            description={
-              needle
-                ? `Nothing${linked ? ` filed against ${linked}` : ""} here mentions “${needle}”. Try a different word, or clear the filters to see all ${(notes ?? []).length} notes.`
-                : `No notes are linked to ${linked}. Clear the filter to see all ${(notes ?? []).length} notes.`
-            }
+            description={(() => {
+              const total = (notes ?? []).length;
+              if (needle) {
+                return `Nothing${linked ? ` filed against ${linked}` : ""} here mentions “${needle}”. Try a different word, or clear the filters to see all ${total} notes.`;
+              }
+              // Either filter can be the one holding the list empty, so the
+              // sentence has to name whichever is actually on.
+              const parts = [
+                linked ? `linked to ${linked}` : null,
+                authorFilter === "all" ? null : `written by ${authorLabel}`,
+              ].filter(Boolean);
+              return `No notes ${parts.join(" and ")}. Clear the filters to see all ${total} notes.`;
+            })()}
             action={<Button onClick={clearFilters}>Clear filters</Button>}
           />
         </Panel>
@@ -546,7 +591,8 @@ export default function CrmNotesPage() {
         <CrmSearch
           value={search}
           onChange={setSearch}
-          placeholder="Search notes…"
+          placeholder="Search notes and what they're on…"
+          width={260}
         />
         {/* Filed against what — the second question after "what does it say". */}
         <Segmented
@@ -558,6 +604,30 @@ export default function CrmNotesPage() {
               value: t,
               label: ENTITY_META[t].plural,
             })),
+          ]}
+        />
+        <Select
+          value={authorFilter}
+          onChange={setAuthorFilter}
+          style={{ minWidth: 150 }}
+          options={[
+            { value: "all", label: "Anyone" },
+            ...(members ?? [])
+              .filter((m) => m.active && m.user)
+              .map((m) => ({
+                value: m.user!.id,
+                label: m.user!.id === user?.id ? "Me" : m.user!.name,
+              })),
+          ]}
+        />
+        <Select
+          value={sortBy}
+          onChange={setSortBy}
+          style={{ minWidth: 160 }}
+          options={[
+            { value: "newest", label: "Newest first" },
+            { value: "oldest", label: "Oldest first" },
+            { value: "updated", label: "Recently edited" },
           ]}
         />
         <div style={{ marginLeft: "auto" }}>{newNoteButton}</div>
