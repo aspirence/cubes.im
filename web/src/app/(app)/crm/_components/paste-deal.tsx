@@ -58,7 +58,7 @@ type DealFormValues = {
   close_date?: Dayjs | null;
   company_id?: string | null;
   owner_id?: string | null;
-  /** Set a personal follow-up nudge on the new deal. On by default. */
+  /** Set a personal follow-up nudge on the new deal. Off by default. */
   remind?: boolean;
   remind_at?: Dayjs | null;
 };
@@ -141,7 +141,7 @@ export function DealQuickCreate({
   const createReminder = useCreateCrmReminder();
 
   /** Only show the "when" picker while the follow-up box is ticked. */
-  const remindTicked = Form.useWatch("remind", form) ?? true;
+  const remindTicked = Form.useWatch("remind", form) ?? false;
 
   const liveCompanies = useMemo(
     () => (companies ?? []).filter((c) => !c.deleted_at),
@@ -252,9 +252,9 @@ export function DealQuickCreate({
               ? lastCompanyId
               : null)),
       owner_id: user?.id ?? null,
-      // A captured lead that nobody chases is a lost lead — so the nudge is on
-      // unless the user says otherwise.
-      remind: true,
+      // Off by default: most captures do not want a nudge, and a dialog that
+      // silently schedules one for every lead turns the bell into noise.
+      remind: false,
       remind_at: crmDefaultRemindAt(),
     };
   }, [
