@@ -58,6 +58,7 @@ import {
   CrmSearch,
   CrmToolbar,
   EmptyState,
+  ErrorState,
   EntityAvatar,
   Panel,
   RowActions,
@@ -109,7 +110,13 @@ export default function CrmTasksPage() {
   const { message } = App.useApp();
   const { token } = theme.useToken();
   const { user } = useAuth();
-  const { data: tasks, isLoading } = useCrmTasks();
+  const {
+    data: tasks,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useCrmTasks();
   const { data: people } = useCrmPeople();
   const { data: companies } = useCrmCompanies();
   const { data: deals } = useCrmDeals();
@@ -326,6 +333,18 @@ export default function CrmTasksPage() {
   );
 
   const emptyState = (() => {
+    // Error first: a dropped connection rendered as "No tasks yet" tells the
+    // user their follow-ups are gone, which is the one thing it never means.
+    if (isError) {
+      return (
+        <ErrorState
+          compact
+          title="Couldn't load tasks"
+          error={error}
+          onRetry={() => void refetch()}
+        />
+      );
+    }
     if ((tasks ?? []).length === 0) {
       return (
         <EmptyState
@@ -415,7 +434,7 @@ export default function CrmTasksPage() {
       <CrmPageHeader
         title="Tasks"
         subtitle="Follow-ups and to-dos linked to the people, companies and deals you work."
-        count={isLoading ? null : rows.length}
+        count={isLoading || isError ? null : rows.length}
       />
 
       <CrmToolbar>

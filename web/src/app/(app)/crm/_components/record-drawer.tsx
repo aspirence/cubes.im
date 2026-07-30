@@ -83,6 +83,7 @@ import {
 } from "./reminder-controls";
 import {
   EmptyState,
+  ErrorState,
   EntityAvatar,
   OverviewField,
   OverviewGrid,
@@ -457,9 +458,24 @@ export function RecordDrawer({
   const { message } = App.useApp();
   const { token } = theme.useToken();
   useCrmStyles();
-  const { data: people, isLoading: peopleLoading } = useCrmPeople();
-  const { data: companies, isLoading: companiesLoading } = useCrmCompanies();
-  const { data: deals, isLoading: dealsLoading } = useCrmDeals();
+  const {
+    data: people,
+    isLoading: peopleLoading,
+    isError: peopleError,
+    refetch: refetchPeople,
+  } = useCrmPeople();
+  const {
+    data: companies,
+    isLoading: companiesLoading,
+    isError: companiesError,
+    refetch: refetchCompanies,
+  } = useCrmCompanies();
+  const {
+    data: deals,
+    isLoading: dealsLoading,
+    isError: dealsError,
+    refetch: refetchDeals,
+  } = useCrmDeals();
   const { data: stages } = useCrmStages();
   const { data: campaigns } = useCrmCampaigns();
   const { data: members } = useTeamMembers();
@@ -513,6 +529,25 @@ export function RecordDrawer({
         ? companiesLoading
         : dealsLoading
     : false;
+
+  /**
+   * Same reasoning one step further: if the list FAILED, `record` is undefined
+   * for exactly the same reason it is while loading — so the drawer must not
+   * announce a deletion it has no evidence for.
+   */
+  const recordFailed = target
+    ? target.type === "person"
+      ? peopleError
+      : target.type === "company"
+        ? companiesError
+        : dealsError
+    : false;
+  const retryRecord = () => {
+    if (!target) return;
+    if (target.type === "person") void refetchPeople();
+    else if (target.type === "company") void refetchCompanies();
+    else void refetchDeals();
+  };
 
   /**
    * A record in the Deleted bin is shown, not edited — restore it first. Every
@@ -1376,6 +1411,11 @@ export function RecordDrawer({
         <div style={{ display: "grid", placeItems: "center", padding: 64 }}>
           <Spin size="large" />
         </div>
+      ) : recordFailed && !record ? (
+        <ErrorState
+          title="Couldn't open this record"
+          onRetry={retryRecord}
+        />
       ) : !record ? (
         <EmptyState
           icon="search_off"

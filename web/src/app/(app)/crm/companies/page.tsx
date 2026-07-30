@@ -50,6 +50,7 @@ import {
   CrmSearch,
   CrmToolbar,
   EmptyState,
+  ErrorState,
   EntityAvatar,
   EntityCell,
   Panel,
@@ -89,7 +90,13 @@ export default function CrmCompaniesPage() {
 function CrmCompaniesPageInner() {
   const { token } = theme.useToken();
   const { message } = App.useApp();
-  const { data: companies, isLoading } = useCrmCompanies();
+  const {
+    data: companies,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useCrmCompanies();
   const { data: people } = useCrmPeople();
   const { data: members } = useTeamMembers();
   const { data: clients } = useClients();
@@ -224,7 +231,16 @@ function CrmCompaniesPageInner() {
     </span>
   );
 
-  const emptyText = search.trim() ? (
+  // A failed fetch must never fall through to "No companies yet" — an empty
+  // account is a very different message from a query that didn't come back.
+  const emptyText = isError ? (
+    <ErrorState
+      compact
+      title="Couldn't load companies"
+      error={error}
+      onRetry={() => void refetch()}
+    />
+  ) : search.trim() ? (
     <EmptyState
       compact
       icon="search_off"
@@ -262,7 +278,7 @@ function CrmCompaniesPageInner() {
     <div style={crmPageStyle()}>
       <CrmPageHeader
         title="Companies"
-        count={isLoading ? null : rows.length}
+        count={isLoading || isError ? null : rows.length}
         subtitle="The accounts your team sells to — their people, revenue and owner."
       />
 

@@ -27,6 +27,7 @@ import { closingWithin } from "../_lib/deal-metrics";
 import {
   CrmPageHeader,
   EmptyState,
+  ErrorState,
   Panel,
   StatTile,
   crmMoneyPrecise,
@@ -64,11 +65,36 @@ function labelOn(hex: string): string {
 export default function CrmReportsPage() {
   const { token } = theme.useToken();
   const router = useRouter();
-  const { data: deals, isLoading: dealsLoading } = useCrmDeals();
-  const { data: stages, isLoading: stagesLoading } = useCrmStages();
-  const { data: people, isLoading: peopleLoading } = useCrmPeople();
-  const { data: companies, isLoading: companiesLoading } = useCrmCompanies();
-  const { data: tasks, isLoading: tasksLoading } = useCrmTasks();
+  const {
+    data: deals,
+    isLoading: dealsLoading,
+    isError: dealsError,
+    refetch: refetchDeals,
+  } = useCrmDeals();
+  const {
+    data: stages,
+    isLoading: stagesLoading,
+    isError: stagesError,
+    refetch: refetchStages,
+  } = useCrmStages();
+  const {
+    data: people,
+    isLoading: peopleLoading,
+    isError: peopleError,
+    refetch: refetchPeople,
+  } = useCrmPeople();
+  const {
+    data: companies,
+    isLoading: companiesLoading,
+    isError: companiesError,
+    refetch: refetchCompanies,
+  } = useCrmCompanies();
+  const {
+    data: tasks,
+    isLoading: tasksLoading,
+    isError: tasksError,
+    refetch: refetchTasks,
+  } = useCrmTasks();
   const { data: campaigns, isLoading: campaignsLoading } = useCrmCampaigns();
   const { data: campaignSpend, isLoading: spendLoading } =
     useCrmCampaignSpend();
@@ -527,6 +553,21 @@ export default function CrmReportsPage() {
   const hasRecords =
     (people ?? []).length + (companies ?? []).length > 0;
 
+  /**
+   * A report is only ever read as a fact. A chart drawn from a query that
+   * failed doesn't look broken — it looks like a flat month — so the whole
+   * page says so once, up top, rather than plotting a confident zero.
+   */
+  const loadFailed =
+    dealsError || stagesError || peopleError || companiesError || tasksError;
+  const retryAll = () => {
+    if (dealsError) void refetchDeals();
+    if (stagesError) void refetchStages();
+    if (peopleError) void refetchPeople();
+    if (companiesError) void refetchCompanies();
+    if (tasksError) void refetchTasks();
+  };
+
   /** In-panel loading treatment — same shape in every panel on the page. */
   const panelSpin = (
     <div style={{ display: "grid", placeItems: "center", padding: 40 }}>
@@ -569,33 +610,45 @@ export default function CrmReportsPage() {
         }
       />
 
+      {loadFailed ? (
+        <div style={{ marginBottom: 14 }}>
+          <Panel padding={8}>
+            <ErrorState
+              compact
+              title="Some of these numbers didn't load"
+              onRetry={retryAll}
+            />
+          </Panel>
+        </div>
+      ) : null}
+
       <div style={TILE_GRID}>
         <StatTile
           icon="target"
           color={CRM_ACCENT.deal}
           label="New deals this month"
-          value={dealsLoading ? "—" : newDealsThisMonth}
+          value={dealsLoading || dealsError ? "—" : newDealsThisMonth}
           hint={now.format("MMMM YYYY")}
         />
         <StatTile
           icon="handshake"
           color={CRM_ACCENT.deal}
           label="Open deals"
-          value={dealsLoading ? "—" : liveDeals.length}
+          value={dealsLoading || dealsError ? "—" : liveDeals.length}
           hint="everything currently in the pipeline"
         />
         <StatTile
           icon="event_upcoming"
           color={CRM_ACCENT.deal}
           label="Closing in 30 days"
-          value={dealsLoading ? "—" : closing30}
+          value={dealsLoading || dealsError ? "—" : closing30}
           hint="deals due to close"
         />
         <StatTile
           icon="task_alt"
           color={CRM_ACCENT.done}
           label="Tasks completed"
-          value={tasksLoading ? "—" : tasksDone}
+          value={tasksLoading || tasksError ? "—" : tasksDone}
           hint="all CRM tasks marked done"
         />
       </div>

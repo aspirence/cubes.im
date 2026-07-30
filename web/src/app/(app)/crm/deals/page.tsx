@@ -84,6 +84,7 @@ import {
   CrmSearch,
   CrmToolbar,
   EmptyState,
+  ErrorState,
   EntityAvatar,
   Panel,
   RowActions,
@@ -442,8 +443,19 @@ function CrmDealsPageInner() {
   const { message } = App.useApp();
   const { token } = theme.useToken();
   const router = useRouter();
-  const { data: deals, isLoading } = useCrmDeals();
-  const { data: stages, isLoading: stagesLoading } = useCrmStages();
+  const {
+    data: deals,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useCrmDeals();
+  const {
+    data: stages,
+    isLoading: stagesLoading,
+    isError: stagesError,
+    refetch: refetchStages,
+  } = useCrmStages();
   const { data: campaigns } = useCrmCampaigns();
   const { data: companies } = useCrmCompanies();
   const { data: people } = useCrmPeople();
@@ -762,6 +774,16 @@ function CrmDealsPageInner() {
   };
 
   const boardLoading = isLoading || stagesLoading;
+  /**
+   * The board is the worst place to swallow a failure: no columns reads as
+   * "set up your pipeline" and no cards reads as "you have no deals", so a
+   * dropped request would send someone off to rebuild a pipeline that exists.
+   */
+  const boardError = isError || stagesError;
+  const retryBoard = () => {
+    if (isError) void refetch();
+    if (stagesError) void refetchStages();
+  };
 
   /**
    * "Your filters hid everything" — shared by the table and the board, which
@@ -787,7 +809,14 @@ function CrmDealsPageInner() {
     />
   ) : null;
 
-  const tableEmpty = filteredEmpty ? (
+  const tableEmpty = isError ? (
+    <ErrorState
+      compact
+      title="Couldn't load deals"
+      error={error}
+      onRetry={() => void refetch()}
+    />
+  ) : filteredEmpty ? (
     filteredEmpty
   ) : showDeleted ? (
     <EmptyState
@@ -821,10 +850,10 @@ function CrmDealsPageInner() {
         title="Deals"
         count={
           view === "board"
-            ? boardLoading
+            ? boardLoading || boardError
               ? null
               : boardDeals.length
-            : isLoading
+            : isLoading || isError
               ? null
               : tableRows.length
         }
@@ -917,7 +946,7 @@ function CrmDealsPageInner() {
               icon="handshake"
               color={CRM_ACCENT.deal}
               label="Open deals"
-              value={boardLoading ? "—" : boardDeals.length}
+              value={boardLoading || boardError ? "—" : boardDeals.length}
               hint={`Across ${columns.length} ${
                 columns.length === 1 ? "column" : "columns"
               } on the board`}
@@ -926,7 +955,7 @@ function CrmDealsPageInner() {
               icon="event_upcoming"
               color={CRM_ACCENT.deal}
               label="Closing in 30 days"
-              value={boardLoading ? "—" : closing30}
+              value={boardLoading || boardError ? "—" : closing30}
               hint="deals due to close"
             />
           </div>
@@ -935,6 +964,14 @@ function CrmDealsPageInner() {
             <div style={{ display: "grid", placeItems: "center", padding: 64 }}>
               <Spin size="large" />
             </div>
+          ) : boardError ? (
+            <Panel padding={8}>
+              <ErrorState
+                title="Couldn't load the pipeline"
+                error={error}
+                onRetry={retryBoard}
+              />
+            </Panel>
           ) : boardDeals.length === 0 && filteredEmpty ? (
             /* Without this the board renders N columns of "Drop a deal here"
                and never says the filter is why they are all empty. */

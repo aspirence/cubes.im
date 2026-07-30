@@ -34,6 +34,7 @@ import {
   CrmSearch,
   CrmToolbar,
   EmptyState,
+  ErrorState,
   EntityAvatar,
   Panel,
   SoftChip,
@@ -85,7 +86,13 @@ export default function CrmRemindersPage() {
   const { token } = theme.useToken();
   const { message } = App.useApp();
   const { user, loading: authLoading } = useAuth();
-  const { data: reminders, isLoading: remindersLoading } = useCrmReminders();
+  const {
+    data: reminders,
+    isLoading: remindersLoading,
+    isError,
+    error,
+    refetch,
+  } = useCrmReminders();
   // Until auth resolves, "mine" is unknowable — don't flash an empty desk.
   const isLoading = remindersLoading || authLoading;
   const { data: people } = useCrmPeople();
@@ -400,6 +407,16 @@ export default function CrmRemindersPage() {
           <div style={{ display: "grid", placeItems: "center", padding: 56 }}>
             <Spin size="large" />
           </div>
+        </Panel>
+      ) : isError ? (
+        // "Nothing on your plate" is the most dangerous empty state in the
+        // CRM — it says the follow-ups are handled. Never say it on a failure.
+        <Panel padding={8}>
+          <ErrorState
+            title="Couldn't load reminders"
+            error={error}
+            onRetry={() => void refetch()}
+          />
         </Panel>
       ) : groups.open.length === 0 ? (
         <Panel padding={8}>

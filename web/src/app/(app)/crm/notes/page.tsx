@@ -54,6 +54,7 @@ import {
   CrmSearch,
   CrmToolbar,
   EmptyState,
+  ErrorState,
   EntityAvatar,
   Panel,
   RowActions,
@@ -79,7 +80,13 @@ export default function CrmNotesPage() {
   const { message } = App.useApp();
   const { token } = theme.useToken();
   useCrmStyles();
-  const { data: notes, isLoading } = useCrmNotes();
+  const {
+    data: notes,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useCrmNotes();
   const { data: people } = useCrmPeople();
   const { data: companies } = useCrmCompanies();
   const { data: deals } = useCrmDeals();
@@ -301,6 +308,18 @@ export default function CrmNotesPage() {
           <div style={{ display: "grid", placeItems: "center", padding: 64 }}>
             <Spin size="large" />
           </div>
+        </Panel>
+      );
+    }
+
+    if (isError) {
+      return (
+        <Panel padding={0}>
+          <ErrorState
+            title="Couldn't load notes"
+            error={error}
+            onRetry={() => void refetch()}
+          />
         </Panel>
       );
     }
@@ -584,7 +603,7 @@ export default function CrmNotesPage() {
       <CrmPageHeader
         title="Notes"
         subtitle="Call recaps, meeting summaries and research, filed against the records they belong to."
-        count={isLoading ? null : rows.length}
+        count={isLoading || isError ? null : rows.length}
       />
 
       <CrmToolbar>

@@ -61,6 +61,7 @@ import {
   CrmSearch,
   CrmToolbar,
   EmptyState,
+  ErrorState,
   OverviewField,
   OverviewGrid,
   Panel,
@@ -536,7 +537,13 @@ function CampaignDetail({
 export default function CrmCampaignsPage() {
   const { token } = theme.useToken();
   const { message } = App.useApp();
-  const { data: campaigns, isLoading } = useCrmCampaigns();
+  const {
+    data: campaigns,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useCrmCampaigns();
   const { data: allSpend } = useCrmCampaignSpend();
   const { data: deals } = useCrmDeals();
   const createCampaign = useCreateCrmCampaign();
@@ -759,7 +766,17 @@ export default function CrmCampaignsPage() {
 
   const filtered = Boolean(search.trim()) || statusFilter !== "ALL";
 
-  const emptyText = filtered ? (
+  // Spend numbers that fail to load must not read as a campaign list that is
+  // simply empty — one means "nothing to see", the other means "don't trust
+  // the totals above".
+  const emptyText = isError ? (
+    <ErrorState
+      compact
+      title="Couldn't load campaigns"
+      error={error}
+      onRetry={() => void refetch()}
+    />
+  ) : filtered ? (
     <EmptyState
       compact
       icon="search_off"
@@ -810,7 +827,7 @@ export default function CrmCampaignsPage() {
     <div style={crmPageStyle()}>
       <CrmPageHeader
         title="Campaigns"
-        count={isLoading ? null : rows.length}
+        count={isLoading || isError ? null : rows.length}
         subtitle="What each paid channel spends, and what it costs to buy a lead there."
       />
 

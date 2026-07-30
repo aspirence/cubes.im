@@ -937,3 +937,97 @@ export function RowActions({
     </div>
   );
 }
+
+/**
+ * What a screen shows when its data could not be fetched.
+ *
+ * Without this a failed query falls through to the empty state, so a network
+ * drop, an RLS refusal or an unpushed migration all render as a confident
+ * "No people yet" — a lie that invites the user to re-create records they
+ * already have. It says what broke, and offers the one useful action.
+ */
+export function ErrorState({
+  title = "Couldn't load this",
+  error,
+  onRetry,
+  compact = false,
+}: {
+  title?: React.ReactNode;
+  error?: unknown;
+  onRetry?: () => void;
+  compact?: boolean;
+}) {
+  const { token } = theme.useToken();
+  const detail =
+    error && typeof error === "object" && "message" in error
+      ? String((error as { message: unknown }).message)
+      : null;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        textAlign: "center",
+        padding: compact ? "28px 20px" : "56px 24px",
+      }}
+    >
+      <div
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: 12,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: token.colorErrorBg,
+          marginBottom: 12,
+        }}
+      >
+        <MIcon name="cloud_off" size={24} color={token.colorError} />
+      </div>
+      <div style={{ fontSize: 14, fontWeight: 600, color: token.colorText }}>
+        {title}
+      </div>
+      {detail ? (
+        <div
+          style={{
+            marginTop: 4,
+            maxWidth: 460,
+            fontSize: 12.5,
+            lineHeight: 1.5,
+            color: token.colorTextTertiary,
+            wordBreak: "break-word",
+          }}
+        >
+          {detail}
+        </div>
+      ) : null}
+      {onRetry ? (
+        <button
+          type="button"
+          onClick={onRetry}
+          style={{
+            marginTop: 14,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            height: 32,
+            padding: "0 14px",
+            borderRadius: 8,
+            border: `1px solid ${token.colorBorder}`,
+            background: token.colorBgContainer,
+            color: token.colorText,
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          <MIcon name="refresh" size={16} />
+          Try again
+        </button>
+      ) : null}
+    </div>
+  );
+}

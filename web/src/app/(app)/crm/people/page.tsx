@@ -45,6 +45,7 @@ import {
   CrmSearch,
   CrmToolbar,
   EmptyState,
+  ErrorState,
   EntityCell,
   Panel,
   RowActions,
@@ -76,7 +77,13 @@ export default function CrmPeoplePage() {
 function CrmPeoplePageInner() {
   const { token } = theme.useToken();
   const { message } = App.useApp();
-  const { data: people, isLoading } = useCrmPeople();
+  const {
+    data: people,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useCrmPeople();
   const { data: companies } = useCrmCompanies();
   const createPerson = useCreateCrmPerson();
   const updatePerson = useUpdateCrmPerson();
@@ -176,7 +183,16 @@ function CrmPeoplePageInner() {
       <span style={{ color: token.colorTextQuaternary }}>—</span>
     );
 
-  const emptyText = search.trim() ? (
+  // A failed fetch must never fall through to "No people yet" — that reads as
+  // a confident empty account and invites re-creating records that exist.
+  const emptyText = isError ? (
+    <ErrorState
+      compact
+      title="Couldn't load people"
+      error={error}
+      onRetry={() => void refetch()}
+    />
+  ) : search.trim() ? (
     <EmptyState
       compact
       icon="search_off"
@@ -214,7 +230,7 @@ function CrmPeoplePageInner() {
     <div style={crmPageStyle()}>
       <CrmPageHeader
         title="People"
-        count={isLoading ? null : rows.length}
+        count={isLoading || isError ? null : rows.length}
         subtitle="Every contact in your team's CRM. Open a record to see its deals, tasks and notes."
       />
 

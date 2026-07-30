@@ -53,6 +53,7 @@ import { DealsTable } from "../_components/deals-table";
 import {
   CrmPageHeader,
   EmptyState,
+  ErrorState,
   EntityAvatar,
   Panel,
   SoftChip,
@@ -153,12 +154,32 @@ export default function CrmDashboardPage() {
   const { user, loading: authLoading } = useAuth();
   const { data: people, isLoading: peopleLoading } = useCrmPeople();
   const { data: companies, isLoading: companiesLoading } = useCrmCompanies();
-  const { data: deals, isLoading: dealsLoading } = useCrmDeals();
-  const { data: stages, isLoading: stagesLoading } = useCrmStages();
-  const { data: tasks, isLoading: tasksLoading } = useCrmTasks();
+  const {
+    data: deals,
+    isLoading: dealsLoading,
+    isError: dealsError,
+    refetch: refetchDeals,
+  } = useCrmDeals();
+  const {
+    data: stages,
+    isLoading: stagesLoading,
+    isError: stagesError,
+    refetch: refetchStages,
+  } = useCrmStages();
+  const {
+    data: tasks,
+    isLoading: tasksLoading,
+    isError: tasksError,
+    refetch: refetchTasks,
+  } = useCrmTasks();
   const { data: activities, isLoading: activitiesLoading } =
     useCrmRecentActivities(12);
-  const { data: reminders, isLoading: remindersLoading } = useCrmReminders();
+  const {
+    data: reminders,
+    isLoading: remindersLoading,
+    isError: remindersError,
+    refetch: refetchReminders,
+  } = useCrmReminders();
   const { data: campaigns, isLoading: campaignsLoading } = useCrmCampaigns();
   const { data: campaignSpend, isLoading: spendLoading } =
     useCrmCampaignSpend();
@@ -167,6 +188,19 @@ export default function CrmDashboardPage() {
   const [drawerTarget, setDrawerTarget] = useState<CrmTargetRef | null>(null);
   // The quick-deal dialog also opens on paste; this is the button route.
   const [dealFormOpen, setDealFormOpen] = useState(false);
+
+  /**
+   * The tiles here are sums across several queries, so ONE failed fetch makes
+   * every number on the page quietly wrong — not missing, wrong. That can't be
+   * left to the per-panel empty states, hence one banner for the whole screen.
+   */
+  const loadFailed = dealsError || stagesError || tasksError || remindersError;
+  const retryAll = () => {
+    if (dealsError) void refetchDeals();
+    if (stagesError) void refetchStages();
+    if (tasksError) void refetchTasks();
+    if (remindersError) void refetchReminders();
+  };
 
   /** While any of these is cold the tiles show "—" instead of a confident 0. */
   const pipelineLoading = dealsLoading || stagesLoading;
@@ -533,6 +567,18 @@ export default function CrmDashboardPage() {
         }
       />
 
+      {loadFailed ? (
+        <div style={{ marginBottom: 14 }}>
+          <Panel padding={8}>
+            <ErrorState
+              compact
+              title="Some of this dashboard didn't load"
+              onRetry={retryAll}
+            />
+          </Panel>
+        </div>
+      ) : null}
+
       {/* Toolbar: what the screen shows, then what you can do to it. */}
       <div
         style={{
@@ -720,6 +766,12 @@ export default function CrmDashboardPage() {
         >
           {remindersLoading || authLoading ? (
             <PanelSpin />
+          ) : remindersError ? (
+            <ErrorState
+              compact
+              title="Couldn't load reminders"
+              onRetry={() => void refetchReminders()}
+            />
           ) : myReminders.next.length === 0 ? (
             <EmptyState
               compact
@@ -827,6 +879,12 @@ export default function CrmDashboardPage() {
         >
           {tasksLoading ? (
             <PanelSpin />
+          ) : tasksError ? (
+            <ErrorState
+              compact
+              title="Couldn't load tasks"
+              onRetry={() => void refetchTasks()}
+            />
           ) : myOpenTasks.length === 0 ? (
             <EmptyState
               compact

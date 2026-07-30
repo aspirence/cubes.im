@@ -36,6 +36,7 @@ import { CrmListRow } from "../_components/list-row";
 import {
   CrmPageHeader,
   EmptyState,
+  ErrorState,
   EntityAvatar,
   Panel,
   RowActions,
@@ -129,10 +130,20 @@ export default function CrmSettingsPage() {
   const myType = useMyMemberType();
   const isOwner = myType === "owner";
   const { data: members } = useTeamMembers();
-  const { data: admins, isLoading: adminsLoading } = useCrmAdmins();
+  const {
+    data: admins,
+    isLoading: adminsLoading,
+    isError: adminsError,
+    refetch: refetchAdmins,
+  } = useCrmAdmins();
   const grantAdmin = useGrantCrmAdmin();
   const revokeAdmin = useRevokeCrmAdmin();
-  const { data: stages, isLoading: stagesLoading } = useCrmStages();
+  const {
+    data: stages,
+    isLoading: stagesLoading,
+    isError: stagesError,
+    refetch: refetchStages,
+  } = useCrmStages();
   const { data: deals } = useCrmDeals();
   const createStage = useCreateCrmStage();
   const updateStage = useUpdateCrmStage();
@@ -249,7 +260,7 @@ export default function CrmSettingsPage() {
       <Panel
         title="Access"
         extra={
-          adminsLoading ? null : (
+          adminsLoading || adminsError ? null : (
             <SoftChip icon="group">
               {accessCount} {accessCount === 1 ? "person" : "people"}
             </SoftChip>
@@ -371,6 +382,14 @@ export default function CrmSettingsPage() {
 
         {adminsLoading ? (
           <RowsLoading />
+        ) : adminsError ? (
+          <div style={{ borderTop: `1px solid ${token.colorSplit}` }}>
+            <ErrorState
+              compact
+              title="Couldn't load who has access"
+              onRetry={() => void refetchAdmins()}
+            />
+          </div>
         ) : grants.length === 0 ? (
           <div style={{ borderTop: `1px solid ${token.colorSplit}` }}>
             <EmptyState
@@ -464,7 +483,7 @@ export default function CrmSettingsPage() {
       <Panel
         title="Pipeline stages"
         extra={
-          stagesLoading ? null : (
+          stagesLoading || stagesError ? null : (
             <SoftChip icon="view_week">
               {stageList.length} {stageList.length === 1 ? "stage" : "stages"}
             </SoftChip>
@@ -506,6 +525,14 @@ export default function CrmSettingsPage() {
 
         {stagesLoading ? (
           <RowsLoading />
+        ) : stagesError ? (
+          <div style={{ borderTop: `1px solid ${token.colorSplit}` }}>
+            <ErrorState
+              compact
+              title="Couldn't load the pipeline stages"
+              onRetry={() => void refetchStages()}
+            />
+          </div>
         ) : stageList.length === 0 ? (
           <div style={{ borderTop: `1px solid ${token.colorSplit}` }}>
             <EmptyState
