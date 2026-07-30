@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+/web/node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -16,9 +17,12 @@
 # next.js
 /.next/
 /out/
+/web/.next/
+/web/out/
 
 # production
 /build
+/app/build
 
 # misc
 .DS_Store
@@ -45,6 +49,17 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+/web/*.tsbuildinfo
+/web/next-env.d.ts
+
+# flutter
+/app/.dart_tool/
+/app/.flutter-plugins
+/app/.flutter-plugins-dependencies
+/app/.metadata
+/app/android/.gradle/
+/app/ios/Pods/
+/app/ios/.symlinks/
 
 # local dev credentials (test accounts)
 account.md
