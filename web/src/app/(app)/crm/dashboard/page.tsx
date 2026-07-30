@@ -6,7 +6,6 @@ import {
   Button,
   Select,
   Spin,
-  Switch,
   Tooltip,
   theme,
 } from "antd";
@@ -21,10 +20,6 @@ import { useCrmPeople } from "@/features/app-crm/use-crm-people";
 import { useCrmStages } from "@/features/app-crm/use-crm-stages";
 import { useCrmTasks } from "@/features/app-crm/use-crm-tasks";
 import { useCrmRecentActivities } from "@/features/app-crm/use-crm-activities";
-import {
-  useCrmCampaigns,
-  useCrmCampaignSpend,
-} from "@/features/app-crm/use-crm-campaigns";
 import {
   useCompleteCrmReminder,
   useCrmReminders,
@@ -48,7 +43,6 @@ import {
 } from "../_components/entity-meta";
 import { CONTENT_GRID } from "../_components/layout";
 import { CrmListRow } from "../_components/list-row";
-import { KpiStrip } from "../_components/kpi-strip";
 import { DealsTable } from "../_components/deals-table";
 import {
   CrmPageHeader,
@@ -60,7 +54,6 @@ import {
   crmDate,
   crmDateTime,
   crmFromNow,
-  crmMoney,
   crmPageStyle,
   crmPersonName,
   type SoftChipTone,
@@ -152,8 +145,8 @@ export default function CrmDashboardPage() {
   const { message } = App.useApp();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const { data: people, isLoading: peopleLoading } = useCrmPeople();
-  const { data: companies, isLoading: companiesLoading } = useCrmCompanies();
+  const { data: people } = useCrmPeople();
+  const { data: companies } = useCrmCompanies();
   const {
     data: deals,
     isLoading: dealsLoading,
@@ -180,9 +173,6 @@ export default function CrmDashboardPage() {
     isError: remindersError,
     refetch: refetchReminders,
   } = useCrmReminders();
-  const { data: campaigns, isLoading: campaignsLoading } = useCrmCampaigns();
-  const { data: campaignSpend, isLoading: spendLoading } =
-    useCrmCampaignSpend();
   const { data: members } = useTeamMembers();
   const completeReminder = useCompleteCrmReminder();
   const [drawerTarget, setDrawerTarget] = useState<CrmTargetRef | null>(null);
@@ -205,42 +195,10 @@ export default function CrmDashboardPage() {
   /** While any of these is cold the tiles show "—" instead of a confident 0. */
   const pipelineLoading = dealsLoading || stagesLoading;
 
-  const livePeople = useMemo(
-    () => (people ?? []).filter((p) => !p.deleted_at),
-    [people],
-  );
-  const liveCompanies = useMemo(
-    () => (companies ?? []).filter((c) => !c.deleted_at),
-    [companies],
-  );
   const liveDeals = useMemo(
     () => (deals ?? []).filter((d) => !d.deleted_at),
     [deals],
   );
-
-  const monthStart = dayjs().startOf("month");
-  /**
-   * This month's additions against last month's, as the KPI strip's delta.
-   *
-   * Compared against the WHOLE of last month, not the same slice of it: on the
-   * 3rd that reads as a big drop, which is honest — the month genuinely is
-   * behind — and the alternative (month-to-date vs month-to-date) invents a
-   * comparison nobody asked for.
-   */
-  const lastMonthStart = useMemo(
-    () => monthStart.subtract(1, "month"),
-    [monthStart],
-  );
-  const monthDelta = (rows: { created_at: string }[]) => {
-    let current = 0;
-    let previous = 0;
-    for (const r of rows) {
-      const at = dayjs(r.created_at);
-      if (at.isAfter(monthStart)) current += 1;
-      else if (at.isAfter(lastMonthStart)) previous += 1;
-    }
-    return { current, delta: current - previous };
-  };
 
   /**
    * The reminder desk: MY undismissed reminders, soonest first (the hook sorts
@@ -269,57 +227,6 @@ export default function CrmDashboardPage() {
     () => new Map((deals ?? []).map((d) => [d.id, d])),
     [deals],
   );
-
-  /**
-   * This calendar month's ad spend. Currencies are per campaign and never add
-   * up, so the tile reports the DOMINANT currency's total and the hint says so
-   * when a second currency is in play — a summed mixed number would be a lie.
-   *
-   * Soft-deleted campaigns are excluded, the same rule the campaigns page uses:
-   * with them counted, deleting a campaign dropped one tile and left this one
-   * high, and the two "Spend this month" numbers disagreed.
-   */
-  const spendThisMonth = useMemo(() => {
-    const currencyOf = new Map(
-      (campaigns ?? [])
-        .filter((c) => !c.deleted_at)
-        .map((c) => [c.id, c.currency_code]),
-    );
-    const start = dayjs().startOf("month");
-    const byCurrency = new Map<string, number>();
-    const campaignIds = new Set<string>();
-    for (const row of campaignSpend ?? []) {
-      if (!dayjs(row.spend_on).isSame(start, "month")) continue;
-      const code = currencyOf.get(row.campaign_id);
-      if (!code) continue; // soft-deleted campaign — off the books
-      byCurrency.set(code, (byCurrency.get(code) ?? 0) + Number(row.amount));
-      campaignIds.add(row.campaign_id);
-    }
-    const ranked = [...byCurrency.entries()].sort((a, b) => b[1] - a[1]);
-    let currency = ranked[0]?.[0] ?? null;
-    if (!currency) {
-      // Nothing logged yet — borrow the team's most common campaign currency
-      // so an empty month still reads in the money the team actually spends.
-      const counts = new Map<string, number>();
-      for (const c of campaigns ?? []) {
-        if (c.deleted_at) continue;
-        counts.set(c.currency_code, (counts.get(c.currency_code) ?? 0) + 1);
-      }
-      currency = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-    }
-    const total = ranked[0]?.[1] ?? 0;
-    const n = campaignIds.size;
-    return {
-      total,
-      currency,
-      hint:
-        n === 0
-          ? "no spend logged yet"
-          : `${n} campaign${n === 1 ? "" : "s"}${
-              ranked.length > 1 ? ` · ${currency} only` : ""
-            }`,
-    };
-  }, [campaigns, campaignSpend]);
 
   // One row per stage (board order), plus "No stage" only when needed.
   const stageRows = useMemo(() => {
@@ -373,7 +280,6 @@ export default function CrmDashboardPage() {
   const [sortBy, setSortBy] = useState<"attention" | "newest" | "name">(
     "attention",
   );
-  const [showStats, setShowStats] = useState(true);
 
   /** The table's rows: the live deals under the toolbar's filter and sort. */
   const visibleDeals = useMemo(() => {
@@ -613,18 +519,6 @@ export default function CrmDashboardPage() {
             { value: "name", label: "Sort: name A–Z" },
           ]}
         />
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            fontSize: 13,
-            color: token.colorTextSecondary,
-          }}
-        >
-          Show statistics
-          <Switch size="small" checked={showStats} onChange={setShowStats} />
-        </span>
         <span style={{ flex: 1 }} />
         <Button
           icon={<MIcon name="download" size={16} />}
@@ -641,65 +535,6 @@ export default function CrmDashboardPage() {
           New deal
         </Button>
       </div>
-
-      {showStats ? (
-        <div style={{ marginBottom: 16 }}>
-          <KpiStrip
-            items={[
-              {
-                key: "people",
-                label: "People",
-                hint: "Contacts in the CRM, excluding deleted ones.",
-                value: livePeople.length,
-                loading: peopleLoading,
-                delta: { value: monthDelta(livePeople).delta },
-                onClick: () => router.push("/crm/people"),
-              },
-              {
-                key: "companies",
-                label: "Companies",
-                hint: "Accounts in the CRM, excluding deleted ones.",
-                value: liveCompanies.length,
-                loading: companiesLoading,
-                delta: { value: monthDelta(liveCompanies).delta },
-                onClick: () => router.push("/crm/companies"),
-              },
-              {
-                key: "deals",
-                label: "Open deals",
-                hint: "Every live deal, whatever its stage or status.",
-                value: liveDeals.length,
-                loading: dealsLoading,
-                delta: { value: monthDelta(liveDeals).delta },
-                onClick: () => router.push("/crm/deals"),
-              },
-              {
-                key: "reminders",
-                label: "Reminders due",
-                hint: "Your own reminders that have come up — overdue plus today.",
-                value: myReminders.due,
-                loading: remindersLoading || authLoading,
-                delta: null,
-                footnote:
-                  myReminders.overdue > 0
-                    ? `${myReminders.overdue} overdue · ${myReminders.today} today`
-                    : `${myReminders.today} due today`,
-                onClick: () => router.push("/crm/reminders"),
-              },
-              {
-                key: "spend",
-                label: "Spend this month",
-                hint: "Daily campaign spend logged this month, budgeted days included.",
-                value: crmMoney(spendThisMonth.total, spendThisMonth.currency),
-                loading: campaignsLoading || spendLoading,
-                delta: null,
-                footnote: spendThisMonth.hint,
-                onClick: () => router.push("/crm/campaigns"),
-              },
-            ]}
-          />
-        </div>
-      ) : null}
 
       {/* The lead desk itself — every deal, selectable in bulk. */}
       <Panel padding={0} style={{ marginBottom: 16 }}>
