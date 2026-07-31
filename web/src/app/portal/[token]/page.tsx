@@ -12,7 +12,11 @@ import { PortalApp, type ClientPortalData } from "./portal-app";
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export const metadata: Metadata = { title: "Client portal" };
+// Token-gated pages must never end up in a search index.
+export const metadata: Metadata = {
+  title: "Client portal",
+  robots: { index: false, follow: false },
+};
 
 function Unavailable() {
   return (
