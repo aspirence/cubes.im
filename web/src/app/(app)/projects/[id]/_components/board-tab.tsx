@@ -103,7 +103,10 @@ function tint(hex: string): string {
  */
 
 type BoardStatus = TaskStatusWithCategory;
-type BoardTask = TaskWithRelations;
+type BoardTask = TaskWithRelations & {
+  /** "#no · name" of the parent — set on subtask rows for the card marker. */
+  parentLabel?: string | null;
+};
 
 const COLUMN_WIDTH = 288;
 
@@ -288,6 +291,32 @@ function TaskCardBody({ task, onOpen, statusName, statusAccent, overlay, activeS
     >
       {/* Meta pills */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+        {task.parent_task_id ? (
+          <Pill
+            icon={
+              <span
+                className="material-symbols-rounded"
+                aria-hidden
+                style={{ fontSize: 12 }}
+              >
+                subdirectory_arrow_right
+              </span>
+            }
+          >
+            <span
+              title={task.parentLabel ?? undefined}
+              style={{
+                display: "inline-block",
+                maxWidth: 120,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {task.parentLabel ?? "Subtask"}
+            </span>
+          </Pill>
+        ) : null}
         {statusName ? (
           <Pill
             icon={
@@ -1000,7 +1029,9 @@ export function BoardTab({ projectId }: { projectId: string }) {
 
   const statusesQuery = useTaskStatuses(projectId);
   const celebrateTaskDone = useCelebrateTaskDone();
-  const tasksQuery = useTasks(projectId);
+  // Subtasks ride along on the board as normal cards; the card shows a
+  // "↳ parent" marker so the hierarchy stays readable.
+  const tasksQuery = useTasks(projectId, { includeSubtasks: true });
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
   const reorderTasks = useReorderTasks();
@@ -1041,10 +1072,24 @@ export function BoardTab({ projectId }: { projectId: string }) {
     return [...raw].sort((a, b) => a.sort_order - b.sort_order);
   }, [statusesQuery.data]);
 
-  const allTasks = useMemo<BoardTask[]>(
-    () => tasksQuery.data ?? [],
-    [tasksQuery.data],
-  );
+  const allTasks = useMemo<BoardTask[]>(() => {
+    const list = tasksQuery.data ?? [];
+    const byId = new Map(list.map((t) => [t.id, t]));
+    // Stamp subtask rows with their parent's "#no · name" for the card marker.
+    // A missing parent (e.g. archived) falls back to a generic "Subtask" pill.
+    return list.map((t) => {
+      if (!t.parent_task_id) return t;
+      const p = byId.get(t.parent_task_id);
+      return {
+        ...t,
+        parentLabel: p
+          ? p.task_no != null
+            ? `#${p.task_no} · ${p.name}`
+            : p.name
+          : null,
+      };
+    });
+  }, [tasksQuery.data]);
 
   // Group tasks by status_id, each group ordered by sort_order. Tasks whose
   // status_id is null (or points at an unknown status) bucket under the first

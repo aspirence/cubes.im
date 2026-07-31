@@ -463,6 +463,9 @@ function TaskDrawerContent({
   const { profile } = useAuth();
 
   const { data: task } = useDrawerTask(taskId);
+  // Parent summary for the "Subtask of …" chip (also pre-warms the cache for
+  // the chip's jump-to-parent navigation). Disabled for top-level tasks.
+  const { data: parentTask } = useDrawerTask(task?.parent_task_id ?? "");
   const projectId = task?.project_id ?? undefined;
   const { data: projectRow } = useProject(projectId);
   const projectName = projectRow?.name;
@@ -1033,7 +1036,9 @@ function TaskDrawerContent({
               <button
                 type="button"
                 onClick={() => openTaskDetail(task.parent_task_id as string)}
-                title="Go to parent task"
+                title={
+                  parentTask ? `Go to "${parentTask.name}"` : "Go to parent task"
+                }
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
@@ -1051,7 +1056,22 @@ function TaskDrawerContent({
                 <span className="material-symbols-rounded" aria-hidden style={{ fontSize: 14 }}>
                   subdirectory_arrow_right
                 </span>
-                Subtask
+                <span
+                  style={{
+                    maxWidth: 260,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {parentTask
+                    ? `Subtask of ${
+                        parentTask.task_no != null
+                          ? `#${parentTask.task_no} · `
+                          : ""
+                      }${parentTask.name}`
+                    : "Subtask"}
+                </span>
               </button>
             ) : null}
             <TaskIdChip
