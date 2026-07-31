@@ -12,9 +12,11 @@ import {
   Tooltip,
 } from "antd";
 import { useTaskDrawer } from "@/store/task-drawer-store";
+import dayjs from "dayjs";
 import {
   useTasks,
   useCreateTask,
+  useUpdateTask,
   type TaskWithRelations,
 } from "@/features/tasks/use-tasks";
 import {
@@ -563,6 +565,7 @@ export function TaskListTab({ projectId }: { projectId: string }) {
   const membersQuery = useTeamMembers();
 
   const createTask = useCreateTask();
+  const updateTask = useUpdateTask();
 
   // Memoised so they keep a stable identity across renders: these feed the
   // `filterFields` memo, which in turn feeds the effect that publishes this
@@ -778,7 +781,13 @@ export function TaskListTab({ projectId }: { projectId: string }) {
   /* ----- mutations ----- */
   const handleAddTask = async (name: string, statusId: string | undefined) => {
     try {
-      await createTask.mutateAsync({ name, projectId, statusId });
+      const taskId = await createTask.mutateAsync({ name, projectId, statusId });
+      // New tasks start today by default; create_task doesn't take dates, so
+      // it's a follow-up write (same pattern as the board composer).
+      await updateTask.mutateAsync({
+        id: taskId,
+        start_date: dayjs().toISOString(),
+      });
     } catch (err) {
       message.error(
         err instanceof Error ? err.message : "Failed to create task.",

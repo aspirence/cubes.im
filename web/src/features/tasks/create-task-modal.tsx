@@ -13,7 +13,7 @@ import {
   Tag,
   Typography,
 } from "antd";
-import type { Dayjs } from "dayjs";
+import dayjs, { type Dayjs } from "dayjs";
 import {
   UserOutlined,
   CalendarOutlined,
@@ -122,6 +122,8 @@ export function CreateTaskModal({
   const [statusId, setStatusId] = useState<string | undefined>();
   const [assignees, setAssignees] = useState<string[]>([]);
   const [deliverableType, setDeliverableType] = useState<string | undefined>();
+  // Start date defaults to today — clearable if the task shouldn't have one.
+  const [start, setStart] = useState<Dayjs | null>(() => dayjs());
   const [due, setDue] = useState<Dayjs | null>(null);
   const [makeDefault, setMakeDefault] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -182,6 +184,7 @@ export function CreateTaskModal({
     setStatusId(undefined);
     setAssignees([]);
     setDeliverableType(undefined);
+    setStart(dayjs());
     setDue(defaultDue ?? null);
     setMakeDefault(false);
     setInviteOpen(false);
@@ -237,9 +240,10 @@ export function CreateTaskModal({
         statusId: effectiveStatusId ?? null,
         assignees,
       });
-      if (due || deliverableType) {
+      if (start || due || deliverableType) {
         await updateTask.mutateAsync({
           id: taskId,
+          ...(start ? { start_date: start.toISOString() } : {}),
           ...(due ? { end_date: due.toISOString() } : {}),
           ...(deliverableType ? { deliverable_type: deliverableType } : {}),
         });
@@ -406,6 +410,22 @@ export function CreateTaskModal({
                   }
                 : undefined
             }
+          />
+        </Property>
+        <Property
+          icon={
+            <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
+              calendar_today
+            </span>
+          }
+        >
+          <DatePicker
+            size="small"
+            variant="borderless"
+            placeholder="Start date"
+            value={start}
+            onChange={setStart}
+            style={{ width: 130 }}
           />
         </Property>
         <Property icon={<CalendarOutlined />}>

@@ -83,6 +83,7 @@ interface QuickDraft {
   assignees: string[];
   priorityId?: string;
   labelIds: string[];
+  start: Dayjs | null;
   due: Dayjs | null;
 }
 
@@ -558,6 +559,8 @@ function BoardColumn({
   const [draftAssignees, setDraftAssignees] = useState<string[]>([]);
   const [draftPriority, setDraftPriority] = useState<string | undefined>();
   const [draftLabels, setDraftLabels] = useState<string[]>([]);
+  // Start date defaults to today — clearable if the task shouldn't have one.
+  const [draftStart, setDraftStart] = useState<Dayjs | null>(() => dayjs());
   const [draftDue, setDraftDue] = useState<Dayjs | null>(null);
 
   const { setNodeRef, isOver } = useDroppable({
@@ -574,6 +577,7 @@ function BoardColumn({
     setDraftAssignees([]);
     setDraftPriority(undefined);
     setDraftLabels([]);
+    setDraftStart(dayjs());
     setDraftDue(null);
   };
 
@@ -589,6 +593,7 @@ function BoardColumn({
       assignees: draftAssignees,
       priorityId: draftPriority,
       labelIds: draftLabels,
+      start: draftStart,
       due: draftDue,
     });
     // Keep the composer open (name/description cleared) for rapid entry; the
@@ -855,21 +860,27 @@ function BoardColumn({
           <div style={{ display: "flex", gap: 6 }}>
             <DatePicker
               size="small"
-              placeholder="Add dates"
+              placeholder="Start date"
+              value={draftStart}
+              onChange={setDraftStart}
+              style={{ flex: 1 }}
+            />
+            <DatePicker
+              size="small"
+              placeholder="Due date"
               value={draftDue}
               onChange={setDraftDue}
               style={{ flex: 1 }}
             />
-            <Select
-              size="small"
-              allowClear
-              placeholder="Priority"
-              value={draftPriority}
-              onChange={setDraftPriority}
-              options={priorityOptions}
-              style={{ flex: 1 }}
-            />
           </div>
+          <Select
+            size="small"
+            allowClear
+            placeholder="Priority"
+            value={draftPriority}
+            onChange={setDraftPriority}
+            options={priorityOptions}
+          />
           {labelOptions.length > 0 ? (
             <Select
               size="small"
@@ -1257,9 +1268,10 @@ export function BoardTab({ projectId }: { projectId: string }) {
         assignees: draft.assignees.length > 0 ? draft.assignees : undefined,
       });
       // Fields create_task doesn't take get a follow-up write each.
-      if (draft.due || draft.description) {
+      if (draft.start || draft.due || draft.description) {
         await updateTask.mutateAsync({
           id: taskId,
+          ...(draft.start ? { start_date: draft.start.toISOString() } : {}),
           ...(draft.due ? { end_date: draft.due.toISOString() } : {}),
           ...(draft.description ? { description: draft.description } : {}),
         });
