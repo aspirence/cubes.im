@@ -16,7 +16,6 @@ import {
 import dayjs, { type Dayjs } from "dayjs";
 import {
   UserOutlined,
-  CalendarOutlined,
   FlagOutlined,
   ProfileOutlined,
   FolderOutlined,
@@ -363,109 +362,137 @@ export function CreateTaskModal({
         </div>
       </div>
 
-      {/* Property row */}
+      {/* Properties — status/assignee/priority on one line, schedule below. */}
       <div
         style={{
           display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          gap: 16,
+          flexDirection: "column",
+          gap: 10,
           padding: "12px 24px",
           margin: "8px 0 0",
         }}
       >
-        <Property
-          icon={
-            <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
-              adjust
-            </span>
-          }
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 16,
+          }}
         >
-          <Select
-            size="small"
-            variant="borderless"
-            placeholder="Status"
-            value={effectiveStatusId}
-            onChange={setStatusId}
-            style={{ minWidth: 120 }}
-            popupMatchSelectWidth={false}
-            disabled={!projectId || statusOptions.length === 0}
-            options={statusOptions}
-          />
-        </Property>
-        <Property icon={<UserOutlined />}>
-          <MemberSelect
-            popupInParent
-            variant="avatar"
-            value={assignees}
-            onChange={setAssignees}
-            options={memberOptions}
-            placeholder="Assignee"
-            style={{ minWidth: 140 }}
-            onInvite={
-              isAdmin
-                ? (query) => {
-                    setInviteQuery(query);
-                    setInviteOpen(true);
-                  }
-                : undefined
-            }
-          />
-        </Property>
-        <Property
-          icon={
-            <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
-              calendar_today
-            </span>
-          }
-        >
-          <DatePicker
-            size="small"
-            variant="borderless"
-            placeholder="Start date"
-            value={start}
-            onChange={setStart}
-            style={{ width: 130 }}
-          />
-        </Property>
-        <Property icon={<CalendarOutlined />}>
-          <DatePicker
-            size="small"
-            variant="borderless"
-            placeholder="Due date"
-            value={due}
-            onChange={setDue}
-            style={{ width: 130 }}
-          />
-        </Property>
-        <Property icon={<FlagOutlined />}>
-          <Select
-            size="small"
-            variant="borderless"
-            allowClear
-            placeholder="Priority"
-            value={priorityId}
-            onChange={setPriorityId}
-            style={{ minWidth: 100 }}
-            options={priorityOptions}
-          />
-        </Property>
-        {deliverableType ? (
           <Property
             icon={
               <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
-                inventory_2
+                adjust
               </span>
             }
           >
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "#4a4ad0" }}>
-              <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
-                {deliverableType === "video" ? "movie" : "notes"}
-              </span>
-              {deliverableType === "video" ? "Video review" : "Text"} deliverable
-            </span>
+            <Select
+              size="small"
+              variant="borderless"
+              placeholder="Status"
+              value={effectiveStatusId}
+              onChange={setStatusId}
+              style={{ minWidth: 120 }}
+              popupMatchSelectWidth={false}
+              disabled={!projectId || statusOptions.length === 0}
+              options={statusOptions}
+            />
           </Property>
-        ) : null}
+          <Property icon={<UserOutlined />}>
+            <MemberSelect
+              popupInParent
+              variant="avatar"
+              value={assignees}
+              onChange={setAssignees}
+              options={memberOptions}
+              placeholder="Assignee"
+              style={{ minWidth: 140 }}
+              onInvite={
+                isAdmin
+                  ? (query) => {
+                      setInviteQuery(query);
+                      setInviteOpen(true);
+                    }
+                  : undefined
+              }
+            />
+          </Property>
+          <Property icon={<FlagOutlined />}>
+            <Select
+              size="small"
+              variant="borderless"
+              allowClear
+              placeholder="Priority"
+              value={priorityId}
+              onChange={setPriorityId}
+              style={{ minWidth: 100 }}
+              options={priorityOptions}
+            />
+          </Property>
+          {deliverableType ? (
+            <Property
+              icon={
+                <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
+                  inventory_2
+                </span>
+              }
+            >
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "#4a4ad0" }}>
+                <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
+                  {deliverableType === "video" ? "movie" : "notes"}
+                </span>
+                {deliverableType === "video" ? "Video review" : "Text"} deliverable
+              </span>
+            </Property>
+          ) : null}
+        </div>
+
+        {/* Schedule reads as one range: start → due. The pickers keep their
+            own clear affordance; the Property icon replaces the suffix icon. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <Property
+            icon={
+              <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
+                calendar_today
+              </span>
+            }
+          >
+            <DatePicker
+              size="small"
+              variant="borderless"
+              suffixIcon={null}
+              placeholder="Start date"
+              format="MMM D, YYYY"
+              value={start}
+              onChange={setStart}
+              disabledDate={(d) => (due ? d.isAfter(due, "day") : false)}
+              style={{ width: 122 }}
+            />
+          </Property>
+          <span aria-hidden style={{ color: "#9a9da8", fontSize: 12 }}>
+            →
+          </span>
+          <Property
+            icon={
+              <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
+                event
+              </span>
+            }
+          >
+            <DatePicker
+              size="small"
+              variant="borderless"
+              suffixIcon={null}
+              placeholder="Due date"
+              format="MMM D, YYYY"
+              value={due}
+              onChange={setDue}
+              disabledDate={(d) => (start ? d.isBefore(start, "day") : false)}
+              style={{ width: 122 }}
+            />
+          </Property>
+        </div>
       </div>
 
       {templateId && projectId ? (
