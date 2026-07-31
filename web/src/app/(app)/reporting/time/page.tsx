@@ -51,6 +51,16 @@ interface TaskAgg {
   lastLogged: string;
 }
 
+/** Aggregated per member with a per-day map — feeds the day-wise matrix. */
+interface MemberAgg {
+  user_id: string;
+  name: string;
+  seconds: number;
+  perDay: Map<string, number>;
+}
+
+const ACCENT = "#4a4ad0";
+
 function csvCell(value: string | number): string {
   const text = String(value);
   return /["\n,]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
@@ -99,7 +109,11 @@ export default function ReportingTimeAnalyticsPage() {
   // null = "everyone" — meaningful only for admins; the server forces
   // non-admins to their own logs no matter what is sent.
   const [memberId, setMemberId] = useState<string | null>(null);
-  const [range, setRange] = useState<RangeValue>(null);
+  // Default to the trailing week: "all time" makes every number blur together.
+  const [range, setRange] = useState<RangeValue>([
+    dayjs().subtract(6, "day"),
+    dayjs(),
+  ]);
 
   const from = range?.[0] ? range[0].format("YYYY-MM-DD") : undefined;
   const to = range?.[1] ? range[1].format("YYYY-MM-DD") : undefined;
@@ -127,6 +141,20 @@ export default function ReportingTimeAnalyticsPage() {
     () => new Set(logs.map((l) => l.task_id)).size,
     [logs],
   );
+  const todaySeconds = useMemo(() => {
+    const key = dayjs().format("YYYY-MM-DD");
+    return logs.reduce(
+      (sum, l) =>
+        dayjs(l.logged_at).format("YYYY-MM-DD") === key ? sum + l.seconds : sum,
+      0,
+    );
+  }, [logs]);
+  const avgPerActiveDay = useMemo(() => {
+    const activeDays = new Set(
+      logs.map((l) => dayjs(l.logged_at).format("YYYY-MM-DD")),
+    ).size;
+    return activeDays ? Math.round(totalSeconds / activeDays) : 0;
+  }, [logs, totalSeconds]);
 
   /* ---------------------------------------------------- aggregations */
 
@@ -179,32 +207,109 @@ export default function ReportingTimeAnalyticsPage() {
     return [...acc.values()].sort((a, b) => b.seconds - a.seconds).slice(0, 10);
   }, [logs]);
 
-  // Daily bars for the trailing 14 days (or the picked range when it is
-  // narrower than that) — the "how were my days spent" strip.
-  const dailyOption = useMemo(() => {
-    const end = range?.[1] ?? dayjs();
-    const start =
-      range?.[0] && end.diff(range[0], "day") < 14
-        ? range[0]
-        : end.subtract(13, "day");
-    const days: dayjs.Dayjs[] = [];
-    for (
-      let d = start.startOf("day");
-      !d.isAfter(end, "day");
-      d = d.add(1, "day")
-    ) {
-      days.push(d);
-    }
-    const perDay = new Map<string, number>();
+  // Per member, with a day-keyed map — powers the matrix and the stacked bars.
+  const memberRows = useMemo(() => {
+    const acc = new Map<string, MemberAgg>();
     for (const l of logs) {
-      const key = dayjs(l.logged_at).format("YYYY-MM-DD");
-      perDay.set(key, (perDay.get(key) ?? 0) + l.seconds);
+      let cur = acc.get(l.user_id);
+      if (!cur) {
+        cur = { user_id: l.user_id, name: l.user_name, seconds: 0, perDay: new Map() };
+        acc.set(l.user_id, cur);
+      }
+      cur.seconds += l.seconds;
+      const dk = dayjs(l.logged_at).format("YYYY-MM-DD");
+      cur.perDay.set(dk, (cur.perDay.get(dk) ?? 0) + l.seconds);
     }
-    const values = days.map((d) =>
-      Math.round(((perDay.get(d.format("YYYY-MM-DD")) ?? 0) / 3600) * 100) / 100,
-    );
+    return [...acc.values()].sort((a, b) => b.seconds - a.seconds);
+  }, [logs]);
+
+  // The day axis both the chart and the matrix share. A cleared range (= all
+  // time) or anything wider than a month falls back to the trailing 14 days —
+  // day-by-day stops being readable past that.
+  const days = useMemo(() => {
+    const end = (range?.[1] ?? dayjs()).startOf("day");
+    let start = (range?.[0] ?? end.subtract(13, "day")).startOf("day");
+    if (end.diff(start, "day") > 30) start = end.subtract(13, "day");
+    const out: dayjs.Dayjs[] = [];
+    for (let d = start; !d.isAfter(end, "day"); d = d.add(1, "day")) out.push(d);
+    return out;
+  }, [range]);
+  const daysClamped = useMemo(() => {
+    if (!range?.[0] || !range?.[1]) return false;
+    return range[1].startOf("day").diff(range[0].startOf("day"), "day") > 30;
+  }, [range]);
+
+  /* --------------------------------------------------------- daily chart */
+
+  const dailyOption = useMemo(() => {
+    const dayKeys = days.map((d) => d.format("YYYY-MM-DD"));
+    const toH = (s: number) => Math.round((s / 3600) * 100) / 100;
+
+    // Everyone view stacks the top members so each day answers "kaun kitna".
+    let series;
+    let legend: string[] | null = null;
+    if (everyoneView && memberRows.length > 1) {
+      const top = memberRows.slice(0, 5);
+      const rest = memberRows.slice(5);
+      series = top.map((m, i) => ({
+        name: m.name,
+        type: "bar" as const,
+        stack: "time",
+        barWidth: 14,
+        itemStyle: { color: CHART_PALETTE[i % CHART_PALETTE.length] },
+        data: dayKeys.map((k) => toH(m.perDay.get(k) ?? 0)),
+      }));
+      if (rest.length > 0) {
+        series.push({
+          name: "Others",
+          type: "bar" as const,
+          stack: "time",
+          barWidth: 14,
+          itemStyle: { color: "#b6b9c6" },
+          data: dayKeys.map((k) =>
+            toH(rest.reduce((sum, m) => sum + (m.perDay.get(k) ?? 0), 0)),
+          ),
+        });
+      }
+      legend = series.map((s) => s.name);
+    } else {
+      const perDay = new Map<string, number>();
+      for (const l of logs) {
+        const key = dayjs(l.logged_at).format("YYYY-MM-DD");
+        perDay.set(key, (perDay.get(key) ?? 0) + l.seconds);
+      }
+      series = [
+        {
+          type: "bar" as const,
+          barWidth: 14,
+          itemStyle: { color: CHART_PALETTE[0], borderRadius: [4, 4, 0, 0] },
+          data: dayKeys.map((k) => toH(perDay.get(k) ?? 0)),
+        },
+      ];
+    }
+
     return {
-      grid: { left: 8, right: 8, top: 20, bottom: 4, containLabel: true },
+      grid: {
+        left: 8,
+        right: 8,
+        top: 20,
+        bottom: legend ? 26 : 4,
+        containLabel: true,
+      },
+      ...(legend
+        ? {
+            legend: {
+              bottom: 0,
+              itemWidth: 10,
+              itemHeight: 10,
+              textStyle: {
+                color: token.colorTextSecondary,
+                fontFamily: CHART_FONT,
+                fontSize: 11,
+              },
+            },
+          }
+        : {}),
       xAxis: {
         type: "category" as const,
         data: days.map((d) => d.format("DD MMM")),
@@ -227,22 +332,27 @@ export default function ReportingTimeAnalyticsPage() {
         splitLine: { lineStyle: { color: token.colorSplit } },
       },
       tooltip: {
-        trigger: "item" as const,
+        trigger: "axis" as const,
         formatter: (params: unknown) => {
-          const p = params as { name?: string; value?: number };
-          return `${p.name}: ${formatSeconds((p.value ?? 0) * 3600)}`;
+          const items = (Array.isArray(params) ? params : [params]) as {
+            axisValueLabel?: string;
+            seriesName?: string;
+            marker?: string;
+            value?: number;
+          }[];
+          const day = items[0]?.axisValueLabel ?? "";
+          const lines = items
+            .filter((p) => (p.value ?? 0) > 0)
+            .map(
+              (p) =>
+                `${p.marker ?? ""}${p.seriesName && p.seriesName !== "series 0" ? `${p.seriesName}: ` : ""}${formatSeconds((p.value ?? 0) * 3600)}`,
+            );
+          return [day, ...(lines.length ? lines : ["0m"])].join("<br/>");
         },
       },
-      series: [
-        {
-          type: "bar" as const,
-          data: values,
-          barWidth: 14,
-          itemStyle: { color: CHART_PALETTE[0], borderRadius: [4, 4, 0, 0] },
-        },
-      ],
+      series,
     };
-  }, [logs, range, token.colorTextSecondary, token.colorSplit]);
+  }, [days, logs, memberRows, everyoneView, token.colorTextSecondary, token.colorSplit]);
 
   /* -------------------------------------------------------------- table */
 
@@ -358,14 +468,61 @@ export default function ReportingTimeAnalyticsPage() {
     [members, user?.id],
   );
 
+  const rangePresets = useMemo(
+    () => [
+      { label: "Today", value: [dayjs(), dayjs()] as [dayjs.Dayjs, dayjs.Dayjs] },
+      {
+        label: "Yesterday",
+        value: [dayjs().subtract(1, "day"), dayjs().subtract(1, "day")] as [dayjs.Dayjs, dayjs.Dayjs],
+      },
+      { label: "Last 7 days", value: [dayjs().subtract(6, "day"), dayjs()] as [dayjs.Dayjs, dayjs.Dayjs] },
+      { label: "This week", value: [dayjs().startOf("week"), dayjs()] as [dayjs.Dayjs, dayjs.Dayjs] },
+      { label: "This month", value: [dayjs().startOf("month"), dayjs()] as [dayjs.Dayjs, dayjs.Dayjs] },
+      {
+        label: "Last month",
+        value: [
+          dayjs().subtract(1, "month").startOf("month"),
+          dayjs().subtract(1, "month").endOf("month"),
+        ] as [dayjs.Dayjs, dayjs.Dayjs],
+      },
+    ],
+    [],
+  );
+
+  /* ---------------------------------------------------- day-wise matrix */
+
+  const todayKey = dayjs().format("YYYY-MM-DD");
+  const matrixDayTotals = useMemo(
+    () =>
+      days.map((d) => {
+        const k = d.format("YYYY-MM-DD");
+        return memberRows.reduce((sum, m) => sum + (m.perDay.get(k) ?? 0), 0);
+      }),
+    [days, memberRows],
+  );
+  // Heat scale: a full 8-hour day is "hot"; anything above just stays hot.
+  const heat = (seconds: number) => {
+    if (seconds <= 0) return "transparent";
+    const alpha = Math.min(0.22, (seconds / (8 * 3600)) * 0.22 + 0.03);
+    return `rgba(74, 74, 208, ${alpha})`;
+  };
+
+  const matrixCellBase: React.CSSProperties = {
+    padding: "8px 10px",
+    textAlign: "right",
+    fontSize: 12.5,
+    whiteSpace: "nowrap",
+    borderTop: `1px solid ${token.colorSplit}`,
+  };
+
   return (
     <div>
       <PageHeader
         title="Time analytics"
         subtitle={
           isTeamAdmin
-            ? "Where time goes, task by task — for you, any member, or the whole team."
-            : "Where your time goes, task by task. Only you (and workspace admins) can see this."
+            ? "Kaun, kis task pe, kis din — one look and you know where the time went."
+            : "Where your time goes — per task and per day. Only you (and workspace admins) can see this."
         }
         right={
           <Space wrap>
@@ -382,6 +539,7 @@ export default function ReportingTimeAnalyticsPage() {
             <DatePicker.RangePicker
               value={range}
               onChange={(value) => setRange(value as RangeValue)}
+              presets={rangePresets}
               allowClear
               style={{ height: 34 }}
             />
@@ -407,7 +565,7 @@ export default function ReportingTimeAnalyticsPage() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
               gap: 12,
               marginBottom: 16,
             }}
@@ -416,6 +574,18 @@ export default function ReportingTimeAnalyticsPage() {
               label="Total time"
               value={formatSeconds(totalSeconds)}
               icon="timer"
+              loading={isLoading}
+            />
+            <KpiTile
+              label="Today"
+              value={formatSeconds(todaySeconds)}
+              icon="today"
+              loading={isLoading}
+            />
+            <KpiTile
+              label="Avg per active day"
+              value={formatSeconds(avgPerActiveDay)}
+              icon="speed"
               loading={isLoading}
             />
             <KpiTile
@@ -430,12 +600,6 @@ export default function ReportingTimeAnalyticsPage() {
               icon="paid"
               loading={isLoading}
             />
-            <KpiTile
-              label="Entries"
-              value={logs.length}
-              icon="history"
-              loading={isLoading}
-            />
           </div>
 
           <div
@@ -447,8 +611,10 @@ export default function ReportingTimeAnalyticsPage() {
             }}
           >
             <Panel>
-              <SectionTitle>Time per day</SectionTitle>
-              <EChart option={dailyOption} height={200} />
+              <SectionTitle>
+                {everyoneView ? "Time per day — stacked by member" : "Time per day"}
+              </SectionTitle>
+              <EChart option={dailyOption} height={everyoneView ? 230 : 200} />
             </Panel>
             <Panel>
               <SectionTitle>Time by project</SectionTitle>
@@ -476,6 +642,180 @@ export default function ReportingTimeAnalyticsPage() {
               )}
             </Panel>
           </div>
+
+          {/* Day-wise timesheet: rows = members, columns = days. The single
+              clearest answer to "kis din kisne kitna kaam kiya". */}
+          <Panel padding={0} style={{ overflow: "hidden", marginBottom: 16 }}>
+            <div style={{ padding: "16px 16px 4px" }}>
+              <SectionTitle
+                right={
+                  daysClamped ? (
+                    <span style={{ fontSize: 12, color: T.textSecondary }}>
+                      Showing the last 14 days — pick a range up to a month for full detail
+                    </span>
+                  ) : undefined
+                }
+              >
+                Day-wise timesheet
+              </SectionTitle>
+            </div>
+            {memberRows.length === 0 ? (
+              <div style={{ color: T.textSecondary, fontSize: 13, padding: "8px 16px 18px" }}>
+                No time logged yet in this range.
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 560 }}>
+                  <thead>
+                    <tr>
+                      <th
+                        style={{
+                          textAlign: "left",
+                          padding: "8px 16px",
+                          fontSize: 11.5,
+                          textTransform: "uppercase",
+                          letterSpacing: 0.4,
+                          color: T.textSecondary,
+                          fontWeight: 600,
+                        }}
+                      >
+                        Member
+                      </th>
+                      {days.map((d) => {
+                        const isToday = d.format("YYYY-MM-DD") === todayKey;
+                        const weekend = d.day() === 0 || d.day() === 6;
+                        return (
+                          <th
+                            key={d.format("YYYY-MM-DD")}
+                            style={{
+                              padding: "8px 10px",
+                              textAlign: "right",
+                              fontSize: 11,
+                              fontWeight: isToday ? 800 : 600,
+                              color: isToday
+                                ? ACCENT
+                                : weekend
+                                  ? T.textTertiary ?? T.textSecondary
+                                  : T.textSecondary,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {d.format("ddd")}
+                            <br />
+                            {d.format("D MMM")}
+                          </th>
+                        );
+                      })}
+                      <th
+                        style={{
+                          padding: "8px 16px",
+                          textAlign: "right",
+                          fontSize: 11.5,
+                          textTransform: "uppercase",
+                          letterSpacing: 0.4,
+                          color: T.textSecondary,
+                          fontWeight: 700,
+                        }}
+                      >
+                        Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {memberRows.map((m) => (
+                      <tr key={m.user_id}>
+                        <td
+                          style={{
+                            padding: "8px 16px",
+                            borderTop: `1px solid ${token.colorSplit}`,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
+                            <AvatarChip name={m.name} size={24} />
+                            <span style={{ color: T.textPrimary, fontSize: 13, fontWeight: 500 }}>
+                              {m.name}
+                            </span>
+                          </span>
+                        </td>
+                        {days.map((d) => {
+                          const k = d.format("YYYY-MM-DD");
+                          const secs = m.perDay.get(k) ?? 0;
+                          return (
+                            <td
+                              key={k}
+                              className="font-mono"
+                              style={{
+                                ...matrixCellBase,
+                                color: secs > 0 ? T.textPrimary : T.textTertiary ?? T.textSecondary,
+                                background: heat(secs),
+                              }}
+                            >
+                              {secs > 0 ? formatSeconds(secs) : "·"}
+                            </td>
+                          );
+                        })}
+                        <td
+                          className="font-mono"
+                          style={{
+                            ...matrixCellBase,
+                            padding: "8px 16px",
+                            fontWeight: 700,
+                            color: T.textPrimary,
+                          }}
+                        >
+                          {formatSeconds(m.seconds)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  {memberRows.length > 1 ? (
+                    <tfoot>
+                      <tr>
+                        <td
+                          style={{
+                            padding: "8px 16px",
+                            borderTop: `2px solid ${token.colorSplit}`,
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: T.textSecondary,
+                          }}
+                        >
+                          Team total
+                        </td>
+                        {matrixDayTotals.map((secs, i) => (
+                          <td
+                            key={i}
+                            className="font-mono"
+                            style={{
+                              ...matrixCellBase,
+                              borderTop: `2px solid ${token.colorSplit}`,
+                              fontWeight: 700,
+                              color: secs > 0 ? T.textPrimary : T.textTertiary ?? T.textSecondary,
+                            }}
+                          >
+                            {secs > 0 ? formatSeconds(secs) : "·"}
+                          </td>
+                        ))}
+                        <td
+                          className="font-mono"
+                          style={{
+                            ...matrixCellBase,
+                            padding: "8px 16px",
+                            borderTop: `2px solid ${token.colorSplit}`,
+                            fontWeight: 800,
+                            color: T.textPrimary,
+                          }}
+                        >
+                          {formatSeconds(totalSeconds)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  ) : null}
+                </table>
+              </div>
+            )}
+          </Panel>
 
           <Panel padding={0} style={{ overflow: "hidden" }}>
             <ConfigProvider theme={reportingTableTheme}>
