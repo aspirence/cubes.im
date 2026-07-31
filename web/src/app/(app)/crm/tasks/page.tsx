@@ -45,7 +45,6 @@ import {
 import { CrmToggle } from "../_components/crm-toggle";
 import { FormSection } from "../_components/form-section";
 import { entityMeta } from "../_components/entity-meta";
-import { TILE_GRID } from "../_components/layout";
 import {
   CRM_DRAWER_BODY_STYLE,
   CRM_DRAWER_FORM_STYLE,
@@ -63,7 +62,6 @@ import {
   Panel,
   RowActions,
   SoftChip,
-  StatTile,
   crmDate,
   crmPageStyle,
   tint,
@@ -219,39 +217,6 @@ export default function CrmTasksPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scoped, statusFilter, dueFilter, search, recordName]);
 
-  const counts = useMemo(() => {
-    const now = dayjs();
-    const soon = now.add(7, "day");
-    let todo = 0;
-    let inProgress = 0;
-    let done = 0;
-    let overdueTodo = 0;
-    let dueSoonInProgress = 0;
-    for (const t of scoped) {
-      if (t.status === "DONE") {
-        done += 1;
-        continue;
-      }
-      if (t.status === "IN_PROGRESS") inProgress += 1;
-      else todo += 1;
-      if (!t.due_at) continue;
-      const due = dayjs(t.due_at);
-      if (due.isBefore(now)) {
-        if (t.status !== "IN_PROGRESS") overdueTodo += 1;
-      } else if (t.status === "IN_PROGRESS" && due.isBefore(soon)) {
-        dueSoonInProgress += 1;
-      }
-    }
-    return {
-      todo,
-      inProgress,
-      done,
-      overdueTodo,
-      dueSoonInProgress,
-      total: scoped.length,
-    };
-  }, [scoped]);
-
   const memberOptions = useMemo(
     () =>
       (members ?? [])
@@ -319,9 +284,6 @@ export default function CrmTasksPage() {
   };
 
   /** Tile drill-down: click a status tile to filter, click it again to clear. */
-  const toggleStatus = (status: CrmTaskStatus) =>
-    setStatusFilter((current) => (current === status ? "ALL" : status));
-
   const newTaskButton = (
     <Button
       type="primary"
@@ -474,45 +436,6 @@ export default function CrmTasksPage() {
         />
         <div style={{ marginLeft: "auto" }}>{newTaskButton}</div>
       </CrmToolbar>
-
-      <div style={TILE_GRID}>
-        <StatTile
-          icon={STATUS_META.TODO.icon}
-          color={STATUS_META.TODO.color}
-          label="To do"
-          value={counts.todo}
-          hint={
-            counts.overdueTodo > 0
-              ? `${counts.overdueTodo} overdue`
-              : "Nothing overdue"
-          }
-          onClick={() => toggleStatus("TODO")}
-        />
-        <StatTile
-          icon={STATUS_META.IN_PROGRESS.icon}
-          color={STATUS_META.IN_PROGRESS.color}
-          label="In progress"
-          value={counts.inProgress}
-          hint={
-            counts.dueSoonInProgress > 0
-              ? `${counts.dueSoonInProgress} due within 7 days`
-              : "No deadlines this week"
-          }
-          onClick={() => toggleStatus("IN_PROGRESS")}
-        />
-        <StatTile
-          icon={STATUS_META.DONE.icon}
-          color={STATUS_META.DONE.color}
-          label="Done"
-          value={counts.done}
-          hint={
-            counts.total > 0
-              ? `${Math.round((counts.done / counts.total) * 100)}% of ${counts.total} tasks`
-              : "Nothing completed yet"
-          }
-          onClick={() => toggleStatus("DONE")}
-        />
-      </div>
 
       <Panel padding={0}>
         <Table<CrmTaskWithTargets>
