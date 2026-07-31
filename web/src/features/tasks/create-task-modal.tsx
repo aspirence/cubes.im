@@ -9,8 +9,8 @@ import {
   Dropdown,
   Input,
   Modal,
+  Segmented,
   Select,
-  Tag,
   Typography,
 } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
@@ -151,13 +151,18 @@ export function CreateTaskModal({
   const projectList = useMemo(() => projects ?? [], [projects]);
   const templateList = useMemo(() => templates ?? [], [templates]);
 
-  // Subtask mode = opened from a task's Subtasks section. The parent picker
-  // offers the project's top-level tasks; the seeded parent stays listed even
-  // when it is itself a subtask (so its label renders).
-  const subtaskMode = defaultParentTaskId != null;
-  const { data: projectTasks } = useTasks(subtaskMode ? projectId : undefined, {
-    includeSubtasks: true,
-  });
+  // Task vs Subtask is the header toggle. Opening from a task's Subtasks
+  // section seeds Subtask with that parent auto-selected; the global modal
+  // starts on Task and can switch. The parent picker offers the project's
+  // top-level tasks; the seeded parent stays listed even when it is itself a
+  // subtask (so its label renders).
+  const [kind, setKind] = useState<"task" | "subtask">(
+    defaultParentTaskId ? "subtask" : "task",
+  );
+  const { data: projectTasks } = useTasks(
+    kind === "subtask" ? projectId : undefined,
+    { includeSubtasks: true },
+  );
   const parentOptions = useMemo(() => {
     const list = (projectTasks ?? [])
       .filter((t) => t.parent_task_id == null || t.id === parentTaskId)
@@ -227,6 +232,7 @@ export function CreateTaskModal({
     setPriorityId(undefined);
     setStatusId(undefined);
     setAssignees([]);
+    setKind(defaultParentTaskId ? "subtask" : "task");
     setParentTaskId(defaultParentTaskId);
     setDeliverableType(undefined);
     setStart(dayjs());
@@ -260,7 +266,7 @@ export function CreateTaskModal({
     const proj = projectList.find((p) => p.id === id);
     const defTpl = proj?.default_task_template_id ?? undefined;
     // Templates are top-level-only, so subtask mode skips the auto-apply.
-    if (defTpl && !templateId && !subtaskMode) applyTemplate(defTpl);
+    if (defTpl && !templateId && kind === "task") applyTemplate(defTpl);
   };
 
   const stepCount = useMemo(() => {
@@ -276,6 +282,10 @@ export function CreateTaskModal({
     }
     if (!name.trim()) {
       message.warning("Enter a task name.");
+      return;
+    }
+    if (kind === "subtask" && !parentTaskId) {
+      message.warning("Pick a parent task (or switch back to Task).");
       return;
     }
     try {
@@ -391,20 +401,25 @@ export function CreateTaskModal({
           style={{ minWidth: 180 }}
           options={projectList.map((p) => ({ value: p.id, label: p.name }))}
         />
-        <Tag
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            margin: 0,
-            borderRadius: 6,
+        <Segmented
+          size="small"
+          value={kind}
+          onChange={(v) => {
+            const next = v as "task" | "subtask";
+            setKind(next);
+            if (next === "task") setParentTaskId(undefined);
+            // Templates are top-level-only — switching to Subtask clears one.
+            else applyTemplate(undefined);
           }}
-        >
-          {subtaskMode && parentTaskId ? "Subtask" : "Task"}
-        </Tag>
+          options={[
+            { value: "task", label: "Task" },
+            { value: "subtask", label: "Subtask" },
+          ]}
+        />
       </div>
 
-      {/* Subtask mode: the parent pill — changeable, clearable. */}
-      {subtaskMode ? (
+      {/* Subtask mode: the parent pill — changeable. */}
+      {kind === "subtask" ? (
         <div
           style={{
             display: "flex",
@@ -432,13 +447,9 @@ export function CreateTaskModal({
             showSearch
             allowClear
             optionFilterProp="label"
-            placeholder="No parent — creates a normal task"
+            placeholder="Select parent task"
             value={parentTaskId}
-            onChange={(v) => {
-              setParentTaskId(v ?? undefined);
-              // Templates are top-level-only; a picked parent clears one.
-              if (v) applyTemplate(undefined);
-            }}
+            onChange={(v) => setParentTaskId(v ?? undefined)}
             popupMatchSelectWidth={false}
             style={{ flex: 1, minWidth: 0, maxWidth: 380 }}
             options={parentOptions}
@@ -630,7 +641,7 @@ export function CreateTaskModal({
       >
         <Dropdown
           trigger={["click"]}
-          disabled={Boolean(parentTaskId)}
+          disabled={kind === "subtask"}
           menu={{
             items:
               templateList.length === 0
@@ -659,9 +670,11 @@ export function CreateTaskModal({
         >
           <Button
             icon={<ProfileOutlined />}
-            disabled={Boolean(parentTaskId)}
+            disabled={kind === "subtask"}
             title={
-              parentTaskId ? "Templates apply to top-level tasks" : undefined
+              kind === "subtask"
+                ? "Templates apply to top-level tasks"
+                : undefined
             }
           >
             {templateId
