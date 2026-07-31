@@ -72,6 +72,7 @@ import { useTeamMembers } from "@/features/team-members/use-team-members";
 import { MemberSelect } from "@/features/team-members/member-select";
 import { useProjectTracks, useSetTaskTrack } from "@/features/tracks/use-tracks";
 import { TaskTimerButton } from "@/features/tasks/timer-widget";
+import { useTaskWorkLogs, formatSeconds } from "@/features/time/use-time";
 import {
   TeamMentionInput,
   extractMentionUserIds,
@@ -542,6 +543,18 @@ function TaskDrawerContent({
 
   const { data: subtasksRaw } = useSubtasks(taskId);
   const createTask = useCreateTask();
+  // Logged time for the "Time logged" row — total plus per-person split.
+  const { data: workLogs } = useTaskWorkLogs(taskId);
+  const timeByPerson = useMemo(() => {
+    const acc = new Map<string, { name: string; seconds: number }>();
+    for (const log of workLogs?.logs ?? []) {
+      const id = log.user?.id ?? "unknown";
+      const cur = acc.get(id) ?? { name: log.user?.name ?? "Unknown", seconds: 0 };
+      cur.seconds += log.time_spent ?? 0;
+      acc.set(id, cur);
+    }
+    return [...acc.values()].sort((a, b) => b.seconds - a.seconds);
+  }, [workLogs]);
 
   const assignees = assigneesRaw ?? [];
   const taskLabels = taskLabelsRaw ?? [];
@@ -1345,6 +1358,30 @@ function TaskDrawerContent({
               onChange={(v) => handleDateChange("start_date", v)}
               placeholder="No start date"
             />
+          </MetaRow>
+
+          <MetaRow icon="timer" label="Time logged">
+            {timeByPerson.length === 0 ? (
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                No time logged yet
+              </Text>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "2px 0" }}>
+                <span
+                  className="tabular"
+                  style={{ fontSize: 13.5, fontWeight: 700, color: DT.textPrimary }}
+                >
+                  {formatSeconds(workLogs?.totalSeconds ?? 0)}
+                </span>
+                <span style={{ fontSize: 12, color: DT.textTertiary, lineHeight: 1.5 }}>
+                  {timeByPerson
+                    .slice(0, 4)
+                    .map((p) => `${p.name} · ${formatSeconds(p.seconds)}`)
+                    .join("  —  ")}
+                  {timeByPerson.length > 4 ? `  +${timeByPerson.length - 4} more` : ""}
+                </span>
+              </div>
+            )}
           </MetaRow>
 
           <MetaRow icon="sell" label="Labels" wide>
