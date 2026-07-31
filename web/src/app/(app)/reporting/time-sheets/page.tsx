@@ -190,6 +190,18 @@ export default function ReportingTimeSheetsPage() {
             <DatePicker.RangePicker
               value={range}
               onChange={(value) => setRange(value as RangeValue)}
+              presets={[
+                { label: "Today", value: [dayjs(), dayjs()] },
+                { label: "Last 7 days", value: [dayjs().subtract(6, "day"), dayjs()] },
+                { label: "This month", value: [dayjs().startOf("month"), dayjs()] },
+                {
+                  label: "Last month",
+                  value: [
+                    dayjs().subtract(1, "month").startOf("month"),
+                    dayjs().subtract(1, "month").endOf("month"),
+                  ],
+                },
+              ]}
               allowClear
               style={{ height: 34 }}
             />
