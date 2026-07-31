@@ -124,6 +124,7 @@ import {
   useTaskVideoReviews,
 } from "@/features/app-video-review/use-video-review";
 import { NewReviewModal } from "@/features/app-video-review/new-review-modal";
+import { CreateTaskModal } from "@/features/tasks/create-task-modal";
 
 /* -------------------------------------------------------------------------- */
 /* Local types.                                                               */
@@ -625,7 +626,8 @@ function TaskDrawerContent({
   // avoids a setState-in-effect and stays correct across drawer re-targets.
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [newSubtask, setNewSubtask] = useState("");
+  // "+ Add subtask" opens the full create dialog seeded with this parent.
+  const [subtaskModalOpen, setSubtaskModalOpen] = useState(false);
   // AI subtask suggestions: null = none requested; keyed selection by index.
   const aiBreakdown = useAiBreakdown();
   const [aiSuggestions, setAiSuggestions] = useState<
@@ -836,24 +838,6 @@ function TaskDrawerContent({
     } catch (err) {
       message.error(
         err instanceof Error ? err.message : "Failed to set labels.",
-      );
-    }
-  };
-
-  const handleAddSubtask = async () => {
-    const trimmed = newSubtask.trim();
-    if (!trimmed) return;
-    try {
-      await createTask.mutateAsync({
-        name: trimmed,
-        projectId: task.project_id,
-        parentTaskId: task.id,
-        statusId: task.status_id ?? undefined,
-      });
-      setNewSubtask("");
-    } catch (err) {
-      message.error(
-        err instanceof Error ? err.message : "Failed to add subtask.",
       );
     }
   };
@@ -1753,38 +1737,37 @@ function TaskDrawerContent({
             No subtasks yet.
           </Text>
         )}
-        <Space.Compact style={{ width: "100%", marginTop: 10 }}>
-          <Input
-            value={newSubtask}
-            onChange={(e) => setNewSubtask(e.target.value)}
-            onPressEnter={handleAddSubtask}
-            placeholder="Add a subtask"
-          />
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            loading={createTask.isPending}
-            onClick={handleAddSubtask}
-            disabled={!newSubtask.trim()}
-            style={{ background: DT.accent }}
-          >
-            Add
-          </Button>
-        </Space.Compact>
-
-        {/* AI breakdown: suggest subtasks, user picks which to create. */}
-        {aiSuggestions === null ? (
+        <div
+          style={{
+            marginTop: 10,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          {/* Opens the full create dialog, seeded with this task as parent. */}
           <Button
             size="small"
-            type="text"
-            icon={<ThunderboltOutlined />}
-            loading={aiBreakdown.isPending}
-            onClick={handleAiBreakdown}
-            style={{ marginTop: 8, color: DT.accent, paddingInline: 4 }}
+            icon={<PlusOutlined />}
+            onClick={() => setSubtaskModalOpen(true)}
           >
-            Break down with AI
+            Add subtask
           </Button>
-        ) : (
+          {/* AI breakdown: suggest subtasks, user picks which to create. */}
+          {aiSuggestions === null ? (
+            <Button
+              size="small"
+              type="text"
+              icon={<ThunderboltOutlined />}
+              loading={aiBreakdown.isPending}
+              onClick={handleAiBreakdown}
+              style={{ color: DT.accent, paddingInline: 4 }}
+            >
+              Break down with AI
+            </Button>
+          ) : null}
+        </div>
+        {aiSuggestions !== null ? (
           <div
             style={{
               marginTop: 10,
@@ -1848,7 +1831,7 @@ function TaskDrawerContent({
               </Button>
             </Space>
           </div>
-        )}
+        ) : null}
 
           <SectionDivider />
 
@@ -2062,6 +2045,16 @@ function TaskDrawerContent({
         onClose={() => setReviewModalOpen(false)}
         defaultProjectId={task.project_id}
         defaultTaskId={task.id}
+      />
+
+      <CreateTaskModal
+        open={subtaskModalOpen}
+        onClose={() => setSubtaskModalOpen(false)}
+        defaultProjectId={task.project_id}
+        defaultParentTaskId={task.id}
+        defaultParentTaskName={
+          task.task_no != null ? `#${task.task_no} · ${task.name}` : task.name
+        }
       />
     </div>
   );

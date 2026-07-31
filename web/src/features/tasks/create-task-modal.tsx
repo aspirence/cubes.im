@@ -36,7 +36,11 @@ import {
   useTaskPriorities,
   useTaskStatuses,
 } from "@/features/tasks/use-task-statuses";
-import { useUpdateTask } from "@/features/tasks/use-tasks";
+import {
+  useCreateTask,
+  useTasks,
+  useUpdateTask,
+} from "@/features/tasks/use-tasks";
 import {
   useTaskTemplates,
   useCreateTaskWithTemplate,
@@ -50,6 +54,13 @@ export interface CreateTaskModalProps {
   defaultProjectId?: string;
   /** Preselect a due date (e.g. when opened from a calendar day). */
   defaultDue?: Dayjs | null;
+  /**
+   * Open as a subtask composer: preselects this parent task. The parent stays
+   * changeable (or clearable — clearing creates a normal top-level task).
+   */
+  defaultParentTaskId?: string;
+  /** Label for the seeded parent, shown until the project's task list loads. */
+  defaultParentTaskName?: string;
   /** Called with the new task id after a successful create. */
   onCreated?: (taskId: string) => void;
 }
@@ -82,6 +93,8 @@ export function CreateTaskModal({
   onClose,
   defaultProjectId,
   defaultDue,
+  defaultParentTaskId,
+  defaultParentTaskName,
   onCreated,
 }: CreateTaskModalProps) {
   const { message } = App.useApp();
@@ -91,6 +104,9 @@ export function CreateTaskModal({
   const { data: priorities } = useTaskPriorities();
   const { data: templates } = useTaskTemplates();
   const createTask = useCreateTaskWithTemplate();
+  // Subtasks go through the plain create_task RPC — the only one that takes a
+  // parent (and it invalidates the parent's subtask list on success).
+  const createSubtask = useCreateTask();
   const updateTask = useUpdateTask();
   const setDefaultTemplate = useSetProjectDefaultTemplate();
 
@@ -120,6 +136,9 @@ export function CreateTaskModal({
   // Explicit status choice; undefined falls back to the project's To Do status.
   const [statusId, setStatusId] = useState<string | undefined>();
   const [assignees, setAssignees] = useState<string[]>([]);
+  const [parentTaskId, setParentTaskId] = useState<string | undefined>(
+    defaultParentTaskId,
+  );
   const [deliverableType, setDeliverableType] = useState<string | undefined>();
   // Start date defaults to today — clearable if the task shouldn't have one.
   const [start, setStart] = useState<Dayjs | null>(() => dayjs());
@@ -131,6 +150,32 @@ export function CreateTaskModal({
 
   const projectList = useMemo(() => projects ?? [], [projects]);
   const templateList = useMemo(() => templates ?? [], [templates]);
+
+  // Subtask mode = opened from a task's Subtasks section. The parent picker
+  // offers the project's top-level tasks; the seeded parent stays listed even
+  // when it is itself a subtask (so its label renders).
+  const subtaskMode = defaultParentTaskId != null;
+  const { data: projectTasks } = useTasks(subtaskMode ? projectId : undefined, {
+    includeSubtasks: true,
+  });
+  const parentOptions = useMemo(() => {
+    const list = (projectTasks ?? [])
+      .filter((t) => t.parent_task_id == null || t.id === parentTaskId)
+      .map((t) => ({
+        value: t.id,
+        label: t.task_no != null ? `#${t.task_no} · ${t.name}` : t.name,
+      }));
+    // Until the task list loads, the seeded parent still needs a label —
+    // without one the Select would flash its raw id.
+    if (
+      defaultParentTaskId &&
+      defaultParentTaskName &&
+      !list.some((o) => o.value === defaultParentTaskId)
+    ) {
+      list.unshift({ value: defaultParentTaskId, label: defaultParentTaskName });
+    }
+    return list;
+  }, [projectTasks, parentTaskId, defaultParentTaskId, defaultParentTaskName]);
   const priorityByName = useMemo(() => {
     const m = new Map<string, string>();
     for (const p of priorities ?? []) m.set(p.name.toLowerCase(), p.id);
@@ -182,6 +227,7 @@ export function CreateTaskModal({
     setPriorityId(undefined);
     setStatusId(undefined);
     setAssignees([]);
+    setParentTaskId(defaultParentTaskId);
     setDeliverableType(undefined);
     setStart(dayjs());
     setDue(defaultDue ?? null);
@@ -207,11 +253,14 @@ export function CreateTaskModal({
   const handleProjectChange = (id: string) => {
     setProjectId(id);
     // Statuses are per-project — drop any prior choice so the new project's
-    // To Do default takes over.
+    // To Do default takes over. Same for the parent: it lives in the old
+    // project, so it can't stay selected.
     setStatusId(undefined);
+    setParentTaskId(undefined);
     const proj = projectList.find((p) => p.id === id);
     const defTpl = proj?.default_task_template_id ?? undefined;
-    if (defTpl && !templateId) applyTemplate(defTpl);
+    // Templates are top-level-only, so subtask mode skips the auto-apply.
+    if (defTpl && !templateId && !subtaskMode) applyTemplate(defTpl);
   };
 
   const stepCount = useMemo(() => {
@@ -230,21 +279,34 @@ export function CreateTaskModal({
       return;
     }
     try {
-      const taskId = await createTask.mutateAsync({
-        projectId,
-        name: name.trim(),
-        templateId: templateId ?? null,
-        description: description.trim() || null,
-        priorityId: priorityId ?? null,
-        statusId: effectiveStatusId ?? null,
-        assignees,
-      });
-      if (start || due || deliverableType) {
+      // With a parent picked, create_task is the path (the template RPC has no
+      // parent param); the description joins the follow-up write below.
+      const taskId = parentTaskId
+        ? await createSubtask.mutateAsync({
+            projectId,
+            name: name.trim(),
+            statusId: effectiveStatusId ?? undefined,
+            priorityId: priorityId ?? undefined,
+            parentTaskId,
+            assignees,
+          })
+        : await createTask.mutateAsync({
+            projectId,
+            name: name.trim(),
+            templateId: templateId ?? null,
+            description: description.trim() || null,
+            priorityId: priorityId ?? null,
+            statusId: effectiveStatusId ?? null,
+            assignees,
+          });
+      const subtaskDescription = parentTaskId ? description.trim() : "";
+      if (start || due || deliverableType || subtaskDescription) {
         await updateTask.mutateAsync({
           id: taskId,
           ...(start ? { start_date: start.toISOString() } : {}),
           ...(due ? { end_date: due.toISOString() } : {}),
           ...(deliverableType ? { deliverable_type: deliverableType } : {}),
+          ...(subtaskDescription ? { description: subtaskDescription } : {}),
         });
       }
       if (makeDefault && templateId && projectId) {
@@ -255,9 +317,11 @@ export function CreateTaskModal({
         }
       }
       message.success(
-        stepCount > 0
-          ? `Task created with ${stepCount} subtask${stepCount === 1 ? "" : "s"}.`
-          : "Task created.",
+        parentTaskId
+          ? "Subtask created."
+          : stepCount > 0
+            ? `Task created with ${stepCount} subtask${stepCount === 1 ? "" : "s"}.`
+            : "Task created.",
       );
       // Mention fan-out from the description — best-effort, never blocks
       // creation; recipients get a "mention" notification linking to the task.
@@ -291,7 +355,8 @@ export function CreateTaskModal({
     value: p.id,
     label: p.name,
   }));
-  const pending = createTask.isPending || updateTask.isPending;
+  const pending =
+    createTask.isPending || createSubtask.isPending || updateTask.isPending;
 
   return (
     <>
@@ -334,9 +399,53 @@ export function CreateTaskModal({
             borderRadius: 6,
           }}
         >
-          Task
+          {subtaskMode && parentTaskId ? "Subtask" : "Task"}
         </Tag>
       </div>
+
+      {/* Subtask mode: the parent pill — changeable, clearable. */}
+      {subtaskMode ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 24px 0",
+          }}
+        >
+          <span
+            className="material-symbols-rounded"
+            aria-hidden
+            style={{ fontSize: 16, color: "#9a9da8" }}
+          >
+            subdirectory_arrow_right
+          </span>
+          <Typography.Text
+            type="secondary"
+            style={{ fontSize: 12.5, flex: "none" }}
+          >
+            Subtask of
+          </Typography.Text>
+          <Select
+            size="small"
+            variant="filled"
+            showSearch
+            allowClear
+            optionFilterProp="label"
+            placeholder="No parent — creates a normal task"
+            value={parentTaskId}
+            onChange={(v) => {
+              setParentTaskId(v ?? undefined);
+              // Templates are top-level-only; a picked parent clears one.
+              if (v) applyTemplate(undefined);
+            }}
+            popupMatchSelectWidth={false}
+            style={{ flex: 1, minWidth: 0, maxWidth: 380 }}
+            options={parentOptions}
+            disabled={!projectId}
+          />
+        </div>
+      ) : null}
 
       {/* Name (prominent) + description (inline) */}
       <div style={{ padding: "12px 24px 0" }}>
@@ -521,6 +630,7 @@ export function CreateTaskModal({
       >
         <Dropdown
           trigger={["click"]}
+          disabled={Boolean(parentTaskId)}
           menu={{
             items:
               templateList.length === 0
@@ -547,7 +657,13 @@ export function CreateTaskModal({
                   ],
           }}
         >
-          <Button icon={<ProfileOutlined />}>
+          <Button
+            icon={<ProfileOutlined />}
+            disabled={Boolean(parentTaskId)}
+            title={
+              parentTaskId ? "Templates apply to top-level tasks" : undefined
+            }
+          >
             {templateId
               ? `${templateList.find((t) => t.id === templateId)?.name ?? "Template"}${
                   stepCount > 0 ? ` · ${stepCount} subtask${stepCount === 1 ? "" : "s"}` : ""
