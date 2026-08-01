@@ -98,6 +98,46 @@ export function crmLeadStatusMeta(value: string | null | undefined) {
   );
 }
 
+/**
+ * How much a lead is WORTH — a third axis, alongside `stage_id` (where the card
+ * sits) and `status` (how the lead is doing).
+ *
+ * Status moves constantly and tier barely moves at all, which is the point: a
+ * Gold lead that went quiet is still Gold, and that is exactly the list someone
+ * wants when they come back to re-plan. `null` means ungraded — nobody has
+ * judged it yet, which is a different thing from judging it Bronze.
+ *
+ * Ordered lowest to highest; `CRM_LEAD_TIER_RANK` gives the sort key.
+ */
+export type CrmLeadTier = "bronze" | "silver" | "gold";
+
+export const CRM_LEAD_TIERS: {
+  value: CrmLeadTier;
+  label: string;
+  /** Entity colour — data, not theme, so it is a literal on purpose. */
+  color: string;
+  icon: string;
+}[] = [
+  { value: "bronze", label: "Bronze", color: "#a9714b", icon: "workspace_premium" },
+  { value: "silver", label: "Silver", color: "#8a8d98", icon: "workspace_premium" },
+  { value: "gold", label: "Gold", color: "#d0a02c", icon: "workspace_premium" },
+];
+
+/** Meta for a stored tier, or null when the lead has not been graded. */
+export function crmLeadTierMeta(value: string | null | undefined) {
+  return CRM_LEAD_TIERS.find((t) => t.value === value) ?? null;
+}
+
+/**
+ * Sort key, highest tier first, ungraded last. Ungraded sorts BELOW bronze
+ * rather than above it: a lead nobody has looked at should not outrank one
+ * somebody judged, however low the judgement.
+ */
+export function crmLeadTierRank(value: string | null | undefined): number {
+  const i = CRM_LEAD_TIERS.findIndex((t) => t.value === value);
+  return i === -1 ? -1 : i;
+}
+
 /** Campaign `channel` is free text in the DB; these are what the UI offers. */
 export const CRM_CAMPAIGN_CHANNELS = [
   "Meta",

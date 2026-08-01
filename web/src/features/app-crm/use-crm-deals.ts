@@ -8,7 +8,12 @@ import {
 } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveTeam } from "@/features/teams/use-teams";
-import type { CrmDeal, CrmDealWithRefs, CrmLeadStatus } from "./types";
+import type {
+  CrmDeal,
+  CrmDealWithRefs,
+  CrmLeadStatus,
+  CrmLeadTier,
+} from "./types";
 
 const dealsKey = (teamId: string | undefined) => ["crm-deals", teamId] as const;
 
@@ -17,9 +22,11 @@ const dealsKey = (teamId: string | undefined) => ["crm-deals", teamId] as const;
  * purpose: deals no longer track money, so the columns stay in the table
  * (nullable / defaulted) but nothing may write to them again.
  *
- * `status` is re-added narrowed to the seven lead statuses (the DB column is
- * plain text behind a check constraint); `campaign_id` rides along from the row
- * type. Status is the lead's own health — `stage_id` remains the board axis.
+ * `status` and `tier` are re-added narrowed to their fixed vocabularies (both
+ * DB columns are plain text behind check constraints); `campaign_id` rides
+ * along from the row type. Three axes, deliberately: `stage_id` is the board,
+ * `status` is how the lead is doing, `tier` is what it is worth. `tier` stays
+ * nullable — ungraded is a real state, not a missing one.
  */
 export type CrmDealPatch = Partial<
   Omit<
@@ -32,8 +39,9 @@ export type CrmDealPatch = Partial<
     | "amount"
     | "currency_code"
     | "status"
+    | "tier"
   >
-> & { status?: CrmLeadStatus };
+> & { status?: CrmLeadStatus; tier?: CrmLeadTier | null };
 
 /** All the active team's deals (soft-deleted included), board-ordered. */
 export function useCrmDeals() {

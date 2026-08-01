@@ -49,6 +49,7 @@ import {
   CRM_CURRENCIES,
   CRM_TASK_STATUSES,
   crmLeadStatusMeta,
+  crmLeadTierMeta,
   crmMoney,
   crmPersonName,
   type CrmActivity,
@@ -63,6 +64,7 @@ import { MIcon } from "./m-icon";
 import { DealGlyph } from "./deal-glyph";
 import { PhoneWithCopy } from "./phone-cell";
 import { LeadStatusPicker } from "./lead-status-picker";
+import { LeadTierPicker } from "./lead-tier-picker";
 import {
   InlineBool,
   InlineDate,
@@ -102,6 +104,7 @@ const ACTIVITY_ICONS: Record<string, string> = {
   updated: "edit",
   stage_changed: "swap_horiz",
   status_changed: "flag",
+  tier_changed: "workspace_premium",
   deleted: "delete",
   restored: "restore_from_trash",
   note_added: "sticky_note_2",
@@ -129,6 +132,15 @@ function activityText(activity: CrmActivity): string {
       ).label.toLowerCase()} to ${crmLeadStatusMeta(
         String(props.to ?? ""),
       ).label.toLowerCase()}`;
+    case "tier_changed": {
+      // Either end can be null — a lead can be graded for the first time or
+      // have its grade taken away, and both read badly as "from  to gold".
+      const from = crmLeadTierMeta(props.from as string | null);
+      const to = crmLeadTierMeta(props.to as string | null);
+      if (!from) return `graded the lead ${to?.label.toLowerCase() ?? "ungraded"}`;
+      if (!to) return `removed the ${from.label.toLowerCase()} grade`;
+      return `re-graded the lead from ${from.label.toLowerCase()} to ${to.label.toLowerCase()}`;
+    }
     case "deleted":
       return "deleted this record";
     case "restored":
@@ -1023,6 +1035,7 @@ export function RecordDrawer({
 
     const d = record as CrmDealWithRefs;
     const status = crmLeadStatusMeta(d.status);
+    const tierMeta = crmLeadTierMeta(d.tier);
     // Soft-deleted campaigns still resolve: a lead keeps the name it arrived on.
     const campaign = (campaigns ?? []).find((c) => c.id === d.campaign_id);
     return [
@@ -1082,6 +1095,21 @@ export function RecordDrawer({
           // The chip *is* the control everywhere else in the CRM; the drawer
           // uses the same picker rather than a second implementation.
           <LeadStatusPicker dealId={d.id} status={d.status} />
+        ),
+      },
+      {
+        key: "tier",
+        label: "Tier",
+        children: recordDeleted ? (
+          tierMeta ? (
+            <SoftChip tone="custom" color={tierMeta.color} icon={tierMeta.icon}>
+              {tierMeta.label}
+            </SoftChip>
+          ) : (
+            <span style={{ color: token.colorTextTertiary }}>Ungraded</span>
+          )
+        ) : (
+          <LeadTierPicker dealId={d.id} tier={d.tier} />
         ),
       },
       {
@@ -1220,6 +1248,7 @@ export function RecordDrawer({
     saveDeal,
     savePerson,
     saveCompany,
+    token.colorTextTertiary,
   ]);
 
   const handleAddTask = async () => {
@@ -1263,6 +1292,7 @@ export function RecordDrawer({
       const d = record as CrmDealWithRefs;
       const stage = (stages ?? []).find((s) => s.id === d.stage_id);
       const status = crmLeadStatusMeta(d.status);
+      const headerTier = crmLeadTierMeta(d.tier);
       return (
         <div
           style={{
@@ -1285,6 +1315,17 @@ export function RecordDrawer({
           <SoftChip tone={status.tone} icon={leadStatusIcon(status.value)}>
             {status.label}
           </SoftChip>
+          {/* Third chip only when someone has actually graded the lead — an
+              "Ungraded" badge on every header would say nothing, loudly. */}
+          {headerTier ? (
+            <SoftChip
+              tone="custom"
+              color={headerTier.color}
+              icon={headerTier.icon}
+            >
+              {headerTier.label}
+            </SoftChip>
+          ) : null}
           {d.company?.name ? (
             <span
               style={{

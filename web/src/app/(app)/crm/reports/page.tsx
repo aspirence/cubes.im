@@ -17,6 +17,7 @@ import {
 } from "@/features/app-crm/use-crm-campaigns";
 import {
   CRM_LEAD_STATUSES,
+  CRM_LEAD_TIERS,
   crmLeadStatusMeta,
   type CrmChipTone,
 } from "@/features/app-crm/types";
@@ -514,6 +515,90 @@ export default function CrmReportsPage() {
 
   // Leads by campaign — magnitude, so one hue; cost-per-lead rides the direct
   // label wherever spend has been logged (derived, never stored).
+  /**
+   * Lead tiers, best first, with the ungraded pile at the bottom.
+   *
+   * That last bar is the one worth having: coming back to re-plan means asking
+   * "how many leads has nobody judged yet", and a chart that quietly dropped
+   * them would answer the easy half of the question.
+   */
+  const tierOption = useMemo(() => {
+    const counts = new Map<string, number>();
+    let ungraded = 0;
+    for (const d of liveDeals) {
+      if (!d.tier) {
+        ungraded += 1;
+        continue;
+      }
+      counts.set(d.tier, (counts.get(d.tier) ?? 0) + 1);
+    }
+    const rows = [
+      ...[...CRM_LEAD_TIERS].reverse().map((t) => ({
+        label: t.label,
+        color: t.color,
+        count: counts.get(t.value) ?? 0,
+      })),
+      {
+        label: "Ungraded",
+        color: token.colorTextQuaternary,
+        count: ungraded,
+      },
+    ];
+    const graded = liveDeals.length - ungraded;
+    return {
+      rows,
+      graded,
+      option: {
+        grid: { left: 8, right: 28, top: 8, bottom: 8, containLabel: true },
+        xAxis: {
+          type: "value" as const,
+          axisLabel: { show: false },
+          splitLine: { show: false },
+        },
+        yAxis: {
+          type: "category" as const,
+          inverse: true,
+          data: rows.map((r) => r.label),
+          axisLine: { show: false },
+          axisTick: { show: false },
+          axisLabel: axisText,
+        },
+        tooltip: {
+          ...chartTooltip,
+          trigger: "item" as const,
+          formatter: (params: unknown) => {
+            const p = params as { name?: string; value?: number };
+            const count = p.value ?? 0;
+            return `${p.name}: ${count} lead${count === 1 ? "" : "s"}`;
+          },
+        },
+        series: [
+          {
+            type: "bar" as const,
+            data: rows.map((r) => ({
+              value: r.count,
+              itemStyle: { color: r.color, borderRadius: [0, 4, 4, 0] },
+            })),
+            barWidth: 14,
+            label: {
+              show: true,
+              position: "right" as const,
+              color: token.colorTextSecondary,
+              fontFamily: CHART_FONT,
+              formatter: "{c}",
+            },
+          },
+        ],
+      },
+    };
+  }, [
+    liveDeals,
+    axisText,
+    chartTooltip,
+    token.colorTextSecondary,
+    token.colorTextQuaternary,
+  ]);
+
   const campaignOption = useMemo(() => {
     const spendByCampaign = new Map<string, number>();
     for (const s of campaignSpend ?? []) {
@@ -910,6 +995,30 @@ export default function CrmReportsPage() {
               icon="flag"
               title="No leads yet"
               description="Every deal carries a lead status — New through Converted — and this chart shows how the desk is spread across them."
+              action={goToDeals}
+            />
+          )}
+        </Panel>
+
+        <Panel title="Leads by tier">
+          {caption(
+            `What the leads ${scopeHint} are worth. Ungraded is the pile nobody has judged yet — the first place to look when you sit down to re-plan.`,
+          )}
+          {dealsLoading ? (
+            panelSpin
+          ) : hasDeals ? (
+            <EChart
+              option={tierOption.option}
+              height={Math.max(180, tierOption.rows.length * 40)}
+            />
+          ) : hiddenByScope ? (
+            scopeEmpty
+          ) : (
+            <EmptyState
+              compact
+              icon="workspace_premium"
+              title="No leads to grade"
+              description="Grade a lead Bronze, Silver or Gold from any deal list and this chart shows how the desk is spread across them."
               action={goToDeals}
             />
           )}
