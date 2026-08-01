@@ -194,20 +194,42 @@ create or replace function public.app_crm_track_deal_label()
 as
 $$
 declare
-    _row   record := coalesce(new, old);
+    _team  uuid;
+    _deal  uuid;
+    _label uuid;
+    _event text;
     _name  text;
 begin
+    -- Explicit branches rather than coalesce(new, old): those are record
+    -- pseudo-variables, and folding them into one expression is the kind of
+    -- thing that works until it meets a different plpgsql version.
+    if tg_op = 'INSERT' then
+        _team  := new.team_id;
+        _deal  := new.deal_id;
+        _label := new.label_id;
+        _event := 'label_added';
+    else
+        _team  := old.team_id;
+        _deal  := old.deal_id;
+        _label := old.label_id;
+        _event := 'label_removed';
+    end if;
+
     select l.name into _name
-    from public.app_crm_labels l where l.id = _row.label_id;
+    from public.app_crm_labels l where l.id = _label;
 
     insert into public.app_crm_activities (team_id, target_type, target_id, event, properties, actor_id)
-    values (_row.team_id, 'deal', _row.deal_id,
-            case when tg_op = 'INSERT' then 'label_added' else 'label_removed' end,
-            -- The name is copied, not referenced: a tag deleted later would
+    values (_team, 'deal', _deal, _event,
+            -- The name is COPIED, not referenced: a tag deleted later would
             -- otherwise turn its own history into a row of blanks.
-            jsonb_build_object('label', coalesce(_name, 'a tag'), 'label_id', _row.label_id),
+            jsonb_build_object('label', coalesce(_name, 'a tag'), 'label_id', _label),
             auth.uid());
-    return _row;
+
+    -- AFTER triggers ignore the return value; DELETE wants OLD by convention.
+    if tg_op = 'INSERT' then
+        return new;
+    end if;
+    return old;
 end;
 $$;
 
