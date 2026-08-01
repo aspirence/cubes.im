@@ -46,6 +46,10 @@ import {
   useUpdateCrmDeal,
 } from "@/features/app-crm/use-crm-deals";
 import { useCrmStages } from "@/features/app-crm/use-crm-stages";
+import {
+  useCrmLabels,
+  useSetCrmDealLabel,
+} from "@/features/app-crm/use-crm-labels";
 import { useCrmCampaigns } from "@/features/app-crm/use-crm-campaigns";
 import { useCrmCompanies } from "@/features/app-crm/use-crm-companies";
 import { useCrmPeople } from "@/features/app-crm/use-crm-people";
@@ -53,13 +57,9 @@ import { useTeamMembers } from "@/features/team-members/use-team-members";
 import {
   CRM_LEAD_STATUSES,
   CRM_LEAD_STATUS_DEFAULT,
-  CRM_LEAD_TIERS,
   crmLeadStatusMeta,
-  crmLeadTierMeta,
-  crmLeadTierRank,
   type CrmDealWithRefs,
   type CrmLeadStatus,
-  type CrmLeadTier,
   type CrmStage,
 } from "@/features/app-crm/types";
 import { errMsg } from "@/lib/err";
@@ -69,7 +69,7 @@ import { DealQuickCreate } from "../_components/paste-deal";
 import { CrmToggle } from "../_components/crm-toggle";
 import { BulkBar, useBulkRun } from "../_components/bulk-bar";
 import { LeadStatusPicker } from "../_components/lead-status-picker";
-import { LeadTierPicker } from "../_components/lead-tier-picker";
+import { DealLabels, LabelChip } from "../_components/label-picker";
 import { DealCell } from "../_components/deal-glyph";
 import {
   CRM_ACCENT,
@@ -123,8 +123,6 @@ type DealFormValues = {
   stage_id?: string | null;
   /** The lead's own health — never the board axis, which is `stage_id`. */
   status?: CrmLeadStatus;
-  /** What the lead is worth. Undefined/null both mean ungraded. */
-  tier?: CrmLeadTier | null;
   campaign_id?: string | null;
   close_date?: Dayjs | null;
   company_id?: string | null;
@@ -234,12 +232,12 @@ function DealCard({
           here too, so a status move never costs a drag or a drawer. */}
       <span style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         <LeadStatusPicker dealId={deal.id} status={deal.status} size="small" />
-        {/* Only graded leads wear a tier on a card. An "Ungraded" chip on every
-            untouched card would be noise on the surface that most needs to
-            stay scannable. */}
-        {deal.tier ? (
-          <LeadTierPicker dealId={deal.id} tier={deal.tier} size="small" />
-        ) : null}
+        {/* Tags a card already carries, read-only here: a card is dragged, and
+            an "x" on every chip is a mis-click waiting to happen mid-drag. The
+            picker is one click away in the drawer. */}
+        {deal.labels.map((label) => (
+          <LabelChip key={label.id} label={label} size="small" />
+        ))}
       </span>
 
       {hasMeta ? (
@@ -473,6 +471,7 @@ function CrmDealsPageInner() {
     refetch: refetchStages,
   } = useCrmStages();
   const { data: campaigns } = useCrmCampaigns();
+  const { data: labels } = useCrmLabels();
   const { data: companies } = useCrmCompanies();
   const { data: people } = useCrmPeople();
   const { data: members } = useTeamMembers();
@@ -482,14 +481,18 @@ function CrmDealsPageInner() {
   const updateDeal = useUpdateCrmDeal();
   const moveDeal = useMoveCrmDeal();
   const setDeleted = useSetCrmDealDeleted();
+  const setDealLabel = useSetCrmDealLabel();
   const destroyDeal = useDestroyCrmDeal();
 
   const [view, setView] = useState<"board" | "table">("board");
   const [search, setSearch] = useState("");
   /** Narrows both the board and the table — lead health, not pipeline stage. */
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
-  /** "UNGRADED" is a real answer here, not a missing one — see CRM_LEAD_TIERS. */
-  const [tierFilter, setTierFilter] = useState<"ALL" | "UNGRADED" | CrmLeadTier>(
+  /**
+   * "UNTAGGED" is a real answer, not a missing one — the untagged pile is the
+   * first thing anyone looks for when they sit down to work the desk.
+   */
+  const [labelFilter, setLabelFilter] = useState<"ALL" | "UNTAGGED" | string>(
     "ALL",
   );
   const [showDeleted, setShowDeleted] = useState(false);
@@ -535,14 +538,14 @@ function CrmDealsPageInner() {
    * like the chip on the card. Search narrows the board too — the box stays on
    * screen in both views, so a filter can never be silently in force.
    */
-  /** Ungraded is a value, so "ALL" is the only pass-through. */
-  const matchesTier = useCallback(
+  /** Untagged is a value, so "ALL" is the only pass-through. */
+  const matchesLabel = useCallback(
     (d: CrmDealWithRefs) => {
-      if (tierFilter === "ALL") return true;
-      if (tierFilter === "UNGRADED") return !d.tier;
-      return d.tier === tierFilter;
+      if (labelFilter === "ALL") return true;
+      if (labelFilter === "UNTAGGED") return d.labels.length === 0;
+      return d.labels.some((l) => l.id === labelFilter);
     },
-    [tierFilter],
+    [labelFilter],
   );
 
   const boardDeals = useMemo(() => {
@@ -553,9 +556,9 @@ function CrmDealsPageInner() {
           statusFilter === "ALL" ||
           crmLeadStatusMeta(d.status).value === statusFilter,
       )
-      .filter(matchesTier)
+      .filter(matchesLabel)
       .filter((d) => matchesSearch(d, needle));
-  }, [liveDeals, statusFilter, matchesTier, search, matchesSearch]);
+  }, [liveDeals, statusFilter, matchesLabel, search, matchesSearch]);
 
   const knownStageIds = useMemo(
     () => new Set((stages ?? []).map((s) => s.id)),
@@ -633,9 +636,9 @@ function CrmDealsPageInner() {
           statusFilter === "ALL" ||
           crmLeadStatusMeta(d.status).value === statusFilter,
       )
-      .filter(matchesTier)
+      .filter(matchesLabel)
       .filter((d) => matchesSearch(d, needle));
-  }, [deals, search, showDeleted, statusFilter, matchesTier, matchesSearch]);
+  }, [deals, search, showDeleted, statusFilter, matchesLabel, matchesSearch]);
 
   const stageById = useMemo(() => {
     const map = new Map<string, CrmStage>();
@@ -771,7 +774,6 @@ function CrmDealsPageInner() {
       phone: deal.phone ?? undefined,
       stage_id: deal.stage_id,
       status: crmLeadStatusMeta(deal.status).value,
-      tier: (deal.tier as CrmLeadTier | null) ?? null,
       campaign_id: deal.campaign_id,
       close_date: deal.close_date ? dayjs(deal.close_date) : null,
       company_id: deal.company_id,
@@ -803,8 +805,6 @@ function CrmDealsPageInner() {
       phone,
       stage_id: values.stage_id ?? null,
       status: values.status ?? CRM_LEAD_STATUS_DEFAULT,
-      // No default: a lead nobody has graded stays ungraded.
-      tier: values.tier ?? null,
       campaign_id: values.campaign_id ?? null,
       close_date: values.close_date
         ? values.close_date.format("YYYY-MM-DD")
@@ -975,18 +975,18 @@ function CrmDealsPageInner() {
           options={[{ value: "ALL", label: "All statuses" }, ...statusOptions]}
         />
 
-        {/* Highest tier first: "show me the Gold ones" is the question this
-            filter exists to answer. */}
+        {/* One list, one question: "who is on this list". Untagged is on it
+            because that pile is what a triage session actually starts from. */}
         <Select
-          value={tierFilter}
-          onChange={setTierFilter}
-          style={{ width: 156 }}
+          value={labelFilter}
+          onChange={setLabelFilter}
+          style={{ width: 168 }}
+          showSearch
+          optionFilterProp="label"
           options={[
-            { value: "ALL", label: "All tiers" },
-            ...[...CRM_LEAD_TIERS]
-              .reverse()
-              .map((t) => ({ value: t.value, label: t.label })),
-            { value: "UNGRADED", label: "Ungraded" },
+            { value: "ALL", label: "All tags" },
+            ...(labels ?? []).map((l) => ({ value: l.id, label: l.name })),
+            { value: "UNTAGGED", label: "Untagged" },
           ]}
         />
 
@@ -1143,10 +1143,10 @@ function CrmDealsPageInner() {
             }}
             // Sum of the fixed column widths — anything smaller and AntD's
             // fixed table layout squeezes every column instead of scrolling.
-            // 32 select + 260 deal + 150 stage + 160 status + 150 tier
+            // 32 select + 260 deal + 150 stage + 160 status + 230 tags
             // + 160 campaign + 190 contact + 180 mobile + 150 owner
             // + 140 close date + 110 actions.
-            scroll={{ x: 1682 }}
+            scroll={{ x: 1762 }}
             locale={{
               emptyText: isLoading ? (
                 <div style={{ height: 120 }} />
@@ -1209,13 +1209,12 @@ function CrmDealsPageInner() {
                 ),
               },
               {
-                title: "Tier",
-                key: "tier",
-                width: 150,
-                // Editable in the cell for the same reason status is: grading a
+                title: "Tags",
+                key: "labels",
+                width: 230,
+                // Editable in the cell for the same reason status is: tagging a
                 // list of leads is a pass down the column, not twenty drawers.
-                render: (_, d) => <LeadTierPicker dealId={d.id} tier={d.tier} />,
-                sorter: (a, b) => crmLeadTierRank(b.tier) - crmLeadTierRank(a.tier),
+                render: (_, d) => <DealLabels deal={d} max={2} />,
               },
               {
                 title: "Campaign",
@@ -1538,45 +1537,33 @@ function CrmDealsPageInner() {
                   </Button>
                 </Dropdown>
 
-                {/* Grading a batch is the point of a tier: a screen of pasted
-                    leads gets triaged in two passes, not forty clicks. */}
+                {/* Add, not set: tags stack, so a bulk pass over a screen of
+                    pasted leads must not wipe what is already on them. */}
                 <Dropdown
-                  disabled={bulk.busy}
+                  disabled={bulk.busy || (labels ?? []).length === 0}
                   menu={{
-                    items: [
-                      ...[...CRM_LEAD_TIERS].reverse().map((t) => ({
-                        key: t.value,
-                        label: t.label,
-                        icon: <MIcon name={t.icon} size={15} color={t.color} />,
-                      })),
-                      { type: "divider" as const },
-                      {
-                        key: "none",
-                        label: "Ungraded",
-                        icon: <MIcon name="remove" size={15} />,
-                      },
-                    ],
-                    onClick: ({ key }) =>
+                    items: (labels ?? []).map((l) => ({
+                      key: l.id,
+                      label: l.name,
+                      icon: <MIcon name="sell" size={15} color={l.color} />,
+                    })),
+                    onClick: ({ key }) => {
+                      const label = (labels ?? []).find((l) => l.id === key);
                       void bulk.run(
                         selected,
-                        key === "none"
-                          ? "Grade cleared"
-                          : `Marked ${crmLeadTierMeta(key)?.label ?? key}`,
+                        `Tagged ${label?.name ?? ""}`.trim(),
                         (id) =>
-                          updateDeal.mutateAsync({
-                            id,
-                            patch: {
-                              tier: key === "none" ? null : (key as CrmLeadTier),
-                            },
+                          setDealLabel.mutateAsync({
+                            dealId: id,
+                            labelId: key,
+                            attached: true,
                           }),
-                      ),
+                      );
+                    },
                   }}
                 >
-                  <Button
-                    size="small"
-                    icon={<MIcon name="workspace_premium" size={15} />}
-                  >
-                    Set tier
+                  <Button size="small" icon={<MIcon name="sell" size={15} />}>
+                    Add tag
                   </Button>
                 </Dropdown>
 
@@ -1648,20 +1635,6 @@ function CrmDealsPageInner() {
                 extra="How the lead itself is doing — separate from the stage it sits in."
               >
                 <Select options={statusOptions} placeholder="Status" />
-              </Form.Item>
-              <Form.Item
-                name="tier"
-                label="Tier"
-                extra="How much the lead is worth. Leave it blank until someone has actually looked."
-              >
-                <Select
-                  allowClear
-                  placeholder="Ungraded"
-                  options={[...CRM_LEAD_TIERS].reverse().map((t) => ({
-                    value: t.value,
-                    label: t.label,
-                  }))}
-                />
               </Form.Item>
               <Form.Item name="close_date" label="Close date">
                 <DatePicker style={{ width: "100%" }} />

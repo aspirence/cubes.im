@@ -10,6 +10,7 @@ import { useCrmCompanies } from "@/features/app-crm/use-crm-companies";
 import { useCrmDeals } from "@/features/app-crm/use-crm-deals";
 import { useCrmPeople } from "@/features/app-crm/use-crm-people";
 import { useCrmStages } from "@/features/app-crm/use-crm-stages";
+import { useCrmLabels } from "@/features/app-crm/use-crm-labels";
 import { useCrmTasks } from "@/features/app-crm/use-crm-tasks";
 import {
   useCrmCampaigns,
@@ -17,7 +18,6 @@ import {
 } from "@/features/app-crm/use-crm-campaigns";
 import {
   CRM_LEAD_STATUSES,
-  CRM_LEAD_TIERS,
   crmLeadStatusMeta,
   type CrmChipTone,
 } from "@/features/app-crm/types";
@@ -118,6 +118,7 @@ export default function CrmReportsPage() {
   const { data: campaignSpend, isLoading: spendLoading } =
     useCrmCampaignSpend();
   const { data: members } = useTeamMembers();
+  const { data: labels } = useCrmLabels();
 
   const [range, setRange] = useState<RangeValue>("ALL");
   const [ownerFilter, setOwnerFilter] = useState<string>("ALL");
@@ -516,38 +517,39 @@ export default function CrmReportsPage() {
   // Leads by campaign — magnitude, so one hue; cost-per-lead rides the direct
   // label wherever spend has been logged (derived, never stored).
   /**
-   * Lead tiers, best first, with the ungraded pile at the bottom.
+   * Leads per tag, biggest list first, with the untagged pile pinned last.
    *
    * That last bar is the one worth having: coming back to re-plan means asking
-   * "how many leads has nobody judged yet", and a chart that quietly dropped
-   * them would answer the easy half of the question.
+   * "how many leads has nobody sorted yet", and a chart that quietly dropped
+   * them would answer the easy half of the question. It sits at the bottom
+   * rather than in the ranking because "untagged" is not a list anyone chose.
+   *
+   * A lead on three tags counts on all three, so the bars deliberately do not
+   * sum to the lead count — that is what tags are.
    */
-  const tierOption = useMemo(() => {
+  const labelOption = useMemo(() => {
     const counts = new Map<string, number>();
-    let ungraded = 0;
+    let untagged = 0;
     for (const d of liveDeals) {
-      if (!d.tier) {
-        ungraded += 1;
+      if (d.labels.length === 0) {
+        untagged += 1;
         continue;
       }
-      counts.set(d.tier, (counts.get(d.tier) ?? 0) + 1);
+      for (const l of d.labels) counts.set(l.id, (counts.get(l.id) ?? 0) + 1);
     }
+    const ranked = (labels ?? [])
+      .map((l) => ({ label: l.name, color: l.color, count: counts.get(l.id) ?? 0 }))
+      .filter((r) => r.count > 0)
+      .sort((a, b) => b.count - a.count)
+      // Ten bars is where a horizontal list stops being readable in a panel.
+      .slice(0, 10);
     const rows = [
-      ...[...CRM_LEAD_TIERS].reverse().map((t) => ({
-        label: t.label,
-        color: t.color,
-        count: counts.get(t.value) ?? 0,
-      })),
-      {
-        label: "Ungraded",
-        color: token.colorTextQuaternary,
-        count: ungraded,
-      },
+      ...ranked,
+      { label: "Untagged", color: token.colorTextQuaternary, count: untagged },
     ];
-    const graded = liveDeals.length - ungraded;
     return {
       rows,
-      graded,
+      tagged: liveDeals.length - untagged,
       option: {
         grid: { left: 8, right: 28, top: 8, bottom: 8, containLabel: true },
         xAxis: {
@@ -593,6 +595,7 @@ export default function CrmReportsPage() {
     };
   }, [
     liveDeals,
+    labels,
     axisText,
     chartTooltip,
     token.colorTextSecondary,
@@ -1000,25 +1003,25 @@ export default function CrmReportsPage() {
           )}
         </Panel>
 
-        <Panel title="Leads by tier">
+        <Panel title="Leads by tag">
           {caption(
-            `What the leads ${scopeHint} are worth. Ungraded is the pile nobody has judged yet — the first place to look when you sit down to re-plan.`,
+            `Which of your tags the leads ${scopeHint} are on. A lead on three tags counts on all three, so these do not add up to the lead count. Untagged is the pile nobody has sorted yet — the first place to look when you sit down to re-plan.`,
           )}
           {dealsLoading ? (
             panelSpin
           ) : hasDeals ? (
             <EChart
-              option={tierOption.option}
-              height={Math.max(180, tierOption.rows.length * 40)}
+              option={labelOption.option}
+              height={Math.max(180, labelOption.rows.length * 40)}
             />
           ) : hiddenByScope ? (
             scopeEmpty
           ) : (
             <EmptyState
               compact
-              icon="workspace_premium"
-              title="No leads to grade"
-              description="Grade a lead Bronze, Silver or Gold from any deal list and this chart shows how the desk is spread across them."
+              icon="sell"
+              title="No leads to sort"
+              description="Tag a lead from any deal list — your own tags, as many per lead as you like — and this chart shows how the desk is spread across them."
               action={goToDeals}
             />
           )}

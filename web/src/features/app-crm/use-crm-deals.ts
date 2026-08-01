@@ -11,8 +11,8 @@ import { useActiveTeam } from "@/features/teams/use-teams";
 import type {
   CrmDeal,
   CrmDealWithRefs,
+  CrmLabel,
   CrmLeadStatus,
-  CrmLeadTier,
 } from "./types";
 
 const dealsKey = (teamId: string | undefined) => ["crm-deals", teamId] as const;
@@ -22,11 +22,11 @@ const dealsKey = (teamId: string | undefined) => ["crm-deals", teamId] as const;
  * purpose: deals no longer track money, so the columns stay in the table
  * (nullable / defaulted) but nothing may write to them again.
  *
- * `status` and `tier` are re-added narrowed to their fixed vocabularies (both
- * DB columns are plain text behind check constraints); `campaign_id` rides
- * along from the row type. Three axes, deliberately: `stage_id` is the board,
- * `status` is how the lead is doing, `tier` is what it is worth. `tier` stays
- * nullable — ungraded is a real state, not a missing one.
+ * `status` is re-added narrowed to the seven lead statuses (the DB column is
+ * plain text behind a check constraint); `campaign_id` rides along from the row
+ * type. Status is the lead's own health — `stage_id` remains the board axis.
+ * Tags are NOT here: they live in their own join table, written through
+ * `useSetCrmDealLabel`.
  */
 export type CrmDealPatch = Partial<
   Omit<
@@ -39,9 +39,8 @@ export type CrmDealPatch = Partial<
     | "amount"
     | "currency_code"
     | "status"
-    | "tier"
   >
-> & { status?: CrmLeadStatus; tier?: CrmLeadTier | null };
+> & { status?: CrmLeadStatus };
 
 /** All the active team's deals (soft-deleted included), board-ordered. */
 export function useCrmDeals() {
@@ -56,12 +55,28 @@ export function useCrmDeals() {
         .from("app_crm_deals")
         .select(
           `*, company:app_crm_companies ( id, name ),
-              contact:app_crm_people ( id, first_name, last_name )`,
+              contact:app_crm_people ( id, first_name, last_name ),
+              label_links:app_crm_deal_labels ( label:app_crm_labels ( * ) )`,
         )
         .eq("team_id", teamId as string)
         .order("position", { ascending: true });
       if (error) throw error;
-      return (data ?? []) as unknown as CrmDealWithRefs[];
+      // PostgREST returns the join rows, not the labels — flatten here so no
+      // screen has to know a join table exists, and so `labels` is always an
+      // array rather than sometimes-null.
+      type LabelLink = { label: CrmLabel | null };
+      return (data ?? []).map((row) => {
+        const { label_links, ...deal } = row as typeof row & {
+          label_links?: LabelLink[] | null;
+        };
+        return {
+          ...deal,
+          labels: (label_links ?? [])
+            .map((l) => l.label)
+            .filter((l): l is CrmLabel => Boolean(l))
+            .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name)),
+        };
+      }) as unknown as CrmDealWithRefs[];
     },
   });
 }

@@ -2,6 +2,8 @@ import type { Database } from "@/types/database";
 
 export type CrmAdmin = Database["public"]["Tables"]["app_crm_admins"]["Row"];
 export type CrmStage = Database["public"]["Tables"]["app_crm_stages"]["Row"];
+/** A team-defined lead tag. Vocabulary lives in CRM Settings. */
+export type CrmLabel = Database["public"]["Tables"]["app_crm_labels"]["Row"];
 export type CrmCompany = Database["public"]["Tables"]["app_crm_companies"]["Row"];
 export type CrmPerson = Database["public"]["Tables"]["app_crm_people"]["Row"];
 export type CrmDeal = Database["public"]["Tables"]["app_crm_deals"]["Row"];
@@ -32,6 +34,12 @@ export type CrmPersonWithCompany = CrmPerson & {
 export type CrmDealWithRefs = CrmDeal & {
   company: Pick<CrmCompany, "id" | "name"> | null;
   contact: Pick<CrmPerson, "id" | "first_name" | "last_name"> | null;
+  /**
+   * The tags on this lead, already resolved to their rows. Empty array, never
+   * null: "no tags" is the common case and every caller would otherwise write
+   * the same `?? []`.
+   */
+  labels: CrmLabel[];
 };
 
 export type CrmTaskWithTargets = CrmTask & { targets: CrmTaskTarget[] };
@@ -99,44 +107,23 @@ export function crmLeadStatusMeta(value: string | null | undefined) {
 }
 
 /**
- * How much a lead is WORTH — a third axis, alongside `stage_id` (where the card
- * sits) and `status` (how the lead is doing).
- *
- * Status moves constantly and tier barely moves at all, which is the point: a
- * Gold lead that went quiet is still Gold, and that is exactly the list someone
- * wants when they come back to re-plan. `null` means ungraded — nobody has
- * judged it yet, which is a different thing from judging it Bronze.
- *
- * Ordered lowest to highest; `CRM_LEAD_TIER_RANK` gives the sort key.
+ * Colours offered when creating a tag. Entity colours, so these are literal
+ * hexes on purpose — a tag's colour is data the team chose, not a theme value,
+ * and it has to survive a light/dark switch unchanged.
  */
-export type CrmLeadTier = "bronze" | "silver" | "gold";
+export const CRM_LABEL_COLORS = [
+  "#4a4ad0",
+  "#d0a02c",
+  "#3a9d6e",
+  "#c2410c",
+  "#a9714b",
+  "#8b6fd6",
+  "#2f9c9c",
+  "#d96a8f",
+  "#8a8d98",
+] as const;
 
-export const CRM_LEAD_TIERS: {
-  value: CrmLeadTier;
-  label: string;
-  /** Entity colour — data, not theme, so it is a literal on purpose. */
-  color: string;
-  icon: string;
-}[] = [
-  { value: "bronze", label: "Bronze", color: "#a9714b", icon: "workspace_premium" },
-  { value: "silver", label: "Silver", color: "#8a8d98", icon: "workspace_premium" },
-  { value: "gold", label: "Gold", color: "#d0a02c", icon: "workspace_premium" },
-];
-
-/** Meta for a stored tier, or null when the lead has not been graded. */
-export function crmLeadTierMeta(value: string | null | undefined) {
-  return CRM_LEAD_TIERS.find((t) => t.value === value) ?? null;
-}
-
-/**
- * Sort key, highest tier first, ungraded last. Ungraded sorts BELOW bronze
- * rather than above it: a lead nobody has looked at should not outrank one
- * somebody judged, however low the judgement.
- */
-export function crmLeadTierRank(value: string | null | undefined): number {
-  const i = CRM_LEAD_TIERS.findIndex((t) => t.value === value);
-  return i === -1 ? -1 : i;
-}
+export const CRM_LABEL_COLOR_DEFAULT = CRM_LABEL_COLORS[0];
 
 /** Campaign `channel` is free text in the DB; these are what the UI offers. */
 export const CRM_CAMPAIGN_CHANNELS = [

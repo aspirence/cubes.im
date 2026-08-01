@@ -29,7 +29,16 @@ import {
   useUpdateCrmStage,
 } from "@/features/app-crm/use-crm-stages";
 import { useCrmDeals } from "@/features/app-crm/use-crm-deals";
-import { CRM_STAGE_COLORS } from "@/features/app-crm/types";
+import {
+  CRM_LABEL_COLORS,
+  CRM_STAGE_COLORS,
+} from "@/features/app-crm/types";
+import {
+  useCreateCrmLabel,
+  useCrmLabels,
+  useDeleteCrmLabel,
+  useUpdateCrmLabel,
+} from "@/features/app-crm/use-crm-labels";
 import { errMsg } from "@/lib/err";
 import { MIcon } from "../_components/m-icon";
 import { CrmListRow } from "../_components/list-row";
@@ -144,6 +153,15 @@ export default function CrmSettingsPage() {
     isError: stagesError,
     refetch: refetchStages,
   } = useCrmStages();
+  const {
+    data: labels,
+    isLoading: labelsLoading,
+    isError: labelsError,
+    refetch: refetchLabels,
+  } = useCrmLabels();
+  const createLabel = useCreateCrmLabel();
+  const updateLabel = useUpdateCrmLabel();
+  const deleteLabel = useDeleteCrmLabel();
   const { data: deals } = useCrmDeals();
   const createStage = useCreateCrmStage();
   const updateStage = useUpdateCrmStage();
@@ -151,6 +169,8 @@ export default function CrmSettingsPage() {
 
   const [grantUserId, setGrantUserId] = useState<string | undefined>();
   const [newStageName, setNewStageName] = useState("");
+  const [newLabelName, setNewLabelName] = useState("");
+  const [confirmLabelId, setConfirmLabelId] = useState<string | null>(null);
   const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
@@ -189,6 +209,39 @@ export default function CrmSettingsPage() {
     }
     return counts;
   }, [deals]);
+
+  const leadCountByLabel = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const d of deals ?? []) {
+      if (d.deleted_at) continue;
+      for (const l of d.labels) counts.set(l.id, (counts.get(l.id) ?? 0) + 1);
+    }
+    return counts;
+  }, [deals]);
+
+  const labelList = useMemo(() => labels ?? [], [labels]);
+
+  const handleAddLabel = async () => {
+    const name = newLabelName.trim();
+    if (!name) return;
+    // Caught here rather than at the unique index so the message names the
+    // clash instead of showing a constraint.
+    if (labelList.some((l) => l.name.toLowerCase() === name.toLowerCase())) {
+      message.warning(`“${name}” already exists.`);
+      return;
+    }
+    try {
+      await createLabel.mutateAsync({
+        name,
+        color: CRM_LABEL_COLORS[labelList.length % CRM_LABEL_COLORS.length],
+        position: Math.max(0, ...labelList.map((l) => l.position)) + 1,
+      });
+      setNewLabelName("");
+      message.success("Tag added.");
+    } catch (err) {
+      message.error(errMsg(err, "Failed to add tag."));
+    }
+  };
 
   const handleGrant = async () => {
     if (!grantUserId) return;
@@ -695,6 +748,227 @@ export default function CrmSettingsPage() {
                         size="small"
                         danger
                         aria-label="Delete stage"
+                        icon={<MIcon name="delete" size={16} />}
+                      />
+                    </Tooltip>
+                  </Popconfirm>
+                </RowActions>
+              </CrmListRow>
+            );
+          })
+        )}
+      </Panel>
+
+      <Panel
+        title="Lead tags"
+        extra={
+          labelsLoading || labelsError ? null : (
+            <SoftChip icon="sell">
+              {labelList.length} {labelList.length === 1 ? "tag" : "tags"}
+            </SoftChip>
+          )
+        }
+        padding={0}
+      >
+        <div style={{ padding: 16 }}>
+          <SectionLabel>Your own lists</SectionLabel>
+          <p
+            style={{
+              margin: "6px 0 0",
+              fontSize: 12.5,
+              lineHeight: 1.55,
+              color: token.colorTextSecondary,
+            }}
+          >
+            {`Tags are lists you invent — “Gold”, “Hot”, “Budget kam”. A lead can be on as many as you like, and you can also make one straight from the tag picker on any lead. These are the CRM's own; the task board's labels are separate.`}
+          </p>
+
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <Input
+              placeholder="Add a tag (e.g. Gold)…"
+              value={newLabelName}
+              onChange={(e) => setNewLabelName(e.target.value)}
+              onPressEnter={handleAddLabel}
+              maxLength={60}
+              style={{ flex: 1, minWidth: 0 }}
+            />
+            <Button
+              type="primary"
+              onClick={handleAddLabel}
+              loading={createLabel.isPending}
+              disabled={!newLabelName.trim()}
+            >
+              Add tag
+            </Button>
+          </div>
+        </div>
+
+        {labelsLoading ? (
+          <RowsLoading />
+        ) : labelsError ? (
+          <div style={{ borderTop: `1px solid ${token.colorSplit}` }}>
+            <ErrorState
+              compact
+              title="Couldn't load the tags"
+              onRetry={() => void refetchLabels()}
+            />
+          </div>
+        ) : labelList.length === 0 ? (
+          <div style={{ borderTop: `1px solid ${token.colorSplit}` }}>
+            <EmptyState
+              compact
+              icon="sell"
+              title="No tags yet"
+              description="Add your first one above, or type a name into the tag picker on any lead and it becomes a tag."
+            />
+          </div>
+        ) : (
+          labelList.map((l) => {
+            const leadCount = leadCountByLabel.get(l.id) ?? 0;
+            return (
+              <CrmListRow key={l.id} style={{ gap: 12 }}>
+                <Popover
+                  trigger="click"
+                  placement="bottomLeft"
+                  title="Tag colour"
+                  content={
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(5, 20px)",
+                        gap: 8,
+                        paddingTop: 2,
+                      }}
+                    >
+                      {CRM_LABEL_COLORS.map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          aria-label={`Set colour ${c}`}
+                          title={c}
+                          onClick={async () => {
+                            if (c === l.color) return;
+                            try {
+                              await updateLabel.mutateAsync({
+                                id: l.id,
+                                patch: { color: c },
+                              });
+                            } catch (err) {
+                              message.error(
+                                errMsg(err, "Failed to recolor tag."),
+                              );
+                            }
+                          }}
+                          style={{
+                            width: 20,
+                            height: 20,
+                            borderRadius: 999,
+                            background: c,
+                            cursor: "pointer",
+                            border:
+                              c === l.color
+                                ? `2px solid ${token.colorText}`
+                                : "2px solid transparent",
+                            padding: 0,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  }
+                >
+                  <Tooltip title="Change colour">
+                    <button
+                      type="button"
+                      aria-label={`Change the colour of ${l.name}`}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 22,
+                        height: 22,
+                        flex: "none",
+                        padding: 0,
+                        borderRadius: 999,
+                        border: "none",
+                        background: "transparent",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <ColorDot color={l.color} />
+                    </button>
+                  </Tooltip>
+                </Popover>
+
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <Typography.Text
+                    editable={{
+                      onChange: async (name) => {
+                        const trimmed = name.trim();
+                        if (!trimmed || trimmed === l.name) return;
+                        if (
+                          labelList.some(
+                            (other) =>
+                              other.id !== l.id &&
+                              other.name.toLowerCase() ===
+                                trimmed.toLowerCase(),
+                          )
+                        ) {
+                          message.warning(`“${trimmed}” already exists.`);
+                          return;
+                        }
+                        try {
+                          await updateLabel.mutateAsync({
+                            id: l.id,
+                            patch: { name: trimmed },
+                          });
+                        } catch (err) {
+                          message.error(errMsg(err, "Failed to rename tag."));
+                        }
+                      },
+                    }}
+                    style={{ fontWeight: 500 }}
+                  >
+                    {l.name}
+                  </Typography.Text>
+                </div>
+
+                <SoftChip style={{ flex: "none" }}>
+                  {leadCount} {leadCount === 1 ? "lead" : "leads"}
+                </SoftChip>
+
+                <RowActions
+                  open={confirmLabelId === l.id}
+                  style={{ flex: "none" }}
+                >
+                  <Popconfirm
+                    title={`Delete "${l.name}"?`}
+                    // Deleting a tag un-tags every lead on it — say the number,
+                    // because that is the part that cannot be undone.
+                    description={
+                      leadCount > 0
+                        ? `It comes off ${leadCount} lead${leadCount === 1 ? "" : "s"}. The leads themselves are untouched.`
+                        : "No lead is on this tag."
+                    }
+                    okText="Delete tag"
+                    okButtonProps={{ danger: true }}
+                    onOpenChange={(open) =>
+                      setConfirmLabelId(open ? l.id : null)
+                    }
+                    onConfirm={async () => {
+                      try {
+                        await deleteLabel.mutateAsync(l.id);
+                        message.success("Tag deleted.");
+                      } catch (err) {
+                        message.error(errMsg(err, "Failed to delete tag."));
+                      }
+                    }}
+                  >
+                    <Tooltip title="Delete tag">
+                      <Button
+                        type="text"
+                        size="small"
+                        danger
+                        aria-label="Delete tag"
                         icon={<MIcon name="delete" size={16} />}
                       />
                     </Tooltip>

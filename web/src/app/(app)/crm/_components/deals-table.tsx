@@ -17,19 +17,15 @@ import {
 } from "@/features/app-crm/use-crm-deals";
 import {
   CRM_LEAD_STATUSES,
-  CRM_LEAD_TIERS,
   crmLeadStatusMeta,
-  crmLeadTierMeta,
-  crmLeadTierRank,
   type CrmDealWithRefs,
   type CrmLeadStatus,
-  type CrmLeadTier,
   type CrmStage,
 } from "@/features/app-crm/types";
 import { MIcon } from "./m-icon";
 import { DealCell } from "./deal-glyph";
 import { LeadStatusPicker } from "./lead-status-picker";
-import { LeadTierPicker } from "./lead-tier-picker";
+import { DealLabels } from "./label-picker";
 import { PhoneWithCopy } from "./phone-cell";
 import { leadStatusIcon } from "./entity-meta";
 import { BulkBar, useBulkRun } from "./bulk-bar";
@@ -147,20 +143,10 @@ export function DealsTable({
       onFilter: (value, d) => crmLeadStatusMeta(d.status).value === value,
     },
     {
-      title: "Tier",
-      key: "tier",
-      width: 150,
-      render: (_, d) => <LeadTierPicker dealId={d.id} tier={d.tier} />,
-      sorter: (a, b) => crmLeadTierRank(b.tier) - crmLeadTierRank(a.tier),
-      filters: [
-        ...[...CRM_LEAD_TIERS].reverse().map((t) => ({
-          text: t.label,
-          value: t.value,
-        })),
-        { text: "Ungraded", value: "UNGRADED" },
-      ],
-      onFilter: (value, d) =>
-        value === "UNGRADED" ? !d.tier : d.tier === value,
+      title: "Tags",
+      key: "labels",
+      width: 220,
+      render: (_, d) => <DealLabels deal={d} max={2} />,
     },
     {
       title: "Stage",
@@ -204,7 +190,7 @@ export function DealsTable({
         loading={loading}
         columns={columns}
         dataSource={deals}
-        scroll={{ x: 1150 }}
+        scroll={{ x: 1220 }}
         rowSelection={{
           selectedRowKeys: selected,
           onChange: (keys) => setSelected(keys as string[]),
@@ -312,44 +298,6 @@ export function DealsTable({
         >
           <Button size="small" icon={<MIcon name="swap_horiz" size={15} />}>
             Move stage
-          </Button>
-        </Dropdown>
-
-        <Dropdown
-          disabled={bulk.busy}
-          menu={{
-            items: [
-              ...[...CRM_LEAD_TIERS].reverse().map((t) => ({
-                key: t.value,
-                label: t.label,
-                icon: <MIcon name={t.icon} size={15} color={t.color} />,
-              })),
-              { type: "divider" as const },
-              {
-                key: "none",
-                label: "Ungraded",
-                icon: <MIcon name="remove" size={15} />,
-              },
-            ],
-            onClick: ({ key }) =>
-              void bulk.run(
-                selected,
-                key === "none"
-                  ? "Grade cleared"
-                  : `Marked ${crmLeadTierMeta(key)?.label ?? key}`,
-                (id) =>
-                  updateDeal.mutateAsync({
-                    id,
-                    patch: { tier: key === "none" ? null : (key as CrmLeadTier) },
-                  }),
-              ),
-          }}
-        >
-          <Button
-            size="small"
-            icon={<MIcon name="workspace_premium" size={15} />}
-          >
-            Set tier
           </Button>
         </Dropdown>
 

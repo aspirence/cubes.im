@@ -625,7 +625,6 @@ export type Database = {
           stage_id: string | null
           status: string
           team_id: string
-          tier: string | null
           updated_at: string
         }
         Insert: {
@@ -646,7 +645,6 @@ export type Database = {
           stage_id?: string | null
           status?: string
           team_id: string
-          tier?: string | null
           updated_at?: string
         }
         Update: {
@@ -667,7 +665,6 @@ export type Database = {
           stage_id?: string | null
           status?: string
           team_id?: string
-          tier?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -970,6 +967,90 @@ export type Database = {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_crm_labels: {
+        Row: {
+          color: string
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          position: number
+          team_id: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          position?: number
+          team_id: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          position?: number
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_crm_labels_team_id_fk"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_crm_deal_labels: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          deal_id: string
+          label_id: string
+          team_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          deal_id: string
+          label_id: string
+          team_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          deal_id?: string
+          label_id?: string
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_crm_deal_labels_team_id_fk"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_deal_labels_deal_id_fk"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "app_crm_deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_crm_deal_labels_label_id_fk"
+            columns: ["label_id"]
+            isOneToOne: false
+            referencedRelation: "app_crm_labels"
             referencedColumns: ["id"]
           },
         ]
