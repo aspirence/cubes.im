@@ -1315,7 +1315,13 @@ export function SocialStudioWorkspace({
   const calendarView = (
     <SocialCalendarView
       posts={posts ?? []}
-      projectIds={(projects ?? []).map((p) => p.id)}
+      // Inside a project, the calendar is THAT project's — not every project
+      // Social Studio happens to be activated for. Embedding the workspace in a
+      // project tab and then showing another project's logo work is the bug
+      // this scoping exists to prevent.
+      projectIds={
+        scopeProjectId ? [scopeProjectId] : (projects ?? []).map((p) => p.id)
+      }
       renderPostCard={(post) => (
         <PostCard post={post} onStatusChange={handleQuickStatus} />
       )}

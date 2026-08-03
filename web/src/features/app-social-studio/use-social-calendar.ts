@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useActiveTeam } from "@/features/teams/use-teams";
 import { createClient } from "@/lib/supabase/client";
 
 /** A task landing inside the calendar window, with what a day cell needs. */
@@ -17,6 +18,57 @@ export interface SocialCalendarTask {
   project: { id: string; name: string; color_code: string | null } | null;
   status: { id: string; name: string } | null;
   assignees: { team_member_id: string }[];
+}
+
+const ownedTaskIdsKey = (teamId: string | undefined) =>
+  ["social-studio", "owned-task-ids", teamId] as const;
+
+/**
+ * The tasks Social Studio actually owns.
+ *
+ * Being in a project that has Social Studio added does NOT make a task social —
+ * a marketing project holds logo work and numerology copy too, and putting all
+ * of it on the posting calendar buries the posting. A task is social when this
+ * app put it there:
+ *
+ *   * a routine generated it, or
+ *   * a post points at it (the task picker on the post form).
+ *
+ * That also gives an obvious way to adopt an existing task: link it to a post.
+ */
+export function useSocialOwnedTaskIds() {
+  const supabase = useMemo(() => createClient(), []);
+  const { data: activeTeam } = useActiveTeam();
+  const teamId = activeTeam?.id;
+
+  return useQuery({
+    queryKey: ownedTaskIdsKey(teamId),
+    enabled: Boolean(teamId),
+    queryFn: async (): Promise<Set<string>> => {
+      const ids = new Set<string>();
+
+      const { data: postRows, error: postErr } = await supabase
+        .from("app_social_studio_posts")
+        .select("task_id")
+        .eq("team_id", teamId as string)
+        .not("task_id", "is", null);
+      if (postErr) throw postErr;
+      for (const r of postRows ?? []) if (r.task_id) ids.add(r.task_id);
+
+      // Routines are a later migration than the calendar. Until it lands the
+      // table is simply absent, which is not a state worth breaking the whole
+      // calendar over — the post-linked half still answers the question.
+      const { data: routineRows, error: routineErr } = await supabase
+        .from("app_social_studio_routine_tasks")
+        .select("task_id")
+        .eq("team_id", teamId as string);
+      if (!routineErr) {
+        for (const r of routineRows ?? []) ids.add(r.task_id);
+      }
+
+      return ids;
+    },
+  });
 }
 
 const calendarTasksKey = (

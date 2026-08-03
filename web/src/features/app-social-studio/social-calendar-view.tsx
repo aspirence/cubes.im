@@ -9,6 +9,7 @@ import { MIcon, useC } from "./ui";
 import {
   dayKey,
   useSocialCalendarTasks,
+  useSocialOwnedTaskIds,
   type SocialCalendarTask,
 } from "./use-social-calendar";
 import {
@@ -19,6 +20,13 @@ import {
 import { PLATFORM_BRANDS } from "./platform-icons";
 
 type TypeFilter = "all" | "tasks" | "posts";
+
+/**
+ * Which tasks count. "social" is the default and the honest answer to what this
+ * calendar is for; "project" is the escape hatch for finding a task you want to
+ * pull into it.
+ */
+type TaskScope = "social" | "project";
 
 /** Monday-first weekday headers, matching the rest of the product's calendars. */
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -66,6 +74,7 @@ export function SocialCalendarView({
   const [projectFilter, setProjectFilter] = useState<string>("ALL");
   const [assigneeFilter, setAssigneeFilter] = useState<string>("ALL");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [taskScope, setTaskScope] = useState<TaskScope>("social");
 
   /**
    * The grid always shows whole weeks, so it reaches into the neighbouring
@@ -96,6 +105,7 @@ export function SocialCalendarView({
     isError,
     refetch,
   } = useSocialCalendarTasks(projectIds, from, to);
+  const { data: ownedIds } = useSocialOwnedTaskIds();
 
   const memberName = useMemo(() => {
     const map = new Map<string, string>();
@@ -113,13 +123,22 @@ export function SocialCalendarView({
   const visibleTasks = useMemo(() => {
     if (typeFilter === "posts") return [];
     return (tasks ?? []).filter((t) => {
+      // A task in a social project is not automatically social work — see
+      // useSocialOwnedTaskIds. A subtask counts when its parent does, so a
+      // routine's children don't have to be listed individually.
+      if (taskScope === "social") {
+        const owned =
+          ownedIds?.has(t.id) ||
+          (t.parent_task_id ? ownedIds?.has(t.parent_task_id) : false);
+        if (!owned) return false;
+      }
       if (projectFilter !== "ALL" && t.project_id !== projectFilter) return false;
       if (assigneeFilter !== "ALL") {
         return t.assignees.some((a) => a.team_member_id === assigneeFilter);
       }
       return true;
     });
-  }, [tasks, typeFilter, projectFilter, assigneeFilter]);
+  }, [tasks, typeFilter, projectFilter, assigneeFilter, taskScope, ownedIds]);
 
   const visiblePosts = useMemo(() => {
     // A post has no assignee, so an assignee filter is a question it cannot
@@ -155,6 +174,16 @@ export function SocialCalendarView({
 
   const total = visibleTasks.length + visiblePosts.length;
   const today = dayjs();
+
+  /**
+   * An empty social calendar sitting on top of a busy project reads as broken.
+   * Say what is being hidden and how to bring something in, rather than leaving
+   * a blank month to be interpreted.
+   */
+  const hiddenByScope =
+    taskScope === "social" && visibleTasks.length === 0
+      ? (tasks ?? []).length
+      : 0;
 
   const toggleExpanded = (key: string) =>
     setExpanded((prev) => {
@@ -230,12 +259,32 @@ export function SocialCalendarView({
           ]}
         />
 
-        <Select
-          value={projectFilter}
-          onChange={setProjectFilter}
-          style={{ minWidth: 160 }}
-          options={[{ value: "ALL", label: "All projects" }, ...projectOptions]}
-        />
+        <Tooltip
+          title={
+            taskScope === "social"
+              ? "Showing tasks Social Studio owns — routine tasks and tasks linked to a post."
+              : "Showing every task in scope, social or not."
+          }
+        >
+          <Segmented
+            value={taskScope}
+            onChange={(v) => setTaskScope(v as TaskScope)}
+            options={[
+              { value: "social", label: "Social" },
+              { value: "project", label: "All tasks" },
+            ]}
+          />
+        </Tooltip>
+
+        {/* One project already means one option — don't offer a choice of one. */}
+        {projectOptions.length > 1 ? (
+          <Select
+            value={projectFilter}
+            onChange={setProjectFilter}
+            style={{ minWidth: 160 }}
+            options={[{ value: "ALL", label: "All projects" }, ...projectOptions]}
+          />
+        ) : null}
 
         <Select
           value={assigneeFilter}
@@ -260,6 +309,33 @@ export function SocialCalendarView({
           New post
         </Button>
       </div>
+
+      {hiddenByScope > 0 ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+            padding: "9px 12px",
+            borderRadius: 12,
+            background: C.panelSoft,
+            border: `1px solid ${C.hair}`,
+            fontSize: 12.5,
+            color: C.textSecondary,
+          }}
+        >
+          <MIcon name="info" size={16} color={C.textTertiary} />
+          <span>
+            {`${hiddenByScope} task${hiddenByScope === 1 ? "" : "s"} here ${
+              hiddenByScope === 1 ? "isn’t" : "aren’t"
+            } social work yet. A task joins this calendar when a routine makes it, or when a post points at it.`}
+          </span>
+          <Button size="small" onClick={() => setTaskScope("project")}>
+            Show them anyway
+          </Button>
+        </div>
+      ) : null}
 
       {projectIds.length === 0 ? (
         <div
