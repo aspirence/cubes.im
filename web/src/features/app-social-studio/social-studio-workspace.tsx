@@ -49,6 +49,9 @@ import {
   PlatformIcon,
   PlatformBadge,
 } from "./platform-icons";
+import { MIcon, useC } from "./ui";
+import { SocialCalendarView } from "./social-calendar-view";
+import { TaskDrawer } from "@/app/(app)/projects/[id]/_components/task-drawer";
 
 const { Title, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -57,30 +60,6 @@ const { TextArea } = Input;
 // token hairlines) so Social Studio reads as part of Cubes rather than a
 // separate product. Semantic status colors (red/green/gold) are kept.
 // Neutral surfaces/text derive from AntD theme tokens so dark mode works.
-function useC() {
-  const { token } = theme.useToken();
-  return useMemo(
-    () => ({
-      bg: token.colorBgLayout,
-      panel: token.colorBgContainer,
-      panelSoft: token.colorFillTertiary,
-      hair: token.colorBorderSecondary,
-      text: token.colorText,
-      textSecondary: token.colorTextSecondary,
-      textTertiary: token.colorTextTertiary,
-      accent: "#4a4ad0",
-      accentSoft: "rgba(74,74,208,0.10)",
-      accentDeep: "#3a3ab0",
-      mint: "#2f9c9c",
-      lavender: "#7a5af5",
-      red: "#c0453c",
-      green: "#2f8f5f",
-      gold: "#b8842a",
-    }),
-    [token],
-  );
-}
-
 /** Resolve a platform's brand meta with a safe fallback for unknown values. */
 function brandMeta(platform: string): { label: string; mono: string; color: string } {
   const b = PLATFORM_BRANDS[platform];
@@ -89,18 +68,6 @@ function brandMeta(platform: string): { label: string; mono: string; color: stri
     mono: b?.mono ?? platform.slice(0, 2).toUpperCase(),
     color: b?.color ?? "#6a6d78",
   };
-}
-
-function MIcon({ name, size = 18, color }: { name: string; size?: number; color?: string }) {
-  return (
-    <span
-      className="material-symbols-rounded"
-      aria-hidden
-      style={{ fontSize: size, lineHeight: 1, color }}
-    >
-      {name}
-    </span>
-  );
 }
 
 function formatDateTime(value: string | null): string {
@@ -460,7 +427,13 @@ function InstallPrompt({
   );
 }
 
-type ViewKey = "planner" | "queue" | "media" | "analytics" | "channels";
+type ViewKey =
+  | "calendar"
+  | "planner"
+  | "queue"
+  | "media"
+  | "analytics"
+  | "channels";
 
 type PostDraft = {
   projectId: string;
@@ -509,7 +482,7 @@ export function SocialStudioWorkspace({
   const { data: project } = useProject(projectId);
 
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(projectId);
-  const [view, setView] = useState<ViewKey>("planner");
+  const [view, setView] = useState<ViewKey>("calendar");
   const [channelOpen, setChannelOpen] = useState(false);
   const [campaignOpen, setCampaignOpen] = useState(false);
   const [postOpen, setPostOpen] = useState(false);
@@ -1337,16 +1310,29 @@ export function SocialStudioWorkspace({
     </div>
   );
 
+  const calendarView = (
+    <SocialCalendarView
+      posts={posts ?? []}
+      projectIds={(projects ?? []).map((p) => p.id)}
+      renderPostCard={(post) => (
+        <PostCard post={post} onStatusChange={handleQuickStatus} />
+      )}
+      onNewPost={openPostModal}
+    />
+  );
+
   const contentView =
-    view === "planner"
-      ? plannerView
-      : view === "queue"
-        ? queueView
-        : view === "media"
-          ? mediaView
-          : view === "analytics"
-            ? analyticsView
-            : channelsView;
+    view === "calendar"
+      ? calendarView
+      : view === "planner"
+        ? plannerView
+        : view === "queue"
+          ? queueView
+          : view === "media"
+            ? mediaView
+            : view === "analytics"
+              ? analyticsView
+              : channelsView;
 
   return (
     <>
@@ -1527,7 +1513,8 @@ export function SocialStudioWorkspace({
           </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", margin: "18px 0 16px" }}>
-            <ViewTab active={view === "planner"} icon="calendar_month" label="Planner" onClick={() => setView("planner")} />
+            <ViewTab active={view === "calendar"} icon="calendar_month" label="Calendar" onClick={() => setView("calendar")} />
+            <ViewTab active={view === "planner"} icon="view_week" label="Planner" onClick={() => setView("planner")} />
             <ViewTab active={view === "queue"} icon="view_kanban" label="Queue" onClick={() => setView("queue")} />
             <ViewTab active={view === "media"} icon="photo_library" label="Media" onClick={() => setView("media")} />
             <ViewTab active={view === "analytics"} icon="monitoring" label="Analytics" onClick={() => setView("analytics")} />
@@ -1823,6 +1810,14 @@ export function SocialStudioWorkspace({
           />
         </div>
       </Modal>
+
+      {/*
+        The product's own task drawer, mounted here so a task chip on the
+        calendar opens the same panel as the project board and /schedule —
+        subtasks, dependencies, assignees and comments included. It reads the
+        open id from a store, so there is nothing to pass it.
+      */}
+      <TaskDrawer />
     </>
   );
 }
