@@ -4617,6 +4617,190 @@ export type Database = {
           },
         ]
       }
+      app_social_studio_routines: {
+        Row: {
+          active: boolean
+          campaign_id: string | null
+          created_at: string
+          created_by: string | null
+          day_of_month: number | null
+          day_of_week: number | null
+          description: string | null
+          ends_on: string | null
+          id: string
+          interval_value: number
+          last_run_at: string | null
+          name: string
+          next_run_at: string | null
+          project_id: string
+          schedule_type: string
+          starts_on: string
+          team_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          campaign_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          day_of_month?: number | null
+          day_of_week?: number | null
+          description?: string | null
+          ends_on?: string | null
+          id?: string
+          interval_value?: number
+          last_run_at?: string | null
+          name: string
+          next_run_at?: string | null
+          project_id: string
+          schedule_type?: string
+          starts_on?: string
+          team_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          campaign_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          day_of_month?: number | null
+          day_of_week?: number | null
+          description?: string | null
+          ends_on?: string | null
+          id?: string
+          interval_value?: number
+          last_run_at?: string | null
+          name?: string
+          next_run_at?: string | null
+          project_id?: string
+          schedule_type?: string
+          starts_on?: string
+          team_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_social_studio_routines_team_fk"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_social_studio_routines_project_fk"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_social_studio_routines_campaign_fk"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "app_social_studio_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_social_studio_routine_steps: {
+        Row: {
+          assignee_team_member_id: string | null
+          depends_on_step_id: string | null
+          due_offset_days: number
+          id: string
+          kind: string
+          platform: string | null
+          position: number
+          routine_id: string
+          team_id: string
+          title: string
+        }
+        Insert: {
+          assignee_team_member_id?: string | null
+          depends_on_step_id?: string | null
+          due_offset_days?: number
+          id?: string
+          kind?: string
+          platform?: string | null
+          position?: number
+          routine_id: string
+          team_id: string
+          title: string
+        }
+        Update: {
+          assignee_team_member_id?: string | null
+          depends_on_step_id?: string | null
+          due_offset_days?: number
+          id?: string
+          kind?: string
+          platform?: string | null
+          position?: number
+          routine_id?: string
+          team_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_social_studio_routine_steps_routine_fk"
+            columns: ["routine_id"]
+            isOneToOne: false
+            referencedRelation: "app_social_studio_routines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_social_studio_routine_steps_member_fk"
+            columns: ["assignee_team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_social_studio_routine_tasks: {
+        Row: {
+          created_at: string
+          id: string
+          occurrence_date: string
+          routine_id: string
+          step_id: string | null
+          task_id: string
+          team_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          occurrence_date: string
+          routine_id: string
+          step_id?: string | null
+          task_id: string
+          team_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          occurrence_date?: string
+          routine_id?: string
+          step_id?: string | null
+          task_id?: string
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_social_studio_routine_tasks_routine_fk"
+            columns: ["routine_id"]
+            isOneToOne: false
+            referencedRelation: "app_social_studio_routines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_social_studio_routine_tasks_task_fk"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       app_social_studio_posts: {
         Row: {
           approval_required: boolean

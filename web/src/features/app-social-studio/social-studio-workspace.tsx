@@ -51,6 +51,7 @@ import {
 } from "./platform-icons";
 import { MIcon, useC } from "./ui";
 import { SocialCalendarView } from "./social-calendar-view";
+import { SocialRoutinesView } from "./routines-view";
 import { TaskDrawer } from "@/app/(app)/projects/[id]/_components/task-drawer";
 
 const { Title, Paragraph } = Typography;
@@ -429,6 +430,7 @@ function InstallPrompt({
 
 type ViewKey =
   | "calendar"
+  | "routines"
   | "planner"
   | "queue"
   | "media"
@@ -1321,18 +1323,27 @@ export function SocialStudioWorkspace({
     />
   );
 
+  const routinesView = (
+    <SocialRoutinesView
+      projects={(projects ?? []).map((p) => ({ id: p.id, name: p.name }))}
+      defaultProjectId={scopeProjectId}
+    />
+  );
+
   const contentView =
     view === "calendar"
       ? calendarView
-      : view === "planner"
-        ? plannerView
-        : view === "queue"
-          ? queueView
-          : view === "media"
-            ? mediaView
-            : view === "analytics"
-              ? analyticsView
-              : channelsView;
+      : view === "routines"
+        ? routinesView
+        : view === "planner"
+          ? plannerView
+          : view === "queue"
+            ? queueView
+            : view === "media"
+              ? mediaView
+              : view === "analytics"
+                ? analyticsView
+                : channelsView;
 
   return (
     <>
@@ -1514,6 +1525,7 @@ export function SocialStudioWorkspace({
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", margin: "18px 0 16px" }}>
             <ViewTab active={view === "calendar"} icon="calendar_month" label="Calendar" onClick={() => setView("calendar")} />
+            <ViewTab active={view === "routines"} icon="autorenew" label="Routines" onClick={() => setView("routines")} />
             <ViewTab active={view === "planner"} icon="view_week" label="Planner" onClick={() => setView("planner")} />
             <ViewTab active={view === "queue"} icon="view_kanban" label="Queue" onClick={() => setView("queue")} />
             <ViewTab active={view === "media"} icon="photo_library" label="Media" onClick={() => setView("media")} />
