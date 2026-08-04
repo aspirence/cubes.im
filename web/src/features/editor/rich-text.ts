@@ -27,7 +27,12 @@ export function richTextToPlain(html: string | null | undefined): string {
     const doc = new DOMParser().parseFromString(html, "text/html");
     // Block boundaries are word boundaries — without the separator
     // "one</p><p>two" collapses to "onetwo" and stops matching either word.
-    for (const el of doc.body.querySelectorAll("p,div,li,h1,h2,h3,br,tr")) {
+    // `summary` is in the list because a toggle's title and its first
+    // paragraph are different sentences — without it they run together into a
+    // word that matches neither.
+    for (const el of doc.body.querySelectorAll(
+      "p,div,li,h1,h2,h3,br,tr,summary,blockquote,pre",
+    )) {
       el.insertAdjacentText("beforeend", " ");
     }
     return (doc.body.textContent ?? "").replace(/\s+/g, " ").trim();

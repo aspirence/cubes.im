@@ -20,6 +20,7 @@ import {
 import type { Editor, Range } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import { BlockGutter } from "./block-gutter";
+import { Callout, CALLOUT_TONES, ToggleBlock, ToggleSummary } from "./blocks";
 import StarterKit from "@tiptap/starter-kit";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
@@ -309,6 +310,20 @@ function createSlashExtension(openImagePicker: () => void) {
       keywords: "blockquote citation",
       run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().run(),
     },
+    ...CALLOUT_TONES.map((t) => ({
+      title: `Callout — ${t.label}`,
+      icon: t.icon,
+      keywords: `callout admonition ${t.label.toLowerCase()} ${t.value}`,
+      run: (e: Editor, r: Range) =>
+        e.chain().focus().deleteRange(r).toggleCallout(t.value).run(),
+    })),
+    {
+      title: "Toggle list",
+      icon: "expand_more",
+      keywords: "toggle collapse details accordion fold",
+      run: (e: Editor, r: Range) =>
+        e.chain().focus().deleteRange(r).setToggleBlock().run(),
+    },
     {
       title: "Code block",
       icon: "code_blocks",
@@ -583,6 +598,9 @@ export function NotionEditor({
     Placeholder.configure({ placeholder: placeholderRef.current }),
     TaskList,
     TaskItem.configure({ nested: true }),
+    Callout,
+    ToggleSummary,
+    ToggleBlock,
     Table.configure({ resizable: false }),
     TableRow,
     TableHeader,
@@ -786,6 +804,24 @@ export function NotionEditor({
         .rd-pop-lines{display:flex;flex-direction:column;line-height:1.25;min-width:0;}
         .rd-pop-name{font-size:13px;color:${token.colorText};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
         .rd-pop-meta{font-size:11px;color:${token.colorTextTertiary};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .rd .ProseMirror div[data-type="callout"]{display:block;border-radius:10px;padding:10px 12px 10px 38px;margin:.6em 0;position:relative;border:1px solid transparent;}
+        .rd .ProseMirror div[data-type="callout"]::before{position:absolute;left:11px;top:11px;font-family:'Material Symbols Rounded';font-size:17px;line-height:1;}
+        .rd .ProseMirror div[data-type="callout"] > :first-child{margin-top:0;}
+        .rd .ProseMirror div[data-type="callout"] > :last-child{margin-bottom:0;}
+        .rd .ProseMirror div[data-type="callout"][data-tone="info"]{background:${token.colorPrimaryBg};border-color:${token.colorPrimaryBorder};}
+        .rd .ProseMirror div[data-type="callout"][data-tone="info"]::before{content:"lightbulb";color:${token.colorPrimary};}
+        .rd .ProseMirror div[data-type="callout"][data-tone="warn"]{background:${token.colorWarningBg};border-color:${token.colorWarningBorder};}
+        .rd .ProseMirror div[data-type="callout"][data-tone="warn"]::before{content:"warning";color:${token.colorWarning};}
+        .rd .ProseMirror div[data-type="callout"][data-tone="success"]{background:${token.colorSuccessBg};border-color:${token.colorSuccessBorder};}
+        .rd .ProseMirror div[data-type="callout"][data-tone="success"]::before{content:"check_circle";color:${token.colorSuccess};}
+        .rd .ProseMirror div[data-type="callout"][data-tone="danger"]{background:${token.colorErrorBg};border-color:${token.colorErrorBorder};}
+        .rd .ProseMirror div[data-type="callout"][data-tone="danger"]::before{content:"error";color:${token.colorError};}
+        .rd .ProseMirror details{margin:.5em 0;border-radius:8px;}
+        .rd .ProseMirror details > summary{cursor:pointer;font-weight:600;padding:2px 0 2px 2px;list-style:none;display:flex;align-items:center;gap:6px;}
+        .rd .ProseMirror details > summary::-webkit-details-marker{display:none;}
+        .rd .ProseMirror details > summary::before{content:"chevron_right";font-family:'Material Symbols Rounded';font-size:18px;line-height:1;color:${token.colorTextTertiary};transition:transform .12s;flex:none;}
+        .rd .ProseMirror details[open] > summary::before{transform:rotate(90deg);}
+        .rd .ProseMirror details > :not(summary){margin-left:24px;}
         .rd-bubble{display:flex;align-items:center;gap:1px;padding:4px;background:${token.colorBgElevated};border:1px solid ${token.colorBorderSecondary};border-radius:10px;box-shadow:${token.boxShadowSecondary};}
         .rd-gutter{position:absolute;z-index:4;display:flex;align-items:center;gap:1px;height:26px;opacity:0;transition:opacity .1s;}
         .rd:hover .rd-gutter{opacity:1;}
