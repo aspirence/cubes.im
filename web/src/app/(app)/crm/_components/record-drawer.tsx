@@ -59,6 +59,7 @@ import {
   type CrmTaskStatus,
 } from "@/features/app-crm/types";
 import { errMsg } from "@/lib/err";
+import { richTextToPlain } from "@/features/editor/rich-text";
 import { MIcon } from "./m-icon";
 import { DealGlyph } from "./deal-glyph";
 import { PhoneWithCopy } from "./phone-cell";
@@ -1814,7 +1815,7 @@ export function RecordDrawer({
                                   lineHeight: 1.55,
                                 }}
                               >
-                                {n.body}
+                                {richTextToPlain(n.body)}
                               </Typography.Paragraph>
                             ) : null}
                             <div

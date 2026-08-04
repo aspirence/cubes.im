@@ -32,6 +32,8 @@ import {
   type CrmTargetType,
 } from "@/features/app-crm/types";
 import { errMsg } from "@/lib/err";
+import { NotionEditor } from "@/features/editor/notion-editor";
+import { richTextToPlain } from "@/features/editor/rich-text";
 import { MIcon } from "../_components/m-icon";
 import { RecordDrawer } from "../_components/record-drawer";
 import {
@@ -75,6 +77,34 @@ type NoteFormValues = {
 type LinkFilter = "all" | CrmTargetType;
 
 const LINK_FILTERS: CrmTargetType[] = ["person", "company", "deal"];
+
+/**
+ * The note body inside an AntD Form.Item.
+ *
+ * Form.Item clones its child with `value`/`onChange`, which is exactly the
+ * editor's contract — but `value` arrives undefined before the form is seeded,
+ * and NotionEditor wants a string.
+ */
+function NoteBodyField({
+  value,
+  onChange,
+}: {
+  value?: string;
+  onChange?: (next: string) => void;
+}) {
+  return (
+    <NotionEditor
+      value={value ?? ""}
+      onChange={(next) => onChange?.(next)}
+      // The form's own Save is the commit; blur must not fire a write.
+      onCommit={() => {}}
+      placeholder="Call recap, meeting summary, research…"
+      minRows={4}
+      maxRows={12}
+      linkPreviews={false}
+    />
+  );
+}
 
 export default function CrmNotesPage() {
   const { message } = App.useApp();
@@ -149,7 +179,9 @@ export default function CrmNotesPage() {
       const linked = n.targets
         .map((t) => recordName(t.target_type, t.target_id) ?? "")
         .join(" ");
-      return [n.title, n.body ?? "", linked, author(n.created_by).name]
+      // Bodies are rich text now; searching the raw HTML would make "p" and
+      // "li" match every note in the workspace.
+      return [n.title, richTextToPlain(n.body), linked, author(n.created_by).name]
         .join(" ")
         .toLowerCase()
         .includes(needle);
@@ -486,15 +518,19 @@ export default function CrmNotesPage() {
                 </div>
 
                 {inline ? (
-                  <Input.TextArea
-                    value={inlineBody}
-                    onChange={(e) => setInlineBody(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Escape") setInlineId(null);
-                    }}
-                    placeholder="Call recap, meeting summary, research…"
-                    autoSize={{ minRows: 3, maxRows: 12 }}
-                  />
+                  <div onKeyDown={(e) => { if (e.key === "Escape") setInlineId(null); }}>
+                    <NotionEditor
+                      value={inlineBody}
+                      onChange={setInlineBody}
+                      // Saving is the row's own Save button; the editor has no
+                      // business committing on every blur here.
+                      onCommit={() => {}}
+                      placeholder="Call recap, meeting summary, research…"
+                      minRows={3}
+                      maxRows={12}
+                      linkPreviews={false}
+                    />
+                  </div>
                 ) : n.body ? (
                   <div
                     style={{
@@ -509,7 +545,7 @@ export default function CrmNotesPage() {
                       wordBreak: "break-word",
                     }}
                   >
-                    {n.body}
+                    {richTextToPlain(n.body)}
                   </div>
                 ) : (
                   <div
@@ -678,7 +714,7 @@ export default function CrmNotesPage() {
                 <Input placeholder="e.g. Discovery call recap" />
               </Form.Item>
               <Form.Item name="body" label="Note">
-                <Input.TextArea autoSize={{ minRows: 4, maxRows: 12 }} />
+                <NoteBodyField />
               </Form.Item>
             </FormSection>
 

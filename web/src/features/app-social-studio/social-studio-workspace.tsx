@@ -50,6 +50,8 @@ import {
   PlatformBadge,
 } from "./platform-icons";
 import { MIcon, useC } from "./ui";
+import { NotionEditor } from "@/features/editor/notion-editor";
+import { richTextToPlain } from "@/features/editor/rich-text";
 import { SocialCalendarView } from "./social-calendar-view";
 import { SocialRoutinesView } from "./routines-view";
 import { TaskDrawer } from "@/app/(app)/projects/[id]/_components/task-drawer";
@@ -870,7 +872,9 @@ export function SocialStudioWorkspace({
               <div style={{ fontWeight: 700, color: C.text }}>{campaign.name}</div>
             </div>
             <div style={{ fontSize: 12.5, color: C.textSecondary }}>
-              {campaign.brief || campaign.goal || "Content campaign ready for scheduling."}
+              {richTextToPlain(campaign.brief) ||
+                campaign.goal ||
+                "Content campaign ready for scheduling."}
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
               {campaign.start_date ? <Tag style={{ margin: 0 }}>{dayjs(campaign.start_date).format("D MMM")}</Tag> : null}
@@ -1649,11 +1653,15 @@ export function SocialStudioWorkspace({
             value={campaignDraft.name}
             onChange={(event) => setCampaignDraft((prev) => ({ ...prev, name: event.target.value }))}
           />
-          <TextArea
-            rows={4}
-            placeholder="Brief"
+          <NotionEditor
             value={campaignDraft.brief}
-            onChange={(event) => setCampaignDraft((prev) => ({ ...prev, brief: event.target.value }))}
+            onChange={(next) => setCampaignDraft((prev) => ({ ...prev, brief: next }))}
+            // The modal's Create button is the commit; blur must not write.
+            onCommit={() => {}}
+            placeholder="Brief — what this campaign is for, who it targets, the angle…"
+            minRows={4}
+            maxRows={12}
+            linkPreviews={false}
           />
           <Input
             placeholder="Goal"
