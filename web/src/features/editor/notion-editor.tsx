@@ -18,6 +18,8 @@ import {
   useEditorState,
 } from "@tiptap/react";
 import type { Editor, Range } from "@tiptap/react";
+import { BubbleMenu } from "@tiptap/react/menus";
+import { BlockGutter } from "./block-gutter";
 import StarterKit from "@tiptap/starter-kit";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
@@ -361,6 +363,54 @@ function createSlashExtension(openImagePicker: () => void) {
   });
 }
 
+/** Everything the toolbars need to render, read once per transaction. */
+function selectUiState({ editor: e }: { editor: Editor | null }) {
+  if (!e) return null;
+  return {
+    bold: e.isActive("bold"),
+    italic: e.isActive("italic"),
+    underline: e.isActive("underline"),
+    strike: e.isActive("strike"),
+    h1: e.isActive("heading", { level: 1 }),
+    h2: e.isActive("heading", { level: 2 }),
+    h3: e.isActive("heading", { level: 3 }),
+    bulletList: e.isActive("bulletList"),
+    orderedList: e.isActive("orderedList"),
+    taskList: e.isActive("taskList"),
+    blockquote: e.isActive("blockquote"),
+    code: e.isActive("code"),
+    codeBlock: e.isActive("codeBlock"),
+    link: e.isActive("link"),
+    canUndo: e.can().undo(),
+    canRedo: e.can().redo(),
+    text: e.getText(),
+  };
+}
+
+/* --------------------------------------------------- selection toolbar ---- */
+
+type ToolSpec = {
+  icon: string;
+  label: string;
+  /** Key into the `uiState` selector below. */
+  active?: keyof NonNullable<ReturnType<typeof selectUiState>>;
+  run: (editor: Editor) => void;
+};
+
+const BUBBLE_TOOLS: (ToolSpec | "sep")[] = [
+  { icon: "format_bold", label: "Bold", active: "bold", run: (e) => e.chain().focus().toggleBold().run() },
+  { icon: "format_italic", label: "Italic", active: "italic", run: (e) => e.chain().focus().toggleItalic().run() },
+  { icon: "format_underlined", label: "Underline", active: "underline", run: (e) => e.chain().focus().toggleUnderline().run() },
+  { icon: "format_strikethrough", label: "Strikethrough", active: "strike", run: (e) => e.chain().focus().toggleStrike().run() },
+  { icon: "code", label: "Inline code", active: "code", run: (e) => e.chain().focus().toggleCode().run() },
+  "sep",
+  { icon: "format_h1", label: "Heading 1", active: "h1", run: (e) => e.chain().focus().toggleHeading({ level: 1 }).run() },
+  { icon: "format_h2", label: "Heading 2", active: "h2", run: (e) => e.chain().focus().toggleHeading({ level: 2 }).run() },
+  { icon: "format_list_bulleted", label: "Bulleted list", active: "bulletList", run: (e) => e.chain().focus().toggleBulletList().run() },
+  { icon: "checklist", label: "Checklist", active: "taskList", run: (e) => e.chain().focus().toggleTaskList().run() },
+  { icon: "format_quote", label: "Quote", active: "blockquote", run: (e) => e.chain().focus().toggleBlockquote().run() },
+];
+
 /* -------------------------------------------------------------- editor ---- */
 
 /**
@@ -659,32 +709,7 @@ export function NotionEditor({
     lastEmittedRef.current = value;
   }, [editor, value]);
 
-  const uiState = useEditorState({
-    editor,
-    selector: ({ editor: e }) => {
-      if (!e) return null;
-      return {
-        bold: e.isActive("bold"),
-        italic: e.isActive("italic"),
-        underline: e.isActive("underline"),
-        strike: e.isActive("strike"),
-        h1: e.isActive("heading", { level: 1 }),
-        h2: e.isActive("heading", { level: 2 }),
-        h3: e.isActive("heading", { level: 3 }),
-        bulletList: e.isActive("bulletList"),
-        orderedList: e.isActive("orderedList"),
-        taskList: e.isActive("taskList"),
-        blockquote: e.isActive("blockquote"),
-        code: e.isActive("code"),
-        codeBlock: e.isActive("codeBlock"),
-        link: e.isActive("link"),
-        canUndo: e.can().undo(),
-        canRedo: e.can().redo(),
-        text: e.getText(),
-      };
-    },
-  });
-
+  const uiState = useEditorState({ editor, selector: selectUiState });
   const plainText = uiState?.text ?? "";
 
   const applyLink = () => {
@@ -726,7 +751,7 @@ export function NotionEditor({
         .rd-tool:disabled{opacity:.4;cursor:default;background:transparent;color:${token.colorTextSecondary};}
         .rd-sep{width:1px;height:18px;background:${token.colorBorderSecondary};margin:0 4px;align-self:center;}
         .rd-scroll{${page ? "" : `max-height:${maxRows * 24 + 20}px;overflow-y:auto;`}}
-        .rd .ProseMirror{padding-left:0;padding-right:0;min-height:${page ? 320 : minRows * 24 + 20}px;padding:${page ? "16px 4px 96px" : "10px 14px"};font-size:${page ? 15.5 : 14}px;line-height:1.75;color:${token.colorText};outline:none;caret-color:${token.colorText};word-break:break-word;}
+        .rd .ProseMirror{padding-left:0;padding-right:0;min-height:${page ? 320 : minRows * 24 + 20}px;padding:${page ? "16px 4px 96px" : "10px 14px"};${page ? "margin-left:8px;" : ""};font-size:${page ? 15.5 : 14}px;line-height:1.75;color:${token.colorText};outline:none;caret-color:${token.colorText};word-break:break-word;}
         .rd .ProseMirror p{margin:.35em 0;}
         .rd .ProseMirror > :first-child{margin-top:0;}
         .rd .ProseMirror h1,.rd .ProseMirror h2,.rd .ProseMirror h3{margin:.6em 0 .3em;line-height:1.3;font-weight:600;}
@@ -761,6 +786,13 @@ export function NotionEditor({
         .rd-pop-lines{display:flex;flex-direction:column;line-height:1.25;min-width:0;}
         .rd-pop-name{font-size:13px;color:${token.colorText};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
         .rd-pop-meta{font-size:11px;color:${token.colorTextTertiary};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .rd-bubble{display:flex;align-items:center;gap:1px;padding:4px;background:${token.colorBgElevated};border:1px solid ${token.colorBorderSecondary};border-radius:10px;box-shadow:${token.boxShadowSecondary};}
+        .rd-gutter{position:absolute;z-index:4;display:flex;align-items:center;gap:1px;height:26px;opacity:0;transition:opacity .1s;}
+        .rd:hover .rd-gutter{opacity:1;}
+        .rd-grip{width:20px;height:24px;border:none;background:transparent;border-radius:5px;color:${token.colorTextQuaternary};cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
+        .rd-grip:hover{background:${token.colorFillSecondary};color:${token.colorTextSecondary};}
+        .rd-grip-drag{cursor:grab;}
+        .rd-grip-drag:active{cursor:grabbing;}
         .rd-linkpop{position:absolute;display:flex;gap:6px;align-items:center;padding:8px;background:${token.colorBgElevated};border:1px solid ${token.colorBorderSecondary};border-radius:10px;box-shadow:${token.boxShadowSecondary};z-index:60;width:320px;}
       `}</style>
 
@@ -832,6 +864,66 @@ export function NotionEditor({
             </button>
           </Tooltip>
         </div>
+      ) : null}
+
+      {editor ? (
+        <>
+          {/*
+            Notion's two gestures. Select text and the formatting comes to the
+            selection; hover a block and its handle appears in the gutter. Both
+            beat a permanent toolbar: the toolbar is always there taking room
+            and is never where you are looking.
+          */}
+          <BubbleMenu
+            editor={editor}
+            options={{ placement: "top", offset: 8 }}
+            // A code block wants its own keyboard, not bold/italic; and an
+            // image selection has no text to format.
+            shouldShow={({ editor: e, state }) =>
+              !state.selection.empty &&
+              !e.isActive("codeBlock") &&
+              !e.isActive("image")
+            }
+          >
+            <div className="rd-bubble">
+              {BUBBLE_TOOLS.map((t, i) =>
+                t === "sep" ? (
+                  <span key={`sep-${i}`} className="rd-sep" />
+                ) : (
+                  <Tooltip key={t.icon} title={t.label}>
+                    <button
+                      type="button"
+                      aria-label={t.label}
+                      aria-pressed={t.active ? Boolean(uiState?.[t.active]) : undefined}
+                      className={
+                        "rd-tool" +
+                        (t.active && uiState?.[t.active] ? " is-active" : "")
+                      }
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => t.run(editor)}
+                    >
+                      <MIcon name={t.icon} />
+                    </button>
+                  </Tooltip>
+                ),
+              )}
+              <span className="rd-sep" />
+              <Tooltip title="Link (⌘K)">
+                <button
+                  type="button"
+                  aria-label="Link"
+                  className={"rd-tool" + (uiState?.link ? " is-active" : "")}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={openLinkPopover}
+                >
+                  <MIcon name="link" />
+                </button>
+              </Tooltip>
+            </div>
+          </BubbleMenu>
+
+          <BlockGutter editor={editor} containerRef={rdRef} />
+        </>
       ) : null}
 
       <div className="rd-scroll">
