@@ -21,11 +21,14 @@ import {
   useCreatePage,
   useUpdatePage,
   useDeletePage,
-  type Block,
   type Page,
 } from "@/features/app-docs/use-docs";
 import { useProjectMembers } from "@/features/projects/use-project-members";
-import { BlockEditor } from "@/features/app-docs/block-editor";
+import { NotionEditor } from "@/features/editor/notion-editor";
+import {
+  htmlToPageContent,
+  pageContentToHtml,
+} from "@/features/app-docs/page-content";
 import { PageShareModal } from "./page-share-modal";
 
 function initials(name: string): string {
@@ -146,13 +149,13 @@ export function DocsTab({ projectId }: { projectId: string }) {
 
   /* ---- editor local state + debounced save (flush via ref) ---- */
   const [title, setTitle] = useState("");
-  const [blocks, setBlocks] = useState<Block[]>([]);
+  const [html, setHtml] = useState("");
   const activePageRef = useRef<string | null>(null);
   const titleRef = useRef("");
-  const blocksRef = useRef<Block[]>([]);
+  const htmlRef = useRef("");
   const timerRef = useRef<number | undefined>(undefined);
 
-  // Reads only refs (page id, doc id, title, blocks) + the stable
+  // Reads only refs (page id, doc id, title, html) + the stable
   // updatePage.mutate — so it stays correct even when captured by the unmount
   // cleanup, with no stale first-render closure over state (the bug that
   // silently dropped the last 700ms of edits on tab-away).
@@ -165,7 +168,7 @@ export function DocsTab({ projectId }: { projectId: string }) {
       id: pid,
       docId: did,
       title: titleRef.current.trim() || "Untitled",
-      content: blocksRef.current,
+      content: htmlToPageContent(htmlRef.current),
     });
   };
   const schedule = () => {
@@ -183,8 +186,9 @@ export function DocsTab({ projectId }: { projectId: string }) {
       activePageRef.current = activePage.id;
       setTitle(activePage.title);
       titleRef.current = activePage.title;
-      setBlocks(activePage.content);
-      blocksRef.current = activePage.content;
+      const seeded = pageContentToHtml(activePage.content);
+      setHtml(seeded);
+      htmlRef.current = seeded;
     }
     if (!activePage && activePageRef.current) {
       flush(); // deselected (e.g. deleted) — don't lose pending edits
@@ -204,9 +208,9 @@ export function DocsTab({ projectId }: { projectId: string }) {
     titleRef.current = t;
     schedule();
   };
-  const onBlocks = (b: Block[]) => {
-    setBlocks(b);
-    blocksRef.current = b;
+  const onHtml = (next: string) => {
+    setHtml(next);
+    htmlRef.current = next;
     schedule();
   };
 
@@ -522,7 +526,17 @@ export function DocsTab({ projectId }: { projectId: string }) {
                 padding: 0,
               }}
             />
-            <BlockEditor value={blocks} onChange={onBlocks} />
+            <NotionEditor
+              key={activePage.id}
+              value={html}
+              onChange={onHtml}
+              // The tab already debounces every change to the same save; a
+              // separate commit on blur would just fire a second write.
+              onCommit={flush}
+              variant="page"
+              placeholder="Start writing, or press / for blocks…"
+              linkPreviews={false}
+            />
           </div>
         ) : (
           <div style={{ display: "grid", placeItems: "center", height: "100%" }}>

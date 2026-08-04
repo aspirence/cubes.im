@@ -34,19 +34,14 @@ export interface Block {
   checked?: boolean;
 }
 
-/** A page row with its jsonb content read back as a typed Block[]. */
-export type Page = Omit<PageRow, "content"> & { content: Block[] };
-
-function toBlocks(content: Json): Block[] {
-  if (!Array.isArray(content)) return [];
-  const out: Block[] = [];
-  for (const b of content) {
-    if (b && typeof b === "object" && !Array.isArray(b) && "id" in b && "type" in b) {
-      out.push(b as unknown as Block);
-    }
-  }
-  return out;
-}
+/**
+ * A page row, content left as raw jsonb.
+ *
+ * It is no longer decoded to Block[] here because the column now holds either
+ * shape — legacy `Block[]` or `{ html }` — and only the editor cares which.
+ * `pageContentToHtml` in ./page-content.ts is the one place that knows.
+ */
+export type Page = PageRow;
 
 const docsKey = (projectId: string | undefined) =>
   ["docs", "list", projectId] as const;
@@ -169,7 +164,7 @@ export function usePages(docId: string | undefined) {
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true });
       if (error) throw error;
-      return (data ?? []).map((p) => ({ ...p, content: toBlocks(p.content) }));
+      return data ?? [];
     },
   });
 }
@@ -212,7 +207,7 @@ export interface UpdatePageInput {
   id: string;
   docId: string;
   title?: string;
-  content?: Block[];
+  content?: Json;
   icon?: string | null;
   is_private?: boolean;
   parent_id?: string | null;
