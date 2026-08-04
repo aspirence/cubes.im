@@ -27,7 +27,15 @@ import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table
 import ImageExtension from "@tiptap/extension-image";
 import Mention from "@tiptap/extension-mention";
 import type { MentionNodeAttrs } from "@tiptap/extension-mention";
-import { Placeholder } from "@tiptap/extensions";
+import { Placeholder, TrailingNode } from "@tiptap/extensions";
+import Highlight from "@tiptap/extension-highlight";
+import TextAlign from "@tiptap/extension-text-align";
+import { Color, TextStyle } from "@tiptap/extension-text-style";
+import Subscript from "@tiptap/extension-subscript";
+import Superscript from "@tiptap/extension-superscript";
+import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
+import { createLowlight, common } from "lowlight";
+import { searchEmojis, type EmojiItem } from "./emoji";
 import { Suggestion } from "@tiptap/suggestion";
 import type { SuggestionOptions, SuggestionProps } from "@tiptap/suggestion";
 import { PluginKey } from "@tiptap/pm/state";
@@ -37,6 +45,12 @@ import { useUploadInlineImage } from "@/features/storage/use-storage";
 const BRAND = "#4a4ad0";
 /** Above AntD Modal (z-index ~1000) so popups work inside the create-task modal. */
 const POPUP_Z = 1200;
+/**
+ * `common` is lowlight's ~35-language set rather than `all` (~190). The long
+ * tail is megabytes of grammars for languages nobody pastes into a project doc.
+ */
+const lowlight = createLowlight(common);
+
 const DEFAULT_PLACEHOLDER =
   "Type / for commands, @ to mention, paste or drop images…";
 
@@ -264,6 +278,57 @@ function makeSuggestionRender<I, S>(
   };
 }
 
+function EmojiRow({ items, command, ref }: PopupProps<EmojiItem, EmojiItem>) {
+  const { index, setIndex } = usePopupNav(ref, items, command);
+  if (items.length === 0) return null;
+  return (
+    <div className="rd-pop" role="listbox">
+      {items.map((it, i) => (
+        <button
+          key={it.name}
+          type="button"
+          role="option"
+          aria-selected={i === index}
+          className={"rd-pop-item" + (i === index ? " is-active" : "")}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => command(it)}
+          onMouseEnter={() => setIndex(i)}
+        >
+          <span style={{ fontSize: 17, width: 24, textAlign: "center", flex: "none" }}>
+            {it.emoji}
+          </span>
+          <span className="rd-pop-name">:{it.name}:</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------- emoji ------ */
+
+function createEmojiExtension() {
+  return Extension.create({
+    name: "rdEmoji",
+    addProseMirrorPlugins() {
+      return [
+        Suggestion<EmojiItem, EmojiItem>({
+          editor: this.editor,
+          pluginKey: new PluginKey("rdEmoji"),
+          char: ":",
+          // `null` = also allow the very start of a block. Two characters
+          // before it offers anything, because a bare ":" is punctuation far
+          // more often than it is the start of an emoji.
+          allowedPrefixes: null,
+          items: ({ query }) => (query.length < 2 ? [] : searchEmojis(query)),
+          command: ({ editor, range, props }) =>
+            editor.chain().focus().deleteRange(range).insertContent(props.emoji).run(),
+          render: makeSuggestionRender<EmojiItem, EmojiItem>(EmojiRow),
+        }),
+      ];
+    },
+  });
+}
+
 /* ------------------------------------------------------- slash commands --- */
 
 function createSlashExtension(openImagePicker: () => void) {
@@ -331,6 +396,18 @@ function createSlashExtension(openImagePicker: () => void) {
       run: (e, r) => e.chain().focus().deleteRange(r).toggleCodeBlock().run(),
     },
     {
+      title: "Superscript",
+      icon: "superscript",
+      keywords: "superscript power exponent",
+      run: (e, r) => e.chain().focus().deleteRange(r).toggleSuperscript().run(),
+    },
+    {
+      title: "Subscript",
+      icon: "subscript",
+      keywords: "subscript index chemical",
+      run: (e, r) => e.chain().focus().deleteRange(r).toggleSubscript().run(),
+    },
+    {
       title: "Table",
       icon: "table",
       keywords: "table grid columns rows",
@@ -396,6 +473,12 @@ function selectUiState({ editor: e }: { editor: Editor | null }) {
     code: e.isActive("code"),
     codeBlock: e.isActive("codeBlock"),
     link: e.isActive("link"),
+    highlight: e.isActive("highlight"),
+    subscript: e.isActive("subscript"),
+    superscript: e.isActive("superscript"),
+    alignLeft: e.isActive({ textAlign: "left" }),
+    alignCenter: e.isActive({ textAlign: "center" }),
+    alignRight: e.isActive({ textAlign: "right" }),
     canUndo: e.can().undo(),
     canRedo: e.can().redo(),
     text: e.getText(),
@@ -418,6 +501,11 @@ const BUBBLE_TOOLS: (ToolSpec | "sep")[] = [
   { icon: "format_underlined", label: "Underline", active: "underline", run: (e) => e.chain().focus().toggleUnderline().run() },
   { icon: "format_strikethrough", label: "Strikethrough", active: "strike", run: (e) => e.chain().focus().toggleStrike().run() },
   { icon: "code", label: "Inline code", active: "code", run: (e) => e.chain().focus().toggleCode().run() },
+  { icon: "ink_highlighter", label: "Highlight", active: "highlight", run: (e) => e.chain().focus().toggleHighlight().run() },
+  "sep",
+  { icon: "format_align_left", label: "Align left", active: "alignLeft", run: (e) => e.chain().focus().setTextAlign("left").run() },
+  { icon: "format_align_center", label: "Align centre", active: "alignCenter", run: (e) => e.chain().focus().setTextAlign("center").run() },
+  { icon: "format_align_right", label: "Align right", active: "alignRight", run: (e) => e.chain().focus().setTextAlign("right").run() },
   "sep",
   { icon: "format_h1", label: "Heading 1", active: "h1", run: (e) => e.chain().focus().toggleHeading({ level: 1 }).run() },
   { icon: "format_h2", label: "Heading 2", active: "h2", run: (e) => e.chain().focus().toggleHeading({ level: 2 }).run() },
@@ -587,6 +675,9 @@ export function NotionEditor({
   const [extensions] = useState(() => [
     StarterKit.configure({
       heading: { levels: [1, 2, 3] },
+      // Replaced by CodeBlockLowlight below; two codeBlock nodes in one schema
+      // is a duplicate-name error at editor creation.
+      codeBlock: false,
       link: {
         openOnClick: false, // ⌘/Ctrl+click handled in editorProps
         autolink: true,
@@ -595,9 +686,26 @@ export function NotionEditor({
         HTMLAttributes: { rel: "noopener noreferrer" },
       },
     }),
-    Placeholder.configure({ placeholder: placeholderRef.current }),
+    Placeholder.configure({
+      // On the CURRENT empty line, not only the first: an empty paragraph
+      // halfway down a page is exactly where someone has stopped and needs
+      // reminding that "/" opens the block menu.
+      showOnlyCurrent: true,
+      placeholder: ({ pos }) =>
+        pos === 0 ? placeholderRef.current : "Press / for commands…",
+    }),
     TaskList,
     TaskItem.configure({ nested: true }),
+    Highlight.configure({ multicolor: true }),
+    TextStyle,
+    Color,
+    Subscript,
+    Superscript,
+    TextAlign.configure({ types: ["heading", "paragraph"] }),
+    CodeBlockLowlight.configure({ lowlight }),
+    // Without this, a doc ending in a table or an image has nowhere to click to
+    // keep writing — the single most-reported gap in any block editor.
+    TrailingNode,
     Callout,
     ToggleSummary,
     ToggleBlock,
@@ -634,6 +742,7 @@ export function NotionEditor({
       },
     }),
     createSlashExtension(() => fileInputRef.current?.click()),
+    createEmojiExtension(),
   ]);
 
   const editor = useEditor(
@@ -769,10 +878,11 @@ export function NotionEditor({
         .rd-tool:disabled{opacity:.4;cursor:default;background:transparent;color:${token.colorTextSecondary};}
         .rd-sep{width:1px;height:18px;background:${token.colorBorderSecondary};margin:0 4px;align-self:center;}
         .rd-scroll{${page ? "" : `max-height:${maxRows * 24 + 20}px;overflow-y:auto;`}}
-        .rd .ProseMirror{padding-left:0;padding-right:0;min-height:${page ? 320 : minRows * 24 + 20}px;padding:${page ? "16px 4px 96px" : "10px 14px"};${page ? "margin-left:8px;" : ""};font-size:${page ? 15.5 : 14}px;line-height:1.75;color:${token.colorText};outline:none;caret-color:${token.colorText};word-break:break-word;}
+        .rd .ProseMirror{min-height:${page ? 340 : minRows * 24 + 20}px;padding:${page ? "8px 0 40vh" : "10px 14px"};font-size:${page ? 16 : 14}px;line-height:${page ? 1.8 : 1.7};color:${token.colorText};outline:none;caret-color:${token.colorText};word-break:break-word;${page ? "max-width:720px;" : ""}}
         .rd .ProseMirror p{margin:.35em 0;}
         .rd .ProseMirror > :first-child{margin-top:0;}
-        .rd .ProseMirror h1,.rd .ProseMirror h2,.rd .ProseMirror h3{margin:.6em 0 .3em;line-height:1.3;font-weight:600;}
+        .rd .ProseMirror h1,.rd .ProseMirror h2,.rd .ProseMirror h3{margin:${page ? "1.4em 0 .35em" : ".6em 0 .3em"};line-height:1.3;font-weight:${page ? 700 : 600};letter-spacing:${page ? "-0.01em" : "normal"};}
+        .rd .ProseMirror > h1:first-child,.rd .ProseMirror > h2:first-child,.rd .ProseMirror > h3:first-child{margin-top:0;}
         .rd .ProseMirror h1{font-size:${page ? "1.85em" : "1.5em"};} .rd .ProseMirror h2{font-size:${page ? "1.45em" : "1.28em"};} .rd .ProseMirror h3{font-size:${page ? "1.2em" : "1.12em"};}
         .rd .ProseMirror ul,.rd .ProseMirror ol{margin:.4em 0;padding-left:1.4em;}
         .rd .ProseMirror a{color:${token.colorPrimary};text-decoration:underline;text-underline-offset:2px;cursor:pointer;}
@@ -796,7 +906,7 @@ export function NotionEditor({
         .rd .ProseMirror ul[data-type="taskList"] input[type="checkbox"]{cursor:pointer;accent-color:${BRAND};width:14px;height:14px;border-radius:4px;}
         .rd .ProseMirror li[data-checked="true"] > div{color:${token.colorTextTertiary};text-decoration:line-through;}
         .rd .ProseMirror .rd-mention{background:rgba(74,74,208,.10);color:${BRAND};border-radius:6px;padding:0 4px;font-weight:500;white-space:nowrap;box-decoration-break:clone;}
-        .rd .ProseMirror p.is-editor-empty:first-child::before{content:attr(data-placeholder);color:${token.colorTextQuaternary};float:left;height:0;pointer-events:none;}
+        .rd .ProseMirror .is-empty::before{content:attr(data-placeholder);color:${token.colorTextQuaternary};float:left;height:0;pointer-events:none;}
         .rd-pop{min-width:230px;max-width:320px;max-height:280px;overflow-y:auto;background:${token.colorBgElevated};border:1px solid ${token.colorBorderSecondary};border-radius:10px;box-shadow:${token.boxShadowSecondary};padding:4px;}
         .rd-pop-item{display:flex;align-items:center;gap:8px;width:100%;padding:6px 8px;border:none;background:transparent;border-radius:7px;cursor:pointer;text-align:left;color:${token.colorText};}
         .rd-pop-item.is-active{background:${token.colorFillSecondary};}
@@ -804,6 +914,13 @@ export function NotionEditor({
         .rd-pop-lines{display:flex;flex-direction:column;line-height:1.25;min-width:0;}
         .rd-pop-name{font-size:13px;color:${token.colorText};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
         .rd-pop-meta{font-size:11px;color:${token.colorTextTertiary};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .rd .ProseMirror mark{background:${token.colorWarningBg};color:inherit;border-radius:3px;padding:0 2px;box-decoration-break:clone;}
+        .rd .ProseMirror .hljs-comment,.rd .ProseMirror .hljs-quote{color:${token.colorTextQuaternary};font-style:italic;}
+        .rd .ProseMirror .hljs-keyword,.rd .ProseMirror .hljs-selector-tag,.rd .ProseMirror .hljs-literal,.rd .ProseMirror .hljs-type{color:${token.colorPrimary};}
+        .rd .ProseMirror .hljs-string,.rd .ProseMirror .hljs-regexp,.rd .ProseMirror .hljs-addition{color:${token.colorSuccess};}
+        .rd .ProseMirror .hljs-number,.rd .ProseMirror .hljs-built_in,.rd .ProseMirror .hljs-attr{color:${token.colorWarning};}
+        .rd .ProseMirror .hljs-title,.rd .ProseMirror .hljs-section,.rd .ProseMirror .hljs-name{color:${token.colorInfo};font-weight:600;}
+        .rd .ProseMirror .hljs-deletion,.rd .ProseMirror .hljs-meta{color:${token.colorError};}
         .rd .ProseMirror div[data-type="callout"]{display:block;border-radius:10px;padding:10px 12px 10px 38px;margin:.6em 0;position:relative;border:1px solid transparent;}
         .rd .ProseMirror div[data-type="callout"]::before{position:absolute;left:11px;top:11px;font-family:'Material Symbols Rounded';font-size:17px;line-height:1;}
         .rd .ProseMirror div[data-type="callout"] > :first-child{margin-top:0;}
