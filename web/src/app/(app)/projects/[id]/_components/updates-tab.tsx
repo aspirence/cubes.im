@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   App,
   Avatar,
@@ -176,7 +177,12 @@ export function UpdatesTab({ projectId }: { projectId: string }) {
   const { token } = theme.useToken();
   const { message } = App.useApp();
 
-  const { data: commentsRaw, isLoading } = useProjectComments(projectId);
+  const {
+    data: commentsRaw,
+    isLoading,
+    isFetching,
+    refetch: refetchComments,
+  } = useProjectComments(projectId);
   const addComment = useAddProjectComment();
   const { data: membersRaw } = useTeamMembers();
 
@@ -184,6 +190,97 @@ export function UpdatesTab({ projectId }: { projectId: string }) {
 
   const [seg, setSeg] = useState<"activity" | "updates">("activity");
   const [content, setContent] = useState("");
+
+  // Deep-linked update (?tab=updates&comment=<id> — project-update mention
+  // notifications). The param is captured into a ref and stripped from the
+  // URL IMMEDIATELY — before the feed loads — so leaving the tab mid-load
+  // can't leak ?comment= into later navigations (the page's tab changes copy
+  // the whole query string). The captured one-shot is then consumed once the
+  // feed can actually contain the comment: scroll + flash when found; on a
+  // miss force ONE fresh fetch (the mentioned update is newer than any cached
+  // list, and nothing on the recipient's client invalidates this cache) and
+  // give up only after it settles. A `task` param means the comment belongs
+  // to the task drawer's deep link, not this feed.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const commentParam = searchParams.get("comment");
+  const deepLinkedComment =
+    commentParam && searchParams.get("task") == null ? commentParam : null;
+  const pendingCommentRef = useRef<string | null>(null);
+  // One forced refetch per captured deep link. The guard records the fetch's
+  // own settlement (via its promise) rather than trusting the closure's
+  // isFetching snapshot — a StrictMode double-invoke would otherwise give up
+  // before the fetch lands — and is reset on consumption so a re-clicked
+  // notification gets a fresh fetch again.
+  const refetchGuardRef = useRef<{ id: string; settled: boolean } | null>(null);
+  const flashTimerRef = useRef<number | null>(null);
+  const flashedRowRef = useRef<HTMLElement | null>(null);
+  // Render-time adjustment (converges in one re-render) instead of a setState
+  // inside the effect.
+  if (deepLinkedComment && seg !== "updates") setSeg("updates");
+  const flashBg = token.colorPrimaryBg;
+  useEffect(() => {
+    if (!deepLinkedComment) return;
+    pendingCommentRef.current = deepLinkedComment;
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("comment");
+    const qs = next.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [deepLinkedComment, searchParams, router, pathname]);
+  useEffect(() => {
+    // Only the captured ref is authoritative — reading the (not yet stripped)
+    // URL param here could resurrect an already-consumed target. Declaration
+    // order guarantees the capture effect above ran first on the arrival
+    // commit; deepLinkedComment stays in the deps purely as that trigger.
+    const target = pendingCommentRef.current;
+    if (!target || seg !== "updates" || isLoading) return;
+    const row = document.getElementById(`project-update-${target}`);
+    if (!row) {
+      const guard = refetchGuardRef.current;
+      if (!guard || guard.id !== target) {
+        const started = { id: target, settled: false };
+        refetchGuardRef.current = started;
+        void refetchComments().finally(() => {
+          started.settled = true;
+        });
+        return;
+      }
+      if (!guard.settled || isFetching) return; // fetch still in flight
+      refetchGuardRef.current = null;
+      pendingCommentRef.current = null; // fetched fresh and still absent
+      return;
+    }
+    refetchGuardRef.current = null;
+    row.scrollIntoView({ block: "center", behavior: "smooth" });
+    // A superseded flash must not leave the previous row highlighted — its
+    // reset timer is about to be cancelled below.
+    if (flashedRowRef.current && flashedRowRef.current !== row) {
+      flashedRowRef.current.style.background = "transparent";
+    }
+    flashedRowRef.current = row;
+    row.style.background = flashBg;
+    if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = window.setTimeout(() => {
+      row.style.background = "transparent";
+      flashedRowRef.current = null;
+    }, 2600);
+    pendingCommentRef.current = null;
+  }, [
+    deepLinkedComment,
+    seg,
+    isLoading,
+    isFetching,
+    commentsRaw,
+    refetchComments,
+    flashBg,
+  ]);
+  useEffect(
+    () => () => {
+      if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
+    },
+    [],
+  );
 
   // AI standup: generated summary held locally until posted or dismissed.
   const aiStandup = useAiStandup();
@@ -280,7 +377,17 @@ export function UpdatesTab({ projectId }: { projectId: string }) {
         </div>
         <Segmented
           value={seg}
-          onChange={(v) => setSeg(v as "activity" | "updates")}
+          onChange={(v) => {
+            const next = v as "activity" | "updates";
+            // Explicitly leaving Updates abandons any pending deep-link
+            // scroll — otherwise it would fire as a surprise flash on a
+            // much-later return to this segment.
+            if (next !== "updates") {
+              pendingCommentRef.current = null;
+              refetchGuardRef.current = null;
+            }
+            setSeg(next);
+          }}
           options={[
             { label: "Activity", value: "activity" },
             { label: "Updates", value: "updates" },
@@ -394,7 +501,20 @@ export function UpdatesTab({ projectId }: { projectId: string }) {
           renderItem={(c) => {
             const mentionIds = c.mentions ?? [];
             return (
-              <List.Item key={c.id} style={{ paddingInline: 0 }}>
+              <List.Item
+                key={c.id}
+                id={`project-update-${c.id}`}
+                style={{
+                  // Padding + equal negative margin: same layout footprint,
+                  // but the deep-link flash halo (painted imperatively by the
+                  // effect above) gets breathing room around the row.
+                  paddingInline: 8,
+                  marginInline: -8,
+                  borderRadius: 10,
+                  background: "transparent",
+                  transition: "background .6s ease",
+                }}
+              >
                 <List.Item.Meta
                   avatar={
                     <Avatar

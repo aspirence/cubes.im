@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   App,
   Avatar,
@@ -366,26 +366,63 @@ function SolidAvatar({
 
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Deep links carry the task as `?task=<id>` (notifications, the schedule
+ * page, copied task links, …). The drawer itself is store-driven, so treat
+ * the param as a one-shot command: open the task, then strip it from the
+ * URL. Consuming it immediately keeps the URL honest after the drawer
+ * closes or swaps to a subtask, and lets the same link fire again later.
+ * Lives in its own component so the useSearchParams Suspense boundary stays
+ * inside TaskDrawer — host pages don't need one of their own.
+ */
+function TaskDeepLink() {
+  const openTask = useTaskDrawer((s) => s.open);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const taskParam = searchParams.get("task");
+  // `&comment=<id>` narrows the link to one comment (mention/comment
+  // notifications) — the comments panel scrolls to it once loaded.
+  const commentParam = searchParams.get("comment");
+
+  useEffect(() => {
+    if (!taskParam) return;
+    openTask(taskParam, commentParam ? { commentId: commentParam } : undefined);
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("task");
+    next.delete("comment");
+    const qs = next.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [taskParam, commentParam, openTask, searchParams, router, pathname]);
+
+  return null;
+}
+
 export function TaskDrawer() {
   const { taskId, close } = useTaskDrawer();
   const DT = useDrawerTokens();
   const open = taskId != null;
 
   return (
-    <Drawer
-      width={980}
-      open={open}
-      onClose={close}
-      destroyOnHidden
-      maskClosable
-      title={null}
-      closable={false}
-      styles={{ body: { padding: 0, background: DT.panel } }}
-    >
-      {taskId ? (
-        <TaskDrawerContent taskId={taskId} variant="drawer" onClose={close} />
-      ) : null}
-    </Drawer>
+    <>
+      <Suspense fallback={null}>
+        <TaskDeepLink />
+      </Suspense>
+      <Drawer
+        width={980}
+        open={open}
+        onClose={close}
+        destroyOnHidden
+        maskClosable
+        title={null}
+        closable={false}
+        styles={{ body: { padding: 0, background: DT.panel } }}
+      >
+        {taskId ? (
+          <TaskDrawerContent taskId={taskId} variant="drawer" onClose={close} />
+        ) : null}
+      </Drawer>
+    </>
   );
 }
 
@@ -533,7 +570,12 @@ function TaskDrawerContent({
   const setAssignees = useSetTaskAssignees();
   const { data: taskLabelsRaw } = useTaskLabels(taskId);
   const setLabels = useSetTaskLabels();
-  const { data: commentsRaw } = useTaskComments(taskId);
+  const {
+    data: commentsRaw,
+    isError: commentsError,
+    isFetching: commentsFetching,
+    refetch: refetchComments,
+  } = useTaskComments(taskId);
   const addComment = useAddTaskComment();
   const { data: referencesRaw } = useTaskReferenceLinks(taskId);
   const addReference = useAddTaskReferenceLink();
@@ -654,6 +696,99 @@ function TaskDrawerContent({
   const [commentText, setCommentText] = useState("");
   // Right panel: switch between Comments and Activity.
   const [rightTab, setRightTab] = useState<"comments" | "activity">("comments");
+
+  // Deep-linked comment (?task=<id>&comment=<id> — mention/comment
+  // notifications). One-shot: once the comments have loaded, scroll the
+  // target row into view and flash it, then clear the focus — consumed even
+  // when the comment no longer exists, so a stale id can't re-trigger on the
+  // next open. The flash is painted imperatively (the row carries a CSS
+  // transition), keeping the effect free of React state updates.
+  const focusCommentId = useTaskDrawer((s) => s.focusCommentId);
+  const clearFocusComment = useTaskDrawer((s) => s.clearFocusComment);
+  const commentsPaneRef = useRef<HTMLDivElement | null>(null);
+  const flashTimerRef = useRef<number | null>(null);
+  const flashedRowRef = useRef<HTMLElement | null>(null);
+  // The notified comment is by definition newer than any cached list, and
+  // nothing on the recipient's client invalidates the comments cache — so on
+  // a miss we force ONE fresh fetch per focus activation before concluding
+  // the comment was deleted. The guard records the fetch's own settlement
+  // (via its promise) rather than trusting the closure's isFetching snapshot
+  // — a StrictMode double-invoke would otherwise give up before the fetch
+  // lands — and is reset on consumption so a re-clicked notification gets a
+  // fresh fetch again.
+  const focusRefetchRef = useRef<{ id: string; settled: boolean } | null>(null);
+  // Reveal the Comments tab for a pending focus — a render-time adjustment
+  // (same idiom as the seed sync above), which converges in one re-render.
+  if (focusCommentId && rightTab !== "comments") setRightTab("comments");
+  const flashColors = {
+    bg: token.colorPrimaryBg,
+    ring: token.colorPrimaryBorder,
+  };
+  useEffect(() => {
+    if (!focusCommentId || rightTab !== "comments") return;
+    // The pane only exists once the task row itself has loaded (the component
+    // early-returns a spinner before that) — don't consume against a DOM that
+    // isn't there yet, even when cached comments are already defined.
+    if (!task) return;
+    // Wait only for the INITIAL load; a settled error is consumable (otherwise
+    // the render-time tab adjustment above would pin the panel to Comments).
+    if (commentsRaw === undefined && !commentsError) return;
+    // Scoped to this pane — a second drawer mount (e.g. Social Studio's) may
+    // render the same rows elsewhere in the DOM.
+    const row = commentsPaneRef.current?.querySelector<HTMLElement>(
+      `[data-comment-id="${CSS.escape(focusCommentId)}"]`,
+    );
+    if (!row) {
+      const guard = focusRefetchRef.current;
+      if (!guard || guard.id !== focusCommentId) {
+        const started = { id: focusCommentId, settled: false };
+        focusRefetchRef.current = started;
+        void refetchComments().finally(() => {
+          started.settled = true;
+        });
+        return;
+      }
+      if (!guard.settled || commentsFetching) return; // fetch still in flight
+      focusRefetchRef.current = null;
+      clearFocusComment(); // fetched fresh and still absent — comment is gone
+      return;
+    }
+    focusRefetchRef.current = null;
+    row.scrollIntoView({ block: "center", behavior: "smooth" });
+    // A superseded flash must not leave the previous row highlighted — its
+    // reset timer is about to be cancelled below.
+    if (flashedRowRef.current && flashedRowRef.current !== row) {
+      flashedRowRef.current.style.background = "transparent";
+      flashedRowRef.current.style.boxShadow = "none";
+    }
+    flashedRowRef.current = row;
+    row.style.background = flashColors.bg;
+    row.style.boxShadow = `inset 0 0 0 1px ${flashColors.ring}`;
+    if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = window.setTimeout(() => {
+      row.style.background = "transparent";
+      row.style.boxShadow = "none";
+      flashedRowRef.current = null;
+    }, 2600);
+    clearFocusComment();
+  }, [
+    focusCommentId,
+    rightTab,
+    task,
+    commentsRaw,
+    commentsError,
+    commentsFetching,
+    refetchComments,
+    clearFocusComment,
+    flashColors.bg,
+    flashColors.ring,
+  ]);
+  useEffect(
+    () => () => {
+      if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
+    },
+    [],
+  );
   const [referenceUrl, setReferenceUrl] = useState("");
   const [referenceTitle, setReferenceTitle] = useState("");
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
@@ -928,7 +1063,7 @@ function TaskDrawerContent({
     // Mentions are derived from the "@Name" tokens the composer inserted.
     const mentions = extractMentionUserIds(commentText, mentionMembers);
     try {
-      await addComment.mutateAsync({
+      const inserted = await addComment.mutateAsync({
         taskId: task.id,
         content: trimmed,
         // `task_comments.mentions` is a uuid[] of mentioned users; setting it
@@ -943,7 +1078,7 @@ function TaskDrawerContent({
         entities: mentionEntities,
         onlyTeams: true,
         message: `Your team was mentioned on task "${task.name}"`,
-        url: `/projects/${task.project_id}`,
+        url: `/projects/${task.project_id}?task=${task.id}&comment=${inserted.id}`,
         teamId: drawerActiveTeam?.id,
       });
       setCommentText("");
@@ -1968,13 +2103,31 @@ function TaskDrawerContent({
             })}
           </div>
 
-          <div style={{ flex: "1 1 auto", overflowY: "auto", padding: "12px 16px 12px" }}>
+          <div
+            ref={commentsPaneRef}
+            style={{ flex: "1 1 auto", overflowY: "auto", padding: "12px 16px 12px" }}
+          >
             {rightTab === "activity" ? (
               <TaskActivity taskId={task.id} />
             ) : comments.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 {comments.map((c) => (
-                  <div key={c.id} style={{ display: "flex", gap: 10 }}>
+                  <div
+                    key={c.id}
+                    data-comment-id={c.id}
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      // Padding + equal negative margin: same layout footprint,
+                      // but the deep-link flash halo (painted imperatively by
+                      // the focus effect above) gets breathing room.
+                      padding: "6px 8px",
+                      margin: "-6px -8px",
+                      borderRadius: 10,
+                      background: "transparent",
+                      transition: "background .6s ease, box-shadow .6s ease",
+                    }}
+                  >
                     <SolidAvatar
                       name={c.author?.name ?? "Unknown"}
                       avatarUrl={c.author?.avatar_url}
