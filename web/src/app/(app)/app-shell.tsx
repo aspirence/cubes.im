@@ -32,6 +32,7 @@ import {
   useCanAuthorContent,
 } from "@/features/team-members/use-team-members";
 import { NotificationsBell } from "./_components/notifications-bell";
+import { GlobalSearch } from "./_components/global-search";
 import { UploadIndicator } from "@/features/uploads/upload-indicator";
 import { getSectionNav, activeSectionKey } from "./_lib/section-nav";
 import {
@@ -1169,6 +1170,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "none" }}>
+            <GlobalSearch />
             {canAuthor ? (
               <Tooltip title="Create task">
                 <button
