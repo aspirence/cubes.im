@@ -131,6 +131,11 @@ export function CreateTaskModal({
   const [projectId, setProjectId] = useState<string | undefined>(defaultProjectId);
   const [name, setName] = useState("");
   const [templateId, setTemplateId] = useState<string | undefined>();
+  // TRUE when the current template came from a project's default rather than a
+  // deliberate pick from the Templates menu. Auto-applied templates must never
+  // survive a switch to a project they aren't the default for — that leak is
+  // how "Video task" subtasks ended up in projects with no default at all.
+  const [templateAutoApplied, setTemplateAutoApplied] = useState(false);
   const [description, setDescription] = useState("");
   const [priorityId, setPriorityId] = useState<string | undefined>();
   // Explicit status choice; undefined falls back to the project's To Do status.
@@ -228,6 +233,7 @@ export function CreateTaskModal({
     setProjectId(defaultProjectId);
     setName("");
     setTemplateId(undefined);
+    setTemplateAutoApplied(false);
     setDescription("");
     setPriorityId(undefined);
     setStatusId(undefined);
@@ -243,12 +249,27 @@ export function CreateTaskModal({
     setSeededOpen(false);
   }
 
-  const applyTemplate = (id: string | undefined) => {
+  const applyTemplate = (id: string | undefined, opts?: { auto?: boolean }) => {
+    const prev = templateList.find((t) => t.id === templateId);
     setTemplateId(id);
+    setTemplateAutoApplied(Boolean(id) && Boolean(opts?.auto));
     const tpl = templateList.find((t) => t.id === id);
     // Deliverable comes from the template only (no standalone picker).
     setDeliverableType(tpl?.deliverable_type ?? undefined);
-    if (!tpl) return;
+    if (!tpl) {
+      // Un-applying: drop what the old template seeded, but only where the
+      // user hasn't edited it since.
+      if (prev?.description && description === prev.description) {
+        setDescription("");
+      }
+      if (
+        prev?.priority &&
+        priorityId === priorityByName.get(prev.priority.toLowerCase())
+      ) {
+        setPriorityId(undefined);
+      }
+      return;
+    }
     if (tpl.description) setDescription(tpl.description);
     if (tpl.priority) {
       const pid = priorityByName.get(tpl.priority.toLowerCase());
@@ -266,7 +287,13 @@ export function CreateTaskModal({
     const proj = projectList.find((p) => p.id === id);
     const defTpl = proj?.default_task_template_id ?? undefined;
     // Templates are top-level-only, so subtask mode skips the auto-apply.
-    if (defTpl && !templateId && kind === "task") applyTemplate(defTpl);
+    if (kind !== "task") return;
+    // A template the user picked by hand survives the switch — that was a
+    // deliberate choice. An auto-applied one is re-derived from the NEW
+    // project: its own default, or nothing. It must never leak across.
+    if (templateId && !templateAutoApplied) return;
+    if (defTpl) applyTemplate(defTpl, { auto: true });
+    else if (templateId) applyTemplate(undefined);
   };
 
   const stepCount = useMemo(() => {
