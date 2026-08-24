@@ -57,18 +57,20 @@ export function useStartTimer() {
   });
 }
 
-/** Stops the caller's running timer on a task, logging the elapsed time. */
+/** Stops the caller's running timer on a task, logging the elapsed time.
+ *  Idempotent: resolves to null when there was nothing left to stop (another
+ *  tab, a status move, or the stale sweep already closed it). */
 export function useStopTimer() {
   const supabase = useMemo(() => createClient(), []);
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (taskId: string): Promise<string> => {
+    mutationFn: async (taskId: string): Promise<string | null> => {
       const { data, error } = await supabase.rpc("stop_timer", {
         p_task_id: taskId,
       });
       if (error) throw error;
-      return data as string;
+      return (data as string | null) ?? null;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["activity"] });

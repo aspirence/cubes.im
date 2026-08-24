@@ -29,22 +29,37 @@ export function TimerWidget() {
   async function onPause() {
     if (!timer || stopTimer.isPending) return;
     try {
-      await stopTimer.mutateAsync(timer.task_id);
-      message.success("Time logged to the task.");
+      const logId = await stopTimer.mutateAsync(timer.task_id);
+      if (logId) message.success("Time logged to the task.");
+      else message.info("The timer was already stopped.");
     } catch {
       message.error("Couldn't stop the timer.");
     }
   }
 
+  // A timer this old is almost certainly forgotten — tint the widget so it
+  // reads as a warning, not a cosy "still tracking" amber.
+  const longRunning =
+    Date.now() - new Date(timer.started_at).getTime() > 4 * 3600_000;
+
   return (
     <div
+      title={
+        longRunning
+          ? "This timer has been running for a long time — stop it if you're not working on the task."
+          : undefined
+      }
       style={{
         margin: "8px 10px 10px",
         padding: "10px 12px",
         borderRadius: 14,
-        background: "linear-gradient(135deg, #fdf6e6 0%, #faeecf 100%)",
-        border: "1px solid #f1e3c0",
-        boxShadow: "0 4px 14px rgba(191, 146, 42, 0.12)",
+        background: longRunning
+          ? "linear-gradient(135deg, #fdeaea 0%, #fadddb 100%)"
+          : "linear-gradient(135deg, #fdf6e6 0%, #faeecf 100%)",
+        border: longRunning ? "1px solid #f0c7c2" : "1px solid #f1e3c0",
+        boxShadow: longRunning
+          ? "0 4px 14px rgba(191, 62, 42, 0.14)"
+          : "0 4px 14px rgba(191, 146, 42, 0.12)",
         display: "flex",
         alignItems: "center",
         gap: 10,
@@ -113,7 +128,7 @@ export function TimerWidget() {
         </button>
       </div>
 
-      {/* Live dot — the widget's "recording" cue. */}
+      {/* Live dot — the widget's "recording" cue; red once it looks forgotten. */}
       <span
         aria-hidden
         style={{
@@ -121,8 +136,10 @@ export function TimerWidget() {
           height: 8,
           flex: "none",
           borderRadius: "50%",
-          background: "#e8b33c",
-          boxShadow: "0 0 0 4px rgba(232, 179, 60, 0.22)",
+          background: longRunning ? "#d64545" : "#e8b33c",
+          boxShadow: longRunning
+            ? "0 0 0 4px rgba(214, 69, 69, 0.22)"
+            : "0 0 0 4px rgba(232, 179, 60, 0.22)",
         }}
       />
     </div>
@@ -157,8 +174,9 @@ export function TaskTimerButton({
     if (busy) return;
     try {
       if (running) {
-        await stop.mutateAsync(taskId);
-        message.success("Time logged to the task.");
+        const logId = await stop.mutateAsync(taskId);
+        if (logId) message.success("Time logged to the task.");
+        else message.info("The timer was already stopped.");
       } else {
         await start.mutateAsync(taskId);
       }

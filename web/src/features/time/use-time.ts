@@ -226,14 +226,14 @@ export interface StopTimerInput {
 /**
  * Stops the current user's timer for a task via the `stop_timer` RPC; the RPC
  * computes elapsed time, writes a work-log, and clears the timer. Returns the
- * new work-log id.
+ * new work-log id, or null when the timer was already stopped (idempotent).
  */
 export function useStopTimer() {
   const supabase = useMemo(() => createClient(), []);
   const invalidate = useInvalidateTime();
 
   return useMutation({
-    mutationFn: async (input: StopTimerInput): Promise<string> => {
+    mutationFn: async (input: StopTimerInput): Promise<string | null> => {
       const { data, error } = await supabase.rpc("stop_timer", {
         p_task_id: input.taskId,
         p_description: input.description,
@@ -241,7 +241,7 @@ export function useStopTimer() {
       });
 
       if (error) throw error;
-      return data as string;
+      return (data as string | null) ?? null;
     },
     onSuccess: (_data, input) => invalidate(input.taskId),
   });
