@@ -11,6 +11,7 @@ import {
   Empty,
   Input,
   Modal,
+  Segmented,
   Select,
   Skeleton,
   Space,
@@ -50,6 +51,7 @@ import {
   useReorderTasks,
   applyTaskOrder,
   tasksListKey,
+  taskStatusChangedMs,
   type TaskWithRelations,
   type TaskAssigneeEmbed,
   type TaskOrderPatch,
@@ -530,6 +532,41 @@ interface ColumnProps {
  * is a personal viewing preference, and storing it on the project would hide
  * the column for every teammate too.
  */
+/** How each board column orders its cards. */
+type BoardSortMode = "recent" | "manual";
+
+/**
+ * The board's card ordering, remembered per project in localStorage (same
+ * reasoning as collapsed columns: a personal viewing preference, not shared
+ * project state). "recent" — the default — floats the tasks whose STATUS
+ * changed most recently to the top of each column (status_changed_at, bumped
+ * by trigger only on real status moves); "manual" keeps the classic
+ * drag-to-order behaviour.
+ */
+function useBoardSort(projectId: string) {
+  const storageKey = `cubes.board.sort:${projectId}`;
+  const [mode, setMode] = useState<BoardSortMode>(() => {
+    if (typeof window === "undefined") return "recent";
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      return raw === "manual" ? "manual" : "recent";
+    } catch {
+      return "recent";
+    }
+  });
+
+  const set = (next: BoardSortMode) => {
+    setMode(next);
+    try {
+      window.localStorage.setItem(storageKey, next);
+    } catch {
+      // Private mode / quota — the session still works, it just won't persist.
+    }
+  };
+
+  return [mode, set] as const;
+}
+
 function useCollapsedColumns(projectId: string) {
   const storageKey = `cubes.board.collapsed:${projectId}`;
   const [collapsed, setCollapsed] = useState<Set<string>>(() => {
@@ -1044,6 +1081,7 @@ export function BoardTab({ projectId }: { projectId: string }) {
   const [renamingStatus, setRenamingStatus] = useState<BoardStatus | null>(null);
   const [statusManagerOpen, setStatusManagerOpen] = useState(false);
   const [collapsedColumns, setColumnCollapsed] = useCollapsedColumns(projectId);
+  const [boardSort, setBoardSort] = useBoardSort(projectId);
   const [statusDraft, setStatusDraft] = useState("");
 
   const memberOptions = useMemo<MemberOption[]>(
@@ -1091,9 +1129,11 @@ export function BoardTab({ projectId }: { projectId: string }) {
     });
   }, [tasksQuery.data]);
 
-  // Group tasks by status_id, each group ordered by sort_order. Tasks whose
-  // status_id is null (or points at an unknown status) bucket under the first
-  // column so they remain reachable.
+  // Group tasks by status_id. Tasks whose status_id is null (or points at an
+  // unknown status) bucket under the first column so they remain reachable.
+  // Ordering per column: "recent" floats the newest STATUS moves to the top
+  // (status_changed_at only — other edits don't shuffle the board); "manual"
+  // is the classic drag order.
   const tasksByStatus = useMemo(() => {
     const map = new Map<string, BoardTask[]>();
     for (const s of statuses) map.set(s.id, []);
@@ -1108,10 +1148,18 @@ export function BoardTab({ projectId }: { projectId: string }) {
       map.get(key)!.push(task);
     }
     for (const list of map.values()) {
-      list.sort((a, b) => a.sort_order - b.sort_order);
+      if (boardSort === "recent") {
+        list.sort(
+          (a, b) =>
+            taskStatusChangedMs(b) - taskStatusChangedMs(a) ||
+            a.sort_order - b.sort_order,
+        );
+      } else {
+        list.sort((a, b) => a.sort_order - b.sort_order);
+      }
     }
     return map;
-  }, [statuses, allTasks]);
+  }, [statuses, allTasks, boardSort]);
 
   const taskById = useMemo(() => {
     const m = new Map<string, BoardTask>();
@@ -1249,6 +1297,11 @@ export function BoardTab({ projectId }: { projectId: string }) {
     const sourceColumnId = taskById.get(movedId)?.status_id ?? null;
     const statusChangedForMoved = targetColumnId !== sourceColumnId;
 
+    // Status-recency ordering owns the in-column sequence: a same-column drop
+    // has nothing to persist (the card would snap back to its recency slot
+    // anyway). Cross-column drops still persist — that's a status change.
+    if (boardSort === "recent" && !statusChangedForMoved) return;
+
     const updates: TaskOrderPatch[] = [];
     orderedIds.forEach((id, index) => {
       const t = taskById.get(id);
@@ -1372,6 +1425,29 @@ export function BoardTab({ projectId }: { projectId: string }) {
       onDragEnd={handleDragEnd}
       onDragCancel={() => setActiveId(null)}
     >
+      {/* Board toolbar — how cards order themselves inside each column. */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          alignItems: "center",
+          gap: 8,
+          paddingBottom: 8,
+        }}
+      >
+        <Tooltip title='"Recent status" floats the tasks whose status changed most recently to the top of each column.'>
+          <Segmented
+            size="small"
+            value={boardSort}
+            onChange={(v) => setBoardSort(v as BoardSortMode)}
+            options={[
+              { label: "Recent status", value: "recent" },
+              { label: "Manual", value: "manual" },
+            ]}
+          />
+        </Tooltip>
+      </div>
+
       <div
         className="wl-hscroll"
         style={{
@@ -1381,7 +1457,7 @@ export function BoardTab({ projectId }: { projectId: string }) {
           overflowX: "auto",
           paddingBottom: 8,
           minHeight: 480,
-          height: "calc(100vh - 260px)",
+          height: "calc(100vh - 292px)",
         }}
       >
         {statuses.map((status) => (

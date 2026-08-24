@@ -10,7 +10,12 @@ import { createClient } from "@/lib/supabase/client";
 import { useActiveTrack } from "@/features/tracks/use-tracks";
 import type { Database } from "@/types/database";
 
-export type Task = Database["public"]["Tables"]["tasks"]["Row"];
+/** Task row + status_changed_at (migration 20261123; types not regenerated —
+ *  the Supabase CLI isn't linked here). Bumped by trigger only when status_id
+ *  actually changes; feeds the board's "recent status" ordering. */
+export type Task = Database["public"]["Tables"]["tasks"]["Row"] & {
+  status_changed_at?: string | null;
+};
 export type TaskInsert = Database["public"]["Tables"]["tasks"]["Insert"];
 export type TaskUpdate = Database["public"]["Tables"]["tasks"]["Update"];
 
@@ -62,6 +67,13 @@ export type TaskWithRelations = Task & {
   /** PostgREST count aggregate — `[{ count: N }]` (empty when no comments). */
   comments: { count: number }[];
 };
+
+/** When the task last changed status, as epoch ms (created_at for rows that
+ *  never moved — a fresh task's initial status counts as its last move). */
+export function taskStatusChangedMs(t: TaskWithRelations): number {
+  const ms = new Date(t.status_changed_at ?? t.created_at).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
 
 export interface UseTasksOptions {
   /** Show only archived tasks. Default (false) hides archived tasks. */
