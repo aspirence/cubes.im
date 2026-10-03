@@ -260,10 +260,6 @@ export async function getAttachmentSignedUrl(
   return data.signedUrl;
 }
 
-/** 25 MB — comfortably above a phone screenshot, below anything that would
- *  stall a chat thread. */
-export const CHAT_UPLOAD_MAX_BYTES = 25 * 1024 * 1024;
-
 /**
  * Uploads a chat attachment (image OR document) to the PUBLIC avatars bucket
  * under the caller's own folder and returns its public URL.
@@ -271,6 +267,10 @@ export const CHAT_UPLOAD_MAX_BYTES = 25 * 1024 * 1024;
  * Separate from `useUploadInlineImage`, which is images-only because it embeds
  * into rich text; a chat message renders non-images as download chips, so this
  * one accepts them.
+ *
+ * No size cap of its own: like every other upload, the only limit is the
+ * Supabase project's Storage "upload file size limit", which rejects anything
+ * larger with EntityTooLarge.
  */
 export function useUploadChatFile() {
   const supabase = useMemo(() => createClient(), []);
@@ -283,8 +283,6 @@ export function useUploadChatFile() {
       } = await supabase.auth.getUser();
       if (userError) throw userError;
       if (!user) throw new Error("Not authenticated");
-      if (file.size > CHAT_UPLOAD_MAX_BYTES)
-        throw new Error(`${file.name} is larger than 25 MB.`);
 
       const ext = fileExtension(file.name) || "bin";
       const path = `${user.id}/chat-${Date.now()}-${Math.round(Math.random() * 1e6)}.${ext}`;

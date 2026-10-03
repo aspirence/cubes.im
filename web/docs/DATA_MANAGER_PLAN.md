@@ -45,7 +45,7 @@ Design rules that make it **portable and importable anywhere**:
   would otherwise produce silently truncated backups.
 - Excluded in v1 (documented, candidates for v2): comments, attachments/files
   (storage objects), time logs, automations, project views, app data (docs,
-  video review, social studio, portals), clients, HR.
+  video review, content studio, portals), clients, HR.
 - `validateBackup()` checks the whole file before anything is written:
   format/version, required fields, duplicate lids, unknown parent/folder
   references, and subtask cycles — errors name the offending element.

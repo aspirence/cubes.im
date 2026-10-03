@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { App, Button, Tooltip, theme } from "antd";
+import { useMemo, useState } from "react";
+import { App, Button, Select, Tooltip, theme } from "antd";
 import { MIcon } from "./m-icon";
+import { NO_PROJECT, useCrmScope } from "../_lib/crm-scope";
 
 /**
  * The bar that appears once rows are selected.
@@ -104,4 +105,108 @@ export function useBulkRun(onDone?: () => void) {
   };
 
   return { run, busy };
+}
+
+/** A BulkMoveToProject option — `label` stays a plain string so search still works. */
+type MoveOption = { value: string; label: string; color: string | null; disabled?: boolean };
+
+/**
+ * The bulk bar's "Move to project" picker: files every selected record under
+ * one project, or under none. An action, not a field — it never holds a value,
+ * so the same project can be picked again for the next batch. The project the
+ * view is already on is disabled (moving there is a no-op). Hidden when the
+ * team has no projects, since there is nowhere to move anything.
+ *
+ * `onMove` gets the project id (null = no project) and its name for the
+ * result message.
+ */
+export function BulkMoveToProject({
+  disabled,
+  onMove,
+}: {
+  disabled?: boolean;
+  onMove: (projectId: string | null, name: string) => void;
+}) {
+  const { token } = theme.useToken();
+  const { projects, selection } = useCrmScope();
+
+  const options = useMemo(
+    () => [
+      {
+        label: "Projects",
+        options: projects.map<MoveOption>((p) => ({
+          value: p.id,
+          label: p.name,
+          color: p.color,
+          disabled: p.id === selection,
+        })),
+      },
+      {
+        label: "Unfiled",
+        options: [
+          {
+            value: NO_PROJECT,
+            label: "No project",
+            color: null,
+            disabled: selection === NO_PROJECT,
+          } satisfies MoveOption,
+        ],
+      },
+    ],
+    [projects, selection],
+  );
+
+  if (projects.length === 0) return null;
+
+  return (
+    <Select<string>
+      size="small"
+      showSearch
+      optionFilterProp="label"
+      disabled={disabled}
+      // Always empty: picking is the action, and the next batch starts fresh.
+      value={null}
+      placeholder={
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: token.colorText }}>
+          <MIcon name="drive_file_move" size={15} />
+          Move to project
+        </span>
+      }
+      aria-label="Move to project"
+      popupMatchSelectWidth={false}
+      style={{ width: 170 }}
+      options={options}
+      onChange={(v) => {
+        if (!v) return;
+        if (v === NO_PROJECT) {
+          onMove(null, "No project");
+          return;
+        }
+        onMove(v, projects.find((p) => p.id === v)?.name ?? "another project");
+      }}
+      optionRender={(opt) => {
+        const d = opt.data as unknown as MoveOption;
+        return (
+          <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            {d.value === NO_PROJECT ? (
+              <MIcon name="folder_off" size={15} color={token.colorTextSecondary} />
+            ) : (
+              <span
+                style={{
+                  width: 9,
+                  height: 9,
+                  borderRadius: 3,
+                  background: d.color ?? token.colorTextQuaternary,
+                  flex: "none",
+                }}
+              />
+            )}
+            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {d.label}
+            </span>
+          </span>
+        );
+      }}
+    />
+  );
 }

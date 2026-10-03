@@ -5,6 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/types/database";
 import { useActiveTeam } from "@/features/teams/use-teams";
+import type { Dayjs } from "dayjs";
+import { fetchDailyReport, type DailyReport } from "./daily-report";
 
 type Fn = Database["public"]["Functions"];
 
@@ -120,5 +122,31 @@ export function useReportTimeLogs(from?: string, to?: string) {
       if (error) throw error;
       return (data as ReportTimeLog[] | null) ?? [];
     },
+  });
+}
+
+/**
+ * The daily company report for `from`..`to` (inclusive local days) — see
+ * `fetchDailyReport`. Disabled until the team is known.
+ */
+export function useDailyReport(from: Dayjs, to: Dayjs) {
+  const supabase = useMemo(() => createClient(), []);
+  const { data: team } = useActiveTeam();
+  const teamId = team?.id;
+  const fromKey = from.format("YYYY-MM-DD");
+  const toKey = to.format("YYYY-MM-DD");
+
+  return useQuery({
+    queryKey: ["report-daily", teamId, fromKey, toKey] as const,
+    enabled: Boolean(teamId),
+    // A report on today is still filling in; past days are settled.
+    staleTime: 60_000,
+    queryFn: (): Promise<DailyReport> =>
+      fetchDailyReport(supabase, {
+        teamId: teamId as string,
+        teamName: team?.name ?? "Team",
+        from,
+        to,
+      }),
   });
 }

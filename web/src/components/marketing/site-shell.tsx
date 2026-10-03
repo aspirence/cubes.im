@@ -106,7 +106,7 @@ export function MarketingFooter() {
           </Link>
           <p className="foot-tag">
             The open-source all-in-one workspace for agencies — projects, video
-            review, client portals and social publishing behind one login.
+            review, client portals and content publishing behind one login.
           </p>
           <a className="foot-gh" href={GITHUB_URL} target="_blank" rel="noreferrer">
             <GitHubMark size={15} /> Star on GitHub

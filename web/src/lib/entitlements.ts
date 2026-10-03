@@ -53,7 +53,7 @@ export const PAID: Entitlements = {
 /** App keys locked behind a paid plan on the Cloud product. */
 export const PREMIUM_APP_KEYS = [
   "video-review",
-  "social-studio",
+  "content-studio",
   "client-portals",
   "hr",
 ] as const;

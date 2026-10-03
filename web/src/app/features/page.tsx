@@ -49,7 +49,7 @@ const GROUPS: {
     title: "Grow & run",
     desc: "The tools around the work — clients, content, people and AI.",
     items: [
-      { icon: "campaign", t: "Social studio", d: "Plan, compose and schedule across 14 platforms with real brand previews." },
+      { icon: "campaign", t: "Content studio", d: "Plan, compose and schedule posts, articles, newsletters and video — with real brand previews across 14 social platforms." },
       { icon: "handshake", t: "Client portals", d: "A private link where clients see progress, request work and check billing." },
       { icon: "smart_toy", t: "AI agents & MCP", d: "Break down tasks, draft standups, and connect Claude directly to your workspace." },
       { icon: "badge", t: "HR suite", d: "People, attendance, leave and payroll — built in, not bolted on." },
@@ -69,7 +69,7 @@ export default function FeaturesPage() {
           <span className="fx-grad">One workspace.</span>
         </h1>
         <p className="lead">
-          Cubes folds planning, docs, review, social, clients and people ops into
+          Cubes folds planning, docs, review, content, clients and people ops into
           a single fast workspace — so the work and everything around it live
           together.
         </p>

@@ -452,6 +452,7 @@ export type Database = {
           id: string
           linkedin_url: string | null
           name: string
+          project_id: string | null
           team_id: string
           updated_at: string
         }
@@ -474,6 +475,7 @@ export type Database = {
           id?: string
           linkedin_url?: string | null
           name: string
+          project_id?: string | null
           team_id: string
           updated_at?: string
         }
@@ -496,10 +498,18 @@ export type Database = {
           id?: string
           linkedin_url?: string | null
           name?: string
+          project_id?: string | null
           team_id?: string
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "app_crm_companies_project_fk"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "app_crm_companies_team_id_fk"
             columns: ["team_id"]
@@ -545,6 +555,7 @@ export type Database = {
           last_name: string
           linkedin_url: string | null
           phone: string | null
+          project_id: string | null
           team_id: string
           updated_at: string
         }
@@ -562,6 +573,7 @@ export type Database = {
           last_name?: string
           linkedin_url?: string | null
           phone?: string | null
+          project_id?: string | null
           team_id: string
           updated_at?: string
         }
@@ -579,10 +591,18 @@ export type Database = {
           last_name?: string
           linkedin_url?: string | null
           phone?: string | null
+          project_id?: string | null
           team_id?: string
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "app_crm_people_project_fk"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "app_crm_people_team_id_fk"
             columns: ["team_id"]
@@ -624,6 +644,9 @@ export type Database = {
           position: number
           stage_id: string | null
           status: string
+          project_id: string | null
+          source: string | null
+          source_ref: Json
           team_id: string
           updated_at: string
         }
@@ -644,6 +667,9 @@ export type Database = {
           position?: number
           stage_id?: string | null
           status?: string
+          project_id?: string | null
+          source?: string | null
+          source_ref?: Json
           team_id: string
           updated_at?: string
         }
@@ -664,10 +690,20 @@ export type Database = {
           position?: number
           stage_id?: string | null
           status?: string
+          project_id?: string | null
+          source?: string | null
+          source_ref?: Json
           team_id?: string
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "app_crm_deals_project_fk"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "app_crm_deals_team_id_fk"
             columns: ["team_id"]
@@ -4480,15 +4516,16 @@ export type Database = {
           },
         ]
       }
-      app_social_studio_channels: {
+      app_content_studio_destinations: {
         Row: {
           avatar_url: string | null
           connected: boolean
           created_at: string
           created_by: string | null
-          followers_count: number
+          audience_size: number
           handle: string
           id: string
+          kind: string
           name: string
           platform: string
           project_id: string | null
@@ -4501,9 +4538,10 @@ export type Database = {
           connected?: boolean
           created_at?: string
           created_by?: string | null
-          followers_count?: number
+          audience_size?: number
           handle: string
           id?: string
+          kind?: string
           name: string
           platform: string
           project_id?: string | null
@@ -4516,9 +4554,10 @@ export type Database = {
           connected?: boolean
           created_at?: string
           created_by?: string | null
-          followers_count?: number
+          audience_size?: number
           handle?: string
           id?: string
+          kind?: string
           name?: string
           platform?: string
           project_id?: string | null
@@ -4528,21 +4567,21 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "app_social_studio_channels_team_fk"
+            foreignKeyName: "app_content_studio_destinations_team_fk"
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "app_social_studio_channels_project_fk"
+            foreignKeyName: "app_content_studio_destinations_project_fk"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "app_social_studio_channels_created_by_fk"
+            foreignKeyName: "app_content_studio_destinations_created_by_fk"
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "users"
@@ -4550,7 +4589,7 @@ export type Database = {
           },
         ]
       }
-      app_social_studio_campaigns: {
+      app_content_studio_campaigns: {
         Row: {
           brief: string | null
           created_at: string
@@ -4595,21 +4634,21 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "app_social_studio_campaigns_team_fk"
+            foreignKeyName: "app_content_studio_campaigns_team_fk"
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "app_social_studio_campaigns_project_fk"
+            foreignKeyName: "app_content_studio_campaigns_project_fk"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "app_social_studio_campaigns_created_by_fk"
+            foreignKeyName: "app_content_studio_campaigns_created_by_fk"
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "users"
@@ -4617,9 +4656,10 @@ export type Database = {
           },
         ]
       }
-      app_social_studio_routines: {
+      app_content_studio_routines: {
         Row: {
           active: boolean
+          assignee_team_member_ids: string[]
           campaign_id: string | null
           created_at: string
           created_by: string | null
@@ -4629,6 +4669,7 @@ export type Database = {
           ends_on: string | null
           id: string
           interval_value: number
+          label_ids: string[]
           last_run_at: string | null
           name: string
           next_run_at: string | null
@@ -4636,10 +4677,12 @@ export type Database = {
           schedule_type: string
           starts_on: string
           team_id: string
+          timezone: string | null
           updated_at: string
         }
         Insert: {
           active?: boolean
+          assignee_team_member_ids?: string[]
           campaign_id?: string | null
           created_at?: string
           created_by?: string | null
@@ -4649,6 +4692,7 @@ export type Database = {
           ends_on?: string | null
           id?: string
           interval_value?: number
+          label_ids?: string[]
           last_run_at?: string | null
           name: string
           next_run_at?: string | null
@@ -4656,10 +4700,12 @@ export type Database = {
           schedule_type?: string
           starts_on?: string
           team_id: string
+          timezone?: string | null
           updated_at?: string
         }
         Update: {
           active?: boolean
+          assignee_team_member_ids?: string[]
           campaign_id?: string | null
           created_at?: string
           created_by?: string | null
@@ -4669,6 +4715,7 @@ export type Database = {
           ends_on?: string | null
           id?: string
           interval_value?: number
+          label_ids?: string[]
           last_run_at?: string | null
           name?: string
           next_run_at?: string | null
@@ -4676,79 +4723,89 @@ export type Database = {
           schedule_type?: string
           starts_on?: string
           team_id?: string
+          timezone?: string | null
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "app_social_studio_routines_team_fk"
+            foreignKeyName: "app_content_studio_routines_team_fk"
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "app_social_studio_routines_project_fk"
+            foreignKeyName: "app_content_studio_routines_project_fk"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "app_social_studio_routines_campaign_fk"
+            foreignKeyName: "app_content_studio_routines_campaign_fk"
             columns: ["campaign_id"]
             isOneToOne: false
-            referencedRelation: "app_social_studio_campaigns"
+            referencedRelation: "app_content_studio_campaigns"
             referencedColumns: ["id"]
           },
         ]
       }
-      app_social_studio_routine_steps: {
+      app_content_studio_routine_steps: {
         Row: {
           assignee_team_member_id: string | null
           depends_on_step_id: string | null
+          description: string | null
           due_offset_days: number
           id: string
           kind: string
           platform: string | null
           position: number
+          reference_url: string | null
           routine_id: string
+          start_offset_days: number | null
           team_id: string
           title: string
         }
         Insert: {
           assignee_team_member_id?: string | null
           depends_on_step_id?: string | null
+          description?: string | null
           due_offset_days?: number
           id?: string
           kind?: string
           platform?: string | null
           position?: number
+          reference_url?: string | null
           routine_id: string
+          start_offset_days?: number | null
           team_id: string
           title: string
         }
         Update: {
           assignee_team_member_id?: string | null
           depends_on_step_id?: string | null
+          description?: string | null
           due_offset_days?: number
           id?: string
           kind?: string
           platform?: string | null
           position?: number
+          reference_url?: string | null
           routine_id?: string
+          start_offset_days?: number | null
           team_id?: string
           title?: string
         }
         Relationships: [
           {
-            foreignKeyName: "app_social_studio_routine_steps_routine_fk"
+            foreignKeyName: "app_content_studio_routine_steps_routine_fk"
             columns: ["routine_id"]
             isOneToOne: false
-            referencedRelation: "app_social_studio_routines"
+            referencedRelation: "app_content_studio_routines"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "app_social_studio_routine_steps_member_fk"
+            foreignKeyName: "app_content_studio_routine_steps_member_fk"
             columns: ["assignee_team_member_id"]
             isOneToOne: false
             referencedRelation: "team_members"
@@ -4756,11 +4813,12 @@ export type Database = {
           },
         ]
       }
-      app_social_studio_routine_tasks: {
+      app_content_studio_routine_tasks: {
         Row: {
           created_at: string
           id: string
           occurrence_date: string
+          role: string
           routine_id: string
           step_id: string | null
           task_id: string
@@ -4770,6 +4828,7 @@ export type Database = {
           created_at?: string
           id?: string
           occurrence_date: string
+          role?: string
           routine_id: string
           step_id?: string | null
           task_id: string
@@ -4779,6 +4838,7 @@ export type Database = {
           created_at?: string
           id?: string
           occurrence_date?: string
+          role?: string
           routine_id?: string
           step_id?: string | null
           task_id?: string
@@ -4786,14 +4846,14 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "app_social_studio_routine_tasks_routine_fk"
+            foreignKeyName: "app_content_studio_routine_tasks_routine_fk"
             columns: ["routine_id"]
             isOneToOne: false
-            referencedRelation: "app_social_studio_routines"
+            referencedRelation: "app_content_studio_routines"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "app_social_studio_routine_tasks_task_fk"
+            foreignKeyName: "app_content_studio_routine_tasks_task_fk"
             columns: ["task_id"]
             isOneToOne: false
             referencedRelation: "tasks"
@@ -4801,12 +4861,59 @@ export type Database = {
           },
         ]
       }
-      app_social_studio_posts: {
+      app_content_studio_tasks: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          source: string
+          task_id: string
+          team_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          source?: string
+          task_id: string
+          team_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          source?: string
+          task_id?: string
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_content_studio_tasks_created_by_fk"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_content_studio_tasks_task_fk"
+            columns: ["task_id"]
+            isOneToOne: true
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_content_studio_tasks_team_fk"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_content_studio_items: {
         Row: {
           approval_required: boolean
           campaign_id: string | null
-          caption: string
+          body: string
           clicks: number
+          content_type: string
           created_at: string
           created_by: string | null
           engagements: number
@@ -4825,8 +4932,9 @@ export type Database = {
         Insert: {
           approval_required?: boolean
           campaign_id?: string | null
-          caption: string
+          body: string
           clicks?: number
+          content_type?: string
           created_at?: string
           created_by?: string | null
           engagements?: number
@@ -4845,8 +4953,9 @@ export type Database = {
         Update: {
           approval_required?: boolean
           campaign_id?: string | null
-          caption?: string
+          body?: string
           clicks?: number
+          content_type?: string
           created_at?: string
           created_by?: string | null
           engagements?: number
@@ -4864,35 +4973,35 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "app_social_studio_posts_team_fk"
+            foreignKeyName: "app_content_studio_items_team_fk"
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "app_social_studio_posts_project_fk"
+            foreignKeyName: "app_content_studio_items_project_fk"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "app_social_studio_posts_task_fk"
+            foreignKeyName: "app_content_studio_items_task_fk"
             columns: ["task_id"]
             isOneToOne: false
             referencedRelation: "tasks"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "app_social_studio_posts_campaign_fk"
+            foreignKeyName: "app_content_studio_items_campaign_fk"
             columns: ["campaign_id"]
             isOneToOne: false
-            referencedRelation: "app_social_studio_campaigns"
+            referencedRelation: "app_content_studio_campaigns"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "app_social_studio_posts_created_by_fk"
+            foreignKeyName: "app_content_studio_items_created_by_fk"
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "users"
@@ -4900,83 +5009,181 @@ export type Database = {
           },
         ]
       }
-      app_social_studio_post_channels: {
+      app_content_studio_item_destinations: {
         Row: {
-          channel_id: string
+          destination_id: string
           created_at: string
           id: string
-          post_id: string
+          item_id: string
           sort_order: number
-          variant_caption: string | null
+          variant_body: string | null
         }
         Insert: {
-          channel_id: string
+          destination_id: string
           created_at?: string
           id?: string
-          post_id: string
+          item_id: string
           sort_order?: number
-          variant_caption?: string | null
+          variant_body?: string | null
         }
         Update: {
-          channel_id?: string
+          destination_id?: string
           created_at?: string
           id?: string
-          post_id?: string
+          item_id?: string
           sort_order?: number
-          variant_caption?: string | null
+          variant_body?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "app_social_studio_post_channels_post_fk"
-            columns: ["post_id"]
+            foreignKeyName: "app_content_studio_item_destinations_item_fk"
+            columns: ["item_id"]
             isOneToOne: false
-            referencedRelation: "app_social_studio_posts"
+            referencedRelation: "app_content_studio_items"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "app_social_studio_post_channels_channel_fk"
-            columns: ["channel_id"]
+            foreignKeyName: "app_content_studio_item_destinations_destination_fk"
+            columns: ["destination_id"]
             isOneToOne: false
-            referencedRelation: "app_social_studio_channels"
+            referencedRelation: "app_content_studio_destinations"
             referencedColumns: ["id"]
           },
         ]
       }
-      app_social_studio_post_assets: {
+      app_content_studio_item_assets: {
         Row: {
           created_at: string
           file_id: string
           id: string
-          post_id: string
+          item_id: string
           sort_order: number
         }
         Insert: {
           created_at?: string
           file_id: string
           id?: string
-          post_id: string
+          item_id: string
           sort_order?: number
         }
         Update: {
           created_at?: string
           file_id?: string
           id?: string
-          post_id?: string
+          item_id?: string
           sort_order?: number
         }
         Relationships: [
           {
-            foreignKeyName: "app_social_studio_post_assets_post_fk"
-            columns: ["post_id"]
+            foreignKeyName: "app_content_studio_item_assets_item_fk"
+            columns: ["item_id"]
             isOneToOne: false
-            referencedRelation: "app_social_studio_posts"
+            referencedRelation: "app_content_studio_items"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "app_social_studio_post_assets_file_fk"
+            foreignKeyName: "app_content_studio_item_assets_file_fk"
             columns: ["file_id"]
             isOneToOne: false
             referencedRelation: "app_files_files"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_google_connections: {
+        Row: {
+          connected_by: string | null
+          created_at: string
+          enabled: boolean
+          google_account_email: string | null
+          google_sub: string
+          has_refresh_token: boolean
+          id: string
+          last_test_at: string | null
+          last_test_error: string | null
+          last_test_ok: boolean | null
+          revoked_at: string | null
+          scopes: string
+          team_id: string
+          updated_at: string
+        }
+        Insert: {
+          connected_by?: string | null
+          created_at?: string
+          enabled?: boolean
+          google_account_email?: string | null
+          google_sub: string
+          has_refresh_token?: boolean
+          id?: string
+          last_test_at?: string | null
+          last_test_error?: string | null
+          last_test_ok?: boolean | null
+          revoked_at?: string | null
+          scopes: string
+          team_id: string
+          updated_at?: string
+        }
+        Update: {
+          connected_by?: string | null
+          created_at?: string
+          enabled?: boolean
+          google_account_email?: string | null
+          google_sub?: string
+          has_refresh_token?: boolean
+          id?: string
+          last_test_at?: string | null
+          last_test_error?: string | null
+          last_test_ok?: boolean | null
+          revoked_at?: string | null
+          scopes?: string
+          team_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_google_connections_team_fk"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_google_connections_connected_by_fk"
+            columns: ["connected_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_google_secrets: {
+        Row: {
+          access_token: string | null
+          access_token_expires_at: string | null
+          connection_id: string
+          refresh_token: string
+          updated_at: string
+        }
+        Insert: {
+          access_token?: string | null
+          access_token_expires_at?: string | null
+          connection_id: string
+          refresh_token: string
+          updated_at?: string
+        }
+        Update: {
+          access_token?: string | null
+          access_token_expires_at?: string | null
+          connection_id?: string
+          refresh_token?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_google_secrets_connection_fk"
+            columns: ["connection_id"]
+            isOneToOne: true
+            referencedRelation: "app_google_connections"
             referencedColumns: ["id"]
           },
         ]
@@ -5809,6 +6016,45 @@ export type Database = {
         }
         Relationships: []
       }
+      task_recurring_occurrences: {
+        Row: {
+          created_at: string
+          id: string
+          occurrence_date: string
+          schedule_id: string
+          task_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          occurrence_date: string
+          schedule_id: string
+          task_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          occurrence_date?: string
+          schedule_id?: string
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_recurring_occurrences_schedule_id_fk"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "task_recurring_schedules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_recurring_occurrences_task_id_fk"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       task_recurring_schedules: {
         Row: {
           active: boolean
@@ -5816,12 +6062,15 @@ export type Database = {
           created_by: string | null
           day_of_month: number | null
           day_of_week: number | null
+          ends_on: string | null
           id: string
           interval_value: number
           last_created_at: string | null
           next_run_at: string | null
           schedule_type: string
+          starts_on: string
           task_id: string
+          timezone: string | null
         }
         Insert: {
           active?: boolean
@@ -5829,12 +6078,15 @@ export type Database = {
           created_by?: string | null
           day_of_month?: number | null
           day_of_week?: number | null
+          ends_on?: string | null
           id?: string
           interval_value?: number
           last_created_at?: string | null
           next_run_at?: string | null
           schedule_type: string
+          starts_on?: string
           task_id: string
+          timezone?: string | null
         }
         Update: {
           active?: boolean
@@ -5842,12 +6094,15 @@ export type Database = {
           created_by?: string | null
           day_of_month?: number | null
           day_of_week?: number | null
+          ends_on?: string | null
           id?: string
           interval_value?: number
           last_created_at?: string | null
           next_run_at?: string | null
           schedule_type?: string
+          starts_on?: string
           task_id?: string
+          timezone?: string | null
         }
         Relationships: [
           {

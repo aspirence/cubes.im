@@ -24,7 +24,9 @@ import {
 import { MIcon } from "../_components/m-icon";
 import { CRM_ACCENT, NO_STAGE_COLOR } from "../_components/entity-meta";
 import { CONTENT_GRID, TILE_GRID } from "../_components/layout";
+import { ScopedEmptyState } from "../_components/crm-scope-bar";
 import { closingWithin } from "../_lib/deal-metrics";
+import { useCrmScope, useCrmScopeResolver } from "../_lib/crm-scope";
 import {
   CrmPageHeader,
   CrmToolbar,
@@ -110,7 +112,7 @@ export default function CrmReportsPage() {
   } = useCrmCompanies();
   const {
     data: tasks,
-    isLoading: tasksLoading,
+    isLoading: tasksFetching,
     isError: tasksError,
     refetch: refetchTasks,
   } = useCrmTasks();
@@ -119,6 +121,11 @@ export default function CrmReportsPage() {
     useCrmCampaignSpend();
   const { data: members } = useTeamMembers();
   const { data: labels } = useCrmLabels();
+  const { isScoped, isNoProject, project, inScope } = useCrmScope();
+  // Tasks reach a project through their targets, so they need the resolver;
+  // while it is still cold under a scope the tile must not flash a zero.
+  const { ready: scopeReady, targetsInScope } = useCrmScopeResolver();
+  const tasksLoading = tasksFetching || (isScoped && !scopeReady);
 
   const [range, setRange] = useState<RangeValue>("ALL");
   const [ownerFilter, setOwnerFilter] = useState<string>("ALL");
@@ -142,10 +149,18 @@ export default function CrmReportsPage() {
    * filtering it to one owner would leave it a single bar answering nothing.
    * `ownedDeals` is owner-scoped only — "closing in 30 days" looks forward,
    * and a lead created four months ago still closes next week.
+   *
+   * All three sit under the project scope: `teamLive` is the whole
+   * workspace's pipeline and only the empty states read it, to tell "nothing
+   * in this project" apart from "nothing at all".
    */
-  const allLive = useMemo(
+  const teamLive = useMemo(
     () => (deals ?? []).filter((d) => !d.deleted_at),
     [deals],
+  );
+  const allLive = useMemo(
+    () => teamLive.filter((d) => inScope(d.project_id)),
+    [teamLive, inScope],
   );
   const scopedDeals = useMemo(
     () => allLive.filter((d) => inRange(d.created_at)),
@@ -178,13 +193,26 @@ export default function CrmReportsPage() {
     return m?.user?.name ?? "this owner";
   }, [ownerFilter, members]);
 
-  const scopeApplied = range !== "ALL" || ownerFilter !== "ALL";
+  /** The page's own filters — what the toolbar's Clear button undoes. */
+  const filtersApplied = range !== "ALL" || ownerFilter !== "ALL";
 
   /** The one sentence every scoped figure and caption hangs off. */
-  const scopeHint =
+  const filterHint =
     ownerFilter === "ALL"
       ? meta.phrase
       : `${ownerLabel} · ${meta.phrase}`;
+  // Under a project scope every figure is that project's, so the hint says so.
+  const scopeHint = project ? `${project.name} · ${filterHint}` : filterHint;
+  /**
+   * The project as a mid-sentence phrase — "in Acme", "without a project" —
+   * with its leading space, for the captions that name the scope inside a
+   * sentence rather than in front of the filters. Empty when unscoped.
+   */
+  const projectPhrase = !project
+    ? ""
+    : isNoProject
+      ? " without a project"
+      : ` in ${project.name}`;
 
   /** New deals inside the scope — under "All time" that is every open deal. */
   const newDeals = liveDeals.length;
@@ -198,11 +226,12 @@ export default function CrmReportsPage() {
       (tasks ?? []).filter(
         (t) =>
           t.status === "DONE" &&
+          targetsInScope(t.targets) &&
           inRange(t.created_at) &&
           (ownerFilter === "ALL" ||
             (t.assignee_id ?? "none") === ownerFilter),
       ).length,
-    [tasks, inRange, ownerFilter],
+    [tasks, targetsInScope, inRange, ownerFilter],
   );
 
   /* ---------------------------------------------------------------- charts */
@@ -324,6 +353,30 @@ export default function CrmReportsPage() {
       (rows ?? []).filter(
         (r) => !r.deleted_at && dayjs(r.created_at).isSame(m, "month"),
       ).length;
+    // Both series are the current project's records (every record when
+    // unscoped): people and companies are each filed under a project.
+    const scopedPeople = (people ?? []).filter((p) => inScope(p.project_id));
+    const scopedCompanies = (companies ?? []).filter((c) =>
+      inScope(c.project_id),
+    );
+    const series = [
+      {
+        name: "People",
+        type: "line" as const,
+        data: months.map((m) => count(scopedPeople, m)),
+        lineStyle: { width: 2, color: CHART_PALETTE[0] },
+        itemStyle: { color: CHART_PALETTE[0] },
+        symbolSize: 7,
+      },
+      {
+        name: "Companies",
+        type: "line" as const,
+        data: months.map((m) => count(scopedCompanies, m)),
+        lineStyle: { width: 2, color: CHART_PALETTE[1] },
+        itemStyle: { color: CHART_PALETTE[1] },
+        symbolSize: 7,
+      },
+    ];
     return {
       grid: { left: 8, right: 8, top: 30, bottom: 4, containLabel: true },
       legend: {
@@ -345,26 +398,9 @@ export default function CrmReportsPage() {
         splitLine: recessiveSplit,
       },
       tooltip: { ...chartTooltip, trigger: "axis" as const },
-      series: [
-        {
-          name: "People",
-          type: "line" as const,
-          data: months.map((m) => count(people, m)),
-          lineStyle: { width: 2, color: CHART_PALETTE[0] },
-          itemStyle: { color: CHART_PALETTE[0] },
-          symbolSize: 7,
-        },
-        {
-          name: "Companies",
-          type: "line" as const,
-          data: months.map((m) => count(companies, m)),
-          lineStyle: { width: 2, color: CHART_PALETTE[1] },
-          itemStyle: { color: CHART_PALETTE[1] },
-          symbolSize: 7,
-        },
-      ],
+      series,
     };
-  }, [people, companies, monthStart, axisText, recessiveSplit, chartTooltip, token.colorTextSecondary]);
+  }, [people, companies, inScope, monthStart, axisText, recessiveSplit, chartTooltip, token.colorTextSecondary]);
 
   // Deals per owner — magnitude across owners, one hue, direct labels.
   const ownerOption = useMemo(() => {
@@ -638,8 +674,10 @@ export default function CrmReportsPage() {
         return {
           name: c.name,
           leads,
+          // Spend is logged per campaign, never per project, so dividing it
+          // by one project's leads would price them wrong — blank it instead.
           cpl:
-            billable > 0 && spend > 0
+            !isScoped && billable > 0 && spend > 0
               ? crmMoneyPrecise(spend / billable, c.currency_code)
               : null,
         };
@@ -706,6 +744,7 @@ export default function CrmReportsPage() {
     campaigns,
     campaignSpend,
     liveDeals,
+    isScoped,
     axisText,
     chartTooltip,
     token.colorTextSecondary,
@@ -720,8 +759,19 @@ export default function CrmReportsPage() {
   /** Funnel + close-month + owner charts all wait on deals (and stages). */
   const pipelineLoading = dealsLoading || stagesLoading;
   const growthLoading = peopleLoading || companiesLoading;
-  const hasRecords =
-    (people ?? []).length + (companies ?? []).length > 0;
+  // The series are the project's records only, so the empty check must be
+  // too — or a project with nobody in it draws flat lines instead of saying so.
+  const scopedRecordCount = useMemo(
+    () =>
+      (people ?? []).filter((p) => !p.deleted_at && inScope(p.project_id))
+        .length +
+      (companies ?? []).filter((c) => !c.deleted_at && inScope(c.project_id))
+        .length,
+    [people, companies, inScope],
+  );
+  const hasRecords = isScoped
+    ? scopedRecordCount > 0
+    : (people ?? []).length + (companies ?? []).length > 0;
 
   /**
    * A report is only ever read as a fact. A chart drawn from a query that
@@ -765,7 +815,7 @@ export default function CrmReportsPage() {
     </Button>
   );
 
-  const clearScope = () => {
+  const clearFilters = () => {
     setRange("ALL");
     setOwnerFilter("ALL");
   };
@@ -775,25 +825,47 @@ export default function CrmReportsPage() {
    * "Add deals to the pipeline" to someone whose 30-day window happens to be
    * quiet sends them to create records they already have.
    */
-  const scopeEmpty = (
+  const filterEmpty = (
     <EmptyState
       compact
       icon="filter_alt_off"
       title="Nothing in this range"
-      description={`No deals ${scopeHint}. Widen the range, or clear the filters to see all ${allLive.length}.`}
-      action={<Button onClick={clearScope}>Clear filters</Button>}
+      description={`No deals ${scopeHint}. Widen the range, or clear the filters.`}
+      action={<Button onClick={clearFilters}>Clear filters</Button>}
     />
   );
 
-  /** True when the CRM has deals but this scope hides them all. */
-  const hiddenByScope = scopeApplied && allLive.length > 0;
+  /**
+   * The empty state the project switcher produced: the workspace has deals,
+   * this project has none. Clearing the range or owner would change nothing,
+   * so the way out is a new deal or another project — never "Clear filters".
+   */
+  const projectEmpty = (
+    <ScopedEmptyState
+      compact
+      nouns="deals"
+      onCreate={() => router.push("/crm/deals")}
+    />
+  );
+
+  /** True when the workspace has deals but the selected project has none. */
+  const hiddenByProject =
+    isScoped && teamLive.length > 0 && allLive.length === 0;
+  /** True when the project (or workspace) has deals but the filters hide them all. */
+  const hiddenByFilters = filtersApplied && allLive.length > 0;
   const hiddenByRange = range !== "ALL" && allLive.length > 0;
 
   return (
     <div style={crmPageStyle()}>
       <CrmPageHeader
         title="CRM Reports"
-        subtitle="Pipeline health, upcoming closes, and team performance for this workspace."
+        subtitle={`Pipeline health, upcoming closes, and team performance ${
+          !project
+            ? "for this workspace"
+            : isNoProject
+              ? "for the records not filed under a project"
+              : `for ${project.name}`
+        }.`}
         right={
           <Button
             icon={<MIcon name="dashboard" size={16} />}
@@ -834,7 +906,7 @@ export default function CrmReportsPage() {
             { value: "none", label: "Unassigned" },
           ]}
         />
-        {scopeApplied ? (
+        {filtersApplied ? (
           <Button
             type="text"
             icon={<MIcon name="filter_alt_off" size={16} />}
@@ -866,7 +938,7 @@ export default function CrmReportsPage() {
           value={dealsLoading || dealsError ? "—" : ownedDeals.length}
           hint={
             ownerFilter === "ALL"
-              ? "every open deal, whenever it came in"
+              ? `every open deal${projectPhrase}, whenever it came in`
               : `${ownerLabel}, whenever it came in`
           }
         />
@@ -875,7 +947,7 @@ export default function CrmReportsPage() {
           color={CRM_ACCENT.deal}
           label="Closing in 30 days"
           value={dealsLoading || dealsError ? "—" : closing30}
-          hint="due to close — the whole pipeline, not the window"
+          hint={`due to close — the whole pipeline${projectPhrase}, not the window`}
         />
         <StatTile
           icon="task_alt"
@@ -893,8 +965,10 @@ export default function CrmReportsPage() {
             panelSpin
           ) : hasDeals ? (
             <EChart option={funnelOption} height={260} />
-          ) : hiddenByScope ? (
-            scopeEmpty
+          ) : hiddenByProject ? (
+            projectEmpty
+          ) : hiddenByFilters ? (
+            filterEmpty
           ) : (
             <EmptyState
               compact
@@ -914,8 +988,10 @@ export default function CrmReportsPage() {
             panelSpin
           ) : hasCloseDates ? (
             <EChart option={closeMonthOption} height={260} />
-          ) : hiddenByScope ? (
-            scopeEmpty
+          ) : hiddenByProject ? (
+            projectEmpty
+          ) : hiddenByFilters ? (
+            filterEmpty
           ) : (
             <EmptyState
               compact
@@ -931,7 +1007,7 @@ export default function CrmReportsPage() {
           {caption(
             // Deliberately ignores the owner picker: a one-bar ranking of one
             // person answers nothing, so this panel always shows the field.
-            `Who is carrying the pipeline — deals per owner, ${meta.phrase}. Every owner, whichever one is picked above.`,
+            `Who is carrying the pipeline — deals per owner${projectPhrase}, ${meta.phrase}. Every owner, whichever one is picked above.`,
           )}
           {dealsLoading ? (
             panelSpin
@@ -940,8 +1016,10 @@ export default function CrmReportsPage() {
               option={ownerOption.option}
               height={Math.max(200, ownerOption.rows.length * 40)}
             />
+          ) : hiddenByProject ? (
+            projectEmpty
           ) : hiddenByRange ? (
-            scopeEmpty
+            filterEmpty
           ) : (
             <EmptyState
               compact
@@ -955,12 +1033,20 @@ export default function CrmReportsPage() {
 
         <Panel title="New records per month">
           {caption(
-            "How fast the database is growing — people and companies added each month. Always the last twelve months, whatever the range above.",
+            `How fast the database is growing — people and companies added each month${projectPhrase}. Always the last twelve months, whatever the range above.`,
           )}
           {growthLoading ? (
             panelSpin
           ) : hasRecords ? (
             <EChart option={growthOption} height={260} />
+          ) : isScoped ? (
+            // No create button: this panel charts growth, it does not list
+            // records. "records" so the No-project copy stays grammatical.
+            <ScopedEmptyState
+              compact
+              nouns="records"
+              description={`Add people or companies to ${project?.name ?? "this project"} and this chart tracks how fast it grows.`}
+            />
           ) : (
             <EmptyState
               compact
@@ -990,8 +1076,10 @@ export default function CrmReportsPage() {
               option={statusOption.option}
               height={Math.max(220, statusOption.rows.length * 34)}
             />
-          ) : hiddenByScope ? (
-            scopeEmpty
+          ) : hiddenByProject ? (
+            projectEmpty
+          ) : hiddenByFilters ? (
+            filterEmpty
           ) : (
             <EmptyState
               compact
@@ -1014,8 +1102,10 @@ export default function CrmReportsPage() {
               option={labelOption.option}
               height={Math.max(180, labelOption.rows.length * 40)}
             />
-          ) : hiddenByScope ? (
-            scopeEmpty
+          ) : hiddenByProject ? (
+            projectEmpty
+          ) : hiddenByFilters ? (
+            filterEmpty
           ) : (
             <EmptyState
               compact
@@ -1029,7 +1119,11 @@ export default function CrmReportsPage() {
 
         <Panel title="Leads by campaign">
           {caption(
-            `Which campaigns actually produce leads ${meta.phrase} — with cost per lead wherever daily spend has been logged. Junk leads count on the bar but not in the cost per lead.`,
+            `Which campaigns actually produce leads${projectPhrase} ${meta.phrase} — with cost per lead wherever daily spend has been logged. Junk leads count on the bar but not in the cost per lead.${
+              isScoped
+                ? " Cost per lead is left blank inside a project — spend is logged per campaign, not per project."
+                : ""
+            }`,
           )}
           {dealsLoading || campaignsLoading || spendLoading ? (
             panelSpin
@@ -1038,8 +1132,10 @@ export default function CrmReportsPage() {
               option={campaignOption.option}
               height={Math.max(200, campaignOption.rows.length * 40)}
             />
-          ) : hiddenByScope ? (
-            scopeEmpty
+          ) : hiddenByProject ? (
+            projectEmpty
+          ) : hiddenByFilters ? (
+            filterEmpty
           ) : (
             <EmptyState
               compact

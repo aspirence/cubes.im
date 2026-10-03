@@ -360,6 +360,18 @@ export function DealLabels({
         // The row underneath usually opens a drawer; tagging shouldn't.
         e.stopPropagation();
       }}
+      // The tag popover renders in a portal but its events bubble here along
+      // the component tree: keep its presses from arming a board card's drag,
+      // and its Escape from closing the RecordDrawer around it.
+      onPointerDown={(e) => {
+        if (!e.currentTarget.contains(e.target as Node)) e.stopPropagation();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && open) {
+          e.stopPropagation();
+          setOpen(false);
+        }
+      }}
     >
       {shown.map((label) => (
         <LabelChip

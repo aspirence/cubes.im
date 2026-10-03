@@ -10,6 +10,8 @@ import {
 import { useIsCrmAdmin } from "@/features/app-crm/use-crm-access";
 import { errMsg } from "@/lib/err";
 import { EmptyState, Panel } from "./_lib/ui";
+import { CrmScopeProvider } from "./_lib/crm-scope";
+import { CrmScopeBar } from "./_components/crm-scope-bar";
 
 /** Full-height stage for the install / no-access gates. */
 function Centered({ children }: { children: React.ReactNode }) {
@@ -114,5 +116,12 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  // Past both gates: the project switcher sits above every CRM tab, and only
+  // people with CRM access ever see it.
+  return (
+    <CrmScopeProvider>
+      <CrmScopeBar />
+      {children}
+    </CrmScopeProvider>
+  );
 }

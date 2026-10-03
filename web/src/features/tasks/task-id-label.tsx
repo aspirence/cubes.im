@@ -20,8 +20,18 @@ export function TaskIdLabel({
   return <>{fmt(taskNo)}</>;
 }
 
+/**
+ * The link that opens a task: its project with the task drawer on top. The
+ * same shape notifications deep-link with, so every shared link behaves alike.
+ * Anyone opening it still needs access to the project — RLS decides, not the
+ * link.
+ */
+export function taskShareUrl(projectId: string, taskId: string): string {
+  return `${window.location.origin}/projects/${projectId}?task=${taskId}`;
+}
+
 /** Clipboard write with a legacy fallback (older Safari / non-secure origins). */
-async function copyText(text: string): Promise<boolean> {
+export async function copyText(text: string): Promise<boolean> {
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);
@@ -99,7 +109,7 @@ export function TaskIdChip({
 
   const taskUrl =
     taskId && projectId && typeof window !== "undefined"
-      ? `${window.location.origin}/projects/${projectId}?task=${taskId}`
+      ? taskShareUrl(projectId, taskId)
       : null;
 
   const items = [

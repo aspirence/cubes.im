@@ -44,7 +44,7 @@ const COMPARE: { label: string; self: string; cloud: string }[] = [
 const FAQS: { q: string; a: string }[] = [
   { q: "Is Cubes really free to self-host?", a: "Yes. Cubes is open source — clone the repo, deploy it on your own infrastructure, and use every module with unlimited members and projects. No license keys, no feature gates." },
   { q: "How does Cloud pricing work?", a: "One flat monthly price covers your whole team — we never charge per seat. The base plan includes a storage allotment; if you need more, you pay a small per-GB rate on top. The slider above shows your exact price." },
-  { q: "What counts toward storage?", a: "Files your team uploads — attachments, shared files, video review uploads, and social media assets. Tasks, docs and comments are effectively free." },
+  { q: "What counts toward storage?", a: "Files your team uploads — attachments, shared files, video review uploads, and Content Studio media. Tasks, docs and comments are effectively free." },
   { q: "Can I change storage later?", a: "Anytime. Team admins can raise or lower the storage from Billing, and the new price applies from the next cycle." },
   { q: "Can I move between Cloud and self-hosted?", a: "Yes — it's the same open-source product underneath, so you can start on Cloud and migrate to your own servers later (or the other way around)." },
   { q: "Do you offer trials?", a: "Cloud starts free — no credit card. Use it with your team, and add a payment method only when you're ready." },

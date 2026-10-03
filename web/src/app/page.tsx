@@ -215,7 +215,7 @@ export default function Landing() {
             </h1>
           </Reveal>
           <Reveal delay={90}>
-            <p className="hero-sub">The open-source, all-in-one workspace — projects, docs, review, clients, social and people ops, behind a single login.</p>
+            <p className="hero-sub">The open-source, all-in-one workspace — projects, docs, review, clients, content and people ops, behind a single login.</p>
           </Reveal>
           <Reveal delay={170}>
             <div className="hero-cta">

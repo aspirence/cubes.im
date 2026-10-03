@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   App,
   Button,
@@ -15,6 +15,7 @@ import {
   theme,
 } from "antd";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
+import { useProject, useProjects } from "@/features/projects/use-projects";
 import {
   useCrmCompanies,
   useUpdateCrmCompany,
@@ -98,6 +99,12 @@ import {
   tint,
   useCrmStyles,
 } from "../_lib/ui";
+import {
+  NO_PROJECT,
+  useCrmScope,
+  useScopeMismatchNotice,
+  type CrmScopeProject,
+} from "../_lib/crm-scope";
 
 const ACTIVITY_ICONS: Record<string, string> = {
   created: "add_circle",
@@ -435,6 +442,77 @@ function CompanyRevenueField({
   );
 }
 
+/**
+ * The record's project — what the CRM is scoped by. An inline select like any
+ * other field: the live projects A–Z, then "No project" (stored as null). A
+ * project the record is filed under but that is not on offer (archived, or
+ * not listed for this user) is kept pickable under the name the caller
+ * resolved for it, so the editor never opens on a raw id.
+ */
+function ProjectField({
+  value,
+  choices,
+  currentName,
+  onSave,
+}: {
+  value: string | null;
+  choices: CrmScopeProject[];
+  currentName: string | null;
+  onSave: (next: string | null) => Promise<void>;
+}) {
+  const { token } = theme.useToken();
+  const options = useMemo<InlineOption[]>(
+    () => [
+      ...withCurrent(
+        choices.map((p) => ({ value: p.id, label: p.name })),
+        value,
+        currentName ?? "Unknown project",
+      ),
+      { value: NO_PROJECT, label: "No project" },
+    ],
+    [choices, value, currentName],
+  );
+
+  return (
+    <InlineSelect
+      label="Project"
+      value={value ?? NO_PROJECT}
+      options={options}
+      placeholder="No project"
+      errorText="Couldn't change the project."
+      onSave={(next) => onSave(!next || next === NO_PROJECT ? null : next)}
+      renderValue={(v) => {
+        if (!v || v === NO_PROJECT) return <Muted>No project</Muted>;
+        const p = choices.find((x) => x.id === v);
+        const name =
+          p?.name ?? (v === value ? currentName : null) ?? "Unknown project";
+        return (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              minWidth: 0,
+              maxWidth: "100%",
+            }}
+          >
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 3,
+                flex: "none",
+                background: p?.color ?? token.colorTextQuaternary,
+              }}
+            />
+            <span style={ELLIPSIS}>{name}</span>
+          </span>
+        );
+      }}
+    />
+  );
+}
+
 /** The compact quick-add shell pinned under the tab header. */
 function Composer({ children }: { children: React.ReactNode }) {
   const { token } = theme.useToken();
@@ -528,6 +606,62 @@ export function RecordDrawer({
   }, [target, people, companies, deals]);
 
   /**
+   * The lookup above is deliberately team-wide, not scoped: a ?m= link from a
+   * reminder ping, a workflow action or the campaign drawer must open a record
+   * of ANY project. The scope only gets a say in what the drawer SAYS about
+   * the record — the notice above the tabs — and never changes on its own from
+   * in here. Filing the record somewhere is the Overview's Project field, or
+   * the notice's "Move here".
+   */
+  const scope = useCrmScope();
+  const notifyScope = useScopeMismatchNotice();
+  // The notice hook hands back a new function every render; the field's
+  // writer reads it through a ref so the Overview items stay memoized.
+  const notifyScopeRef = useRef(notifyScope);
+  useEffect(() => {
+    notifyScopeRef.current = notifyScope;
+  });
+  const recordProjectId = record?.project_id ?? null;
+
+  /**
+   * What the Project field offers: the scope's live projects, A–Z. A drawer
+   * mounted outside the CRM's provider gets none from the scope, so it lists
+   * the team's projects itself — the same query the provider runs, so inside
+   * the CRM this is the one warm cache, never a second request. A pinned
+   * project view may sit on a project outside the live list; it stays on
+   * offer, since it is where "Move here" files to.
+   */
+  const { data: projectRows } = useProjects();
+  const projectChoices = useMemo<CrmScopeProject[]>(() => {
+    const base =
+      scope.projects.length > 0
+        ? scope.projects
+        : (projectRows ?? [])
+            .filter((p) => !p.is_archived)
+            .map((p) => ({ id: p.id, name: p.name, color: p.color_code ?? null }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+    const here = scope.projectId ? scope.project : null;
+    if (here && !base.some((p) => p.id === here.id)) return [...base, here];
+    return base;
+  }, [scope.projects, scope.projectId, scope.project, projectRows]);
+
+  // Filed under a project that is not on offer (archived by this user, or
+  // not in their list): fetch just that one, for its name.
+  const knownRecordProject = recordProjectId
+    ? (projectChoices.find((p) => p.id === recordProjectId) ?? null)
+    : null;
+  const { data: recordProjectRow } = useProject(
+    recordProjectId && !knownRecordProject ? recordProjectId : undefined,
+  );
+  const recordProjectName = knownRecordProject
+    ? knownRecordProject.name
+    : recordProjectRow && recordProjectRow.id === recordProjectId
+      ? recordProjectRow.is_archived
+        ? `${recordProjectRow.name} (archived)`
+        : recordProjectRow.name
+      : null;
+
+  /**
    * The list this record lives in may still be in flight — deep links and
    * dashboard clicks can open the drawer before the cache is warm. Without
    * this we'd flash "This record no longer exists" at a record that exists.
@@ -596,6 +730,50 @@ export function RecordDrawer({
     },
     [recordId, updateCompany],
   );
+
+  /** Files the open record under a project; null = no project. */
+  const saveProject = useCallback(
+    async (next: string | null) => {
+      if (!target) throw new Error("No record is open.");
+      if (target.type === "deal") await saveDeal({ project_id: next });
+      else if (target.type === "person") await savePerson({ project_id: next });
+      else await saveCompany({ project_id: next });
+    },
+    [target, saveDeal, savePerson, saveCompany],
+  );
+
+  /**
+   * The Project field's writer. A record moved out of the project on screen
+   * disappears from the page behind the drawer, so that is said out loud
+   * (a no-op when it stays in view, or outside the CRM's provider).
+   */
+  const moveToProject = useCallback(
+    async (next: string | null) => {
+      if (!target) throw new Error("No record is open.");
+      await saveProject(next);
+      notifyScopeRef.current({
+        recordProjectId: next,
+        noun: ENTITY_META[target.type].label,
+        verb: "moved to",
+      });
+    },
+    [target, saveProject],
+  );
+
+  /** The notice's "Move here" — keyed by record so another one opened mid-write shows no spinner. */
+  const [movingHereId, setMovingHereId] = useState<string | null>(null);
+  const moveHere = async () => {
+    const here = scope.projectId;
+    if (!recordId || !here) return;
+    setMovingHereId(recordId);
+    try {
+      await saveProject(here);
+    } catch (err) {
+      message.error(errMsg(err, "Couldn't move this record."));
+    } finally {
+      setMovingHereId(null);
+    }
+  };
 
   /* Option lists for the relation pickers — live records only; `withCurrent`
      re-adds whatever the record already points at. */
@@ -697,6 +875,26 @@ export function RecordDrawer({
   const overviewItems = useMemo<OverviewItem[]>(() => {
     if (!target || !record) return [];
 
+    // A workspace with no projects has nothing to file under — the field
+    // would only ever say "No project", so it stays out of the way.
+    const projectItems: OverviewItem[] =
+      projectChoices.length > 0 || recordProjectId
+        ? [
+            {
+              key: "project",
+              label: "Project",
+              children: (
+                <ProjectField
+                  value={recordProjectId}
+                  choices={projectChoices}
+                  currentName={recordProjectName}
+                  onSave={moveToProject}
+                />
+              ),
+            },
+          ]
+        : [];
+
     if (target.type === "person") {
       const p = record as CrmPersonWithCompany;
       return [
@@ -794,6 +992,7 @@ export function RecordDrawer({
             />
           ),
         },
+        ...projectItems,
         {
           key: "city",
           label: "City",
@@ -964,6 +1163,7 @@ export function RecordDrawer({
             />
           ),
         },
+        ...projectItems,
         {
           key: "created",
           label: "Created",
@@ -1175,6 +1375,7 @@ export function RecordDrawer({
           />
         ),
       },
+      ...projectItems,
       {
         key: "contact",
         label: "Point of contact",
@@ -1235,6 +1436,10 @@ export function RecordDrawer({
     saveDeal,
     savePerson,
     saveCompany,
+    projectChoices,
+    recordProjectId,
+    recordProjectName,
+    moveToProject,
   ]);
 
   const handleAddTask = async () => {
@@ -1346,6 +1551,33 @@ export function RecordDrawer({
     );
   };
 
+  /**
+   * Open regardless of the scope (the record lookup is team-wide), but the
+   * page behind the drawer is hiding this record — say so before the tabs.
+   * Whether it is hidden is the scope's own rule (`inScope`): under "No
+   * project" an unfiled record gets no notice and a filed one does.
+   *
+   * Only a button changes the scope — "Switch" to the record's project, or
+   * "Show unfiled" for a record filed nowhere — never the drawer on its own: a
+   * deep link that re-scoped the CRM would silently move the whole workspace.
+   * A pinned project view never switches, so it offers neither. "Move here"
+   * files the record under the project on screen instead: only when that is a
+   * real project (under "No project" it would mean unfiling, which is the
+   * Project field's call) and never on a record in the Deleted bin, which
+   * takes no writes.
+   */
+  const scopedProject = scope.project;
+  const outOfScope =
+    scopedProject !== null && record !== null && !scope.inScope(recordProjectId);
+  // Only a LIVE project can be switched to: the bar lists live projects only,
+  // and any other id would be healed straight back with a toast.
+  const canSwitch =
+    !scope.fixed &&
+    Boolean(
+      recordProjectId && scope.projects.some((p) => p.id === recordProjectId),
+    );
+  const canMoveHere = Boolean(scope.projectId) && !recordDeleted;
+
   return (
     <Drawer
       open={Boolean(target)}
@@ -1422,6 +1654,59 @@ export function RecordDrawer({
         ) : null
       }
     >
+      {/* Sits directly above the tabs: `record` is non-null only on the
+          branch below that renders them. */}
+      {scopedProject && outOfScope ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+            marginBottom: 10,
+          }}
+        >
+          <SoftChip
+            tone="warning"
+            icon={recordProjectId ? "folder_open" : "folder_off"}
+          >
+            {recordProjectId
+              ? `Filed in ${recordProjectName ?? "another project"}, not ${
+                  scope.isNoProject ? "unfiled" : scopedProject.name
+                }`
+              : "Not filed in any project"}
+          </SoftChip>
+          {recordProjectId ? (
+            canSwitch ? (
+              <Button
+                type="text"
+                size="small"
+                onClick={() => scope.setProjectId(recordProjectId)}
+              >
+                Switch
+              </Button>
+            ) : null
+          ) : scope.fixed ? null : (
+            <Button
+              type="text"
+              size="small"
+              onClick={() => scope.setProjectId(NO_PROJECT)}
+            >
+              Show unfiled
+            </Button>
+          )}
+          {canMoveHere ? (
+            <Button
+              type="text"
+              size="small"
+              loading={movingHereId !== null && movingHereId === recordId}
+              onClick={() => void moveHere()}
+            >
+              Move here
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       {recordLoading ? (
         <div style={{ display: "grid", placeItems: "center", padding: 64 }}>
           <Spin size="large" />

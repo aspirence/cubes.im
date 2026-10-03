@@ -344,6 +344,11 @@ function TaskRowItem({ task, groupColor, onOpen, t: T }: TaskRowProps) {
         >
           {task.name}
         </span>
+        {task.recurring?.some((r) => r.active) ? (
+          <span title="Repeats" style={{ display: "inline-flex", flex: "0 0 auto" }}>
+            <MSIcon name="repeat" size={15} color={T.textTertiary} />
+          </span>
+        ) : null}
       </div>
 
       {/* ASSIGNEE */}

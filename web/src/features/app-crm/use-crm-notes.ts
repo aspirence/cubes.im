@@ -72,7 +72,11 @@ export function useCreateCrmNote() {
               target_id: t.id,
             })),
           );
-        if (targetsError) throw targetsError;
+        if (targetsError) {
+          // Don't leave an unlinked row behind: a retry would duplicate it.
+          await supabase.from("app_crm_notes").delete().eq("id", data.id);
+          throw targetsError;
+        }
       }
       return data;
     },

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   App,
@@ -50,7 +50,10 @@ import { CalendarTab } from "./_components/calendar-tab";
 import { TableTab } from "./_components/table-tab";
 import { VideoReviewTab } from "./_components/video-review-tab";
 import { FilesTab } from "./_components/files-tab";
-import { SocialStudioTab } from "./_components/social-studio-tab";
+import { ContentStudioTab } from "./_components/content-studio-tab";
+import { SheetsTab } from "./_components/sheets-tab";
+import { ClientTab } from "./_components/client-tab";
+import { CrmTab } from "./_components/crm-tab";
 import { WorkloadTab } from "./_components/workload-tab";
 import { DocsTab } from "./_components/docs-tab";
 import { UpdatesTab } from "./_components/updates-tab";
@@ -66,6 +69,72 @@ function MIcon({ name, size = 15 }: { name: string; size?: number }) {
       {name}
     </span>
   );
+}
+
+/**
+ * The project's view tabs: which focus on a pane shows antd's ring.
+ *
+ * antd gives every tab pane tabIndex 0 — so a keyboard user can reach a view
+ * with nothing focusable in it — and a 3px :focus-visible ring. A click on
+ * blank space in a view focuses the pane (it is the nearest focusable
+ * ancestor), and Chrome starts matching :focus-visible on whatever has focus at
+ * the next key press of ANY kind: Shift, ⌘, the ⌘⇧4 of a screenshot. So a
+ * mouse user got a lavender rectangle round the whole Board, List, Files…
+ *
+ * The ring is kept or dropped by how focus ARRIVED, decided when the pane
+ * receives it: after a pointer press the pane is marked and the ring hidden;
+ * after a key press it is not marked and the ring shows. The mark goes when the
+ * pane loses focus, so tabbing back onto a pane the mouse clicked a moment ago
+ * shows the ring again. The listeners sit on the document because the Tab
+ * that brings focus in usually starts OUTSIDE the tabs (the header, "+ View").
+ *
+ * One rule for every pane under the project tabs — views that nest their own
+ * antd Tabs included — instead of a click-catcher per view (the Sheets tab
+ * grew one before this; it is harmless alongside).
+ */
+const PROJECT_TABS_CLASS = "proj-view-tabs";
+const POINTER_FOCUS_ATTR = "data-pointer-focus";
+const PROJECT_TABS_CSS = `.${PROJECT_TABS_CLASS} .ant-tabs-tabpane[${POINTER_FOCUS_ATTR}]:focus-visible { outline: none; }`;
+
+function projectPane(target: EventTarget | null): Element | null {
+  if (!(target instanceof Element) || !target.matches(".ant-tabs-tabpane")) return null;
+  return target.closest(`.${PROJECT_TABS_CLASS}`) ? target : null;
+}
+
+function usePointerFocusedPanes() {
+  useEffect(() => {
+    let byPointer = false;
+    const onPointerDown = (e: PointerEvent) => {
+      byPointer = true;
+      // A click on blank space in a pane that ALREADY has focus (reached by
+      // keyboard earlier) moves no focus, so no focusin decides — mark here.
+      const pane = e.target instanceof Element ? e.target.closest(".ant-tabs-tabpane") : null;
+      if (pane && pane === document.activeElement && projectPane(pane)) pane.setAttribute(POINTER_FOCUS_ATTR, "");
+    };
+    const onKeyDown = () => {
+      byPointer = false;
+    };
+    const onFocusIn = (e: FocusEvent) => {
+      const pane = projectPane(e.target);
+      if (!pane) return;
+      if (byPointer) pane.setAttribute(POINTER_FOCUS_ATTR, "");
+      else pane.removeAttribute(POINTER_FOCUS_ATTR);
+    };
+    const onFocusOut = (e: FocusEvent) => {
+      projectPane(e.target)?.removeAttribute(POINTER_FOCUS_ATTR);
+    };
+    // Capture: a view that stops propagation must not blind this.
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    document.addEventListener("focusin", onFocusIn, true);
+    document.addEventListener("focusout", onFocusOut, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("focusin", onFocusIn, true);
+      document.removeEventListener("focusout", onFocusOut, true);
+    };
+  }, []);
 }
 
 /** Maps a view key to its rendered pane. */
@@ -89,8 +158,14 @@ function viewComponent(
       return <VideoReviewTab projectId={projectId} />;
     case "files":
       return <FilesTab projectId={projectId} />;
-    case "social-studio":
-      return <SocialStudioTab projectId={projectId} />;
+    case "content-studio":
+      return <ContentStudioTab projectId={projectId} />;
+    case "sheets":
+      return <SheetsTab projectId={projectId} />;
+    case "client":
+      return <ClientTab projectId={projectId} />;
+    case "crm":
+      return <CrmTab projectId={projectId} />;
     case "workload":
       return (
         <WorkloadTab
@@ -239,6 +314,7 @@ function ProjectWorkspacePageInner() {
   // Rename-view modal target (null = closed).
   const [renaming, setRenaming] = useState<ProjectView | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  usePointerFocusedPanes();
 
   const taskViews = useMemo(() => views ?? [], [views]);
   const existingKeys = useMemo(
@@ -258,7 +334,7 @@ function ProjectWorkspacePageInner() {
           ? Math.max(...taskViews.map((v) => v.position)) + 1
           : 0,
       });
-      // Adding an app's view (Video Review / Files / Social Studio) auto-activates
+      // Adding an app's view (Video Review / Files / Content Studio) auto-activates
       // that app for this project (adds it to the app's "selected" scope; a no-op
       // when the app covers all projects or isn't installed). Fire-and-forget —
       // the view is already added; activation failing shouldn't block navigation.
@@ -441,6 +517,7 @@ function ProjectWorkspacePageInner() {
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <ProjectWorkspaceHeader project={project} />
       <Tabs
+        className={PROJECT_TABS_CLASS}
         activeKey={activeTab}
         onChange={handleTabChange}
         items={tabItems}
@@ -458,6 +535,7 @@ function ProjectWorkspacePageInner() {
           </div>
         )}
       />
+      <style>{PROJECT_TABS_CSS}</style>
       <TaskDrawer />
 
       {/* Rename view (from the tab's right-click menu) */}

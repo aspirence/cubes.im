@@ -12,9 +12,9 @@ import {
   Popconfirm,
   Select,
   Switch,
-  Table,
   Tooltip,
   theme,
+  type TableColumnsType,
 } from "antd";
 import {
   useCreateCrmCompany,
@@ -26,6 +26,7 @@ import {
 import { useCrmPeople } from "@/features/app-crm/use-crm-people";
 import { useTeamMembers } from "@/features/team-members/use-team-members";
 import { useClients } from "@/features/settings/use-clients";
+import { useProjects } from "@/features/projects/use-projects";
 import {
   CRM_CURRENCIES,
   crmMoney,
@@ -35,9 +36,38 @@ import { errMsg } from "@/lib/err";
 import { MIcon } from "../_components/m-icon";
 import { RecordDrawer } from "../_components/record-drawer";
 import { useRecordDeepLink } from "../_lib/record-deep-link";
+import {
+  NO_PROJECT,
+  useCrmScope,
+  useResetOnScopeChange,
+  useScopeMismatchNotice,
+} from "../_lib/crm-scope";
+import { ScopedEmptyState } from "../_components/crm-scope-bar";
 import { CrmToggle } from "../_components/crm-toggle";
 import { FormSection } from "../_components/form-section";
 import { BulkBar, useBulkRun } from "../_components/bulk-bar";
+import {
+  CrmTable,
+  CrmTableCard,
+  DateCell,
+  DateCreatedFilter,
+  EmptyCell,
+  FilterButton,
+  ManageColumns,
+  TableSearch,
+  TagPill,
+  ToolbarSpacer,
+  UpdatedCell,
+  ViewSwitch,
+  createdWindow,
+  inCreatedWindow,
+  useColumnLayout,
+  type ColumnChoice,
+  type CreatedPreset,
+  type CreatedRange,
+  type CrmMenuItem,
+} from "../_components/data-table";
+import { useProjectMoveItem, useRecordMenu } from "../_components/record-menu";
 import {
   CRM_DRAWER_BODY_STYLE,
   CRM_DRAWER_FORM_STYLE,
@@ -47,16 +77,11 @@ import {
 } from "../_components/drawer-footer";
 import {
   CrmPageHeader,
-  CrmSearch,
-  CrmToolbar,
   EmptyState,
   ErrorState,
   EntityAvatar,
   EntityCell,
-  Panel,
   RowActions,
-  SoftChip,
-  crmDate,
   crmPageStyle,
 } from "../_lib/ui";
 
@@ -70,12 +95,37 @@ type CompanyFormValues = {
   icp?: boolean;
   account_owner_id?: string | null;
   client_id?: string | null;
+  project_id?: string | null;
   address_street?: string;
   address_city?: string;
   address_state?: string;
   address_zip?: string;
   address_country?: string;
 };
+
+/** The key for "no owner" in the owner filter and the bulk Set owner menu. */
+const NO_OWNER = "__none__";
+
+/**
+ * The columns "Manage columns" can hide and reorder, in their default order —
+ * every data column, the company name included. The row actions are never a
+ * choice, so a row can always be acted on.
+ */
+const COLUMN_CHOICES: ColumnChoice[] = [
+  { key: "name", title: "Company" },
+  { key: "people", title: "People" },
+  { key: "owner", title: "Account owner" },
+  { key: "revenue", title: "Annual revenue" },
+  { key: "employees", title: "Employees" },
+  { key: "icp", title: "ICP" },
+  { key: "created", title: "Date created" },
+  { key: "updated", title: "Last update" },
+];
+
+/** The company column's share of `scroll.x` (it takes whatever is left). */
+const NAME_COLUMN_MIN = 200;
+/** The selection checkbox column. */
+const SELECTION_COLUMN = 48;
 
 export default function CrmCompaniesPage() {
   // `useSearchParams` behind the ?m= deep link forces a client bailout — it
@@ -89,7 +139,7 @@ export default function CrmCompaniesPage() {
 
 function CrmCompaniesPageInner() {
   const { token } = theme.useToken();
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const {
     data: companies,
     isLoading,
@@ -104,11 +154,31 @@ function CrmCompaniesPageInner() {
   const updateCompany = useUpdateCrmCompany();
   const setDeleted = useSetCrmCompanyDeleted();
   const destroyCompany = useDestroyCrmCompany();
+  const { projectId, project, isNoProject, projects, inScope } = useCrmScope();
+  const notify = useScopeMismatchNotice();
+  const recordMenu = useRecordMenu();
+  const projectMoveItem = useProjectMoveItem();
 
   const [search, setSearch] = useState("");
+  // The filters behave like the search: plain view state that survives a
+  // scope flip and leaves the selection alone (it is kept across filtering).
+  const [createdPreset, setCreatedPreset] = useState<CreatedPreset>("any");
+  const [createdRange, setCreatedRange] = useState<CreatedRange | null>(null);
+  const [ownerFilter, setOwnerFilter] = useState<string[]>([]);
+  const columnLayout = useColumnLayout("companies", COLUMN_CHOICES);
   const [showDeleted, setShowDeleted] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
+  // Selections survive filtering (preserveSelectedRowKeys), so a scope flip
+  // has to drop them itself or a bulk action could hit hidden rows.
+  useResetOnScopeChange(() => setSelected([]));
   const bulk = useBulkRun(() => setSelected([]));
+  /**
+   * Drops one company that just left this list (moved, deleted, restored,
+   * destroyed) from the selection, for the same reason: the bulk bar would
+   * still count it and the next bulk action would write to a row nobody sees.
+   */
+  const deselect = (id: string) =>
+    setSelected((s) => (s.includes(id) ? s.filter((k) => k !== id) : s));
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CrmCompany | null>(null);
   /** Seeded from `?m=` so a reminder notification opens this record. */
@@ -117,6 +187,8 @@ function CrmCompaniesPageInner() {
   const [confirmRow, setConfirmRow] = useState<string | null>(null);
   const [form] = Form.useForm<CompanyFormValues>();
 
+  // Team-wide on purpose: a company's people count is every contact linked
+  // to it, whatever project each one is filed under.
   const peopleCount = useMemo(() => {
     const counts = new Map<string, number>();
     for (const p of people ?? []) {
@@ -133,18 +205,45 @@ function CrmCompaniesPageInner() {
     return (id: string | null) => (id && map.get(id)) || "—";
   }, [members]);
 
+  /** The created-date window the filter keeps, or null for any time. */
+  const createdSpan = useMemo(
+    () => createdWindow(createdPreset, createdRange),
+    [createdPreset, createdRange],
+  );
+
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
+    const owners = new Set(ownerFilter);
     return (companies ?? [])
       .filter((c) => (showDeleted ? Boolean(c.deleted_at) : !c.deleted_at))
+      // A company is filed under a project (or none), like deals and people;
+      // only the current project's accounts are listed.
+      .filter((c) => inScope(c.project_id))
       .filter((c) => {
         if (!needle) return true;
         return [c.name, c.domain ?? "", c.address_city ?? "", c.address_country ?? ""]
           .join(" ")
           .toLowerCase()
           .includes(needle);
+      })
+      .filter((c) => inCreatedWindow(createdSpan, c.created_at))
+      .filter((c) => {
+        if (owners.size === 0) return true;
+        // An owner id that matches no team member reads as unowned in the
+        // owner column and sort, so it files under "No owner" here too —
+        // those are exactly the accounts a bulk Set owner is for.
+        const owner = c.account_owner_id;
+        return owners.has(owner && memberName(owner) !== "—" ? owner : NO_OWNER);
       });
-  }, [companies, search, showDeleted]);
+  }, [
+    companies,
+    search,
+    showDeleted,
+    inScope,
+    createdSpan,
+    ownerFilter,
+    memberName,
+  ]);
 
   const memberOptions = useMemo(
     () =>
@@ -154,14 +253,42 @@ function CrmCompaniesPageInner() {
     [members],
   );
 
+  /**
+   * The owner filter's choices: the active team, plus any former member who
+   * still owns an account here, A–Z, then "No owner".
+   */
+  const ownerFilterOptions = useMemo(() => {
+    const byId = new Map(memberOptions.map((m) => [m.value, m.label] as const));
+    for (const c of companies ?? []) {
+      const id = c.account_owner_id;
+      if (!id || byId.has(id)) continue;
+      const name = memberName(id);
+      if (name !== "—") byId.set(id, name);
+    }
+    return [
+      ...[...byId]
+        .map(([value, label]) => ({ value, label }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+      { value: NO_OWNER, label: "No owner" },
+    ];
+  }, [memberOptions, companies, memberName]);
+
   const clientOptions = useMemo(
     () => (clients ?? []).map((c) => ({ value: c.id, label: c.name })),
     [clients],
   );
 
+  const projectOptions = useProjectFieldOptions(
+    projectId,
+    editing?.project_id,
+  );
+
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
+    // Filed under the current project by default (none under "No project") —
+    // a default, not a constraint: the Project field stays editable.
+    form.setFieldsValue({ project_id: projectId ?? undefined });
     setFormOpen(true);
   };
 
@@ -177,6 +304,7 @@ function CrmCompaniesPageInner() {
       icp: company.icp,
       account_owner_id: company.account_owner_id,
       client_id: company.client_id,
+      project_id: company.project_id ?? undefined,
       address_street: company.address_street ?? undefined,
       address_city: company.address_city ?? undefined,
       address_state: company.address_state ?? undefined,
@@ -197,6 +325,7 @@ function CrmCompaniesPageInner() {
       icp: Boolean(values.icp),
       account_owner_id: values.account_owner_id ?? null,
       client_id: values.client_id ?? null,
+      project_id: values.project_id ?? null,
       address_street: values.address_street?.trim() || null,
       address_city: values.address_city?.trim() || null,
       address_state: values.address_state?.trim() || null,
@@ -207,9 +336,22 @@ function CrmCompaniesPageInner() {
       if (editing) {
         await updateCompany.mutateAsync({ id: editing.id, patch });
         message.success("Company updated.");
+        // Moved to another project (or none)? The row just left this list —
+        // say so, with a way to go and look. Only on a real move.
+        if ((editing.project_id ?? null) !== patch.project_id) {
+          if (!inScope(patch.project_id)) deselect(editing.id);
+          notify({
+            recordProjectId: patch.project_id,
+            noun: "Company",
+            verb: "moved to",
+          });
+        }
       } else {
         await createCompany.mutateAsync(patch);
         message.success("Company added.");
+        // Saved to a project other than the current one? It is not in this
+        // list — say so, with a way to go and look.
+        notify({ recordProjectId: patch.project_id, noun: "Company" });
       }
       setFormOpen(false);
     } catch (err) {
@@ -217,8 +359,206 @@ function CrmCompaniesPageInner() {
     }
   };
 
-  /** Quiet em dash for empty cells. */
-  const dash = <span style={{ color: token.colorTextQuaternary }}>—</span>;
+  /**
+   * Bulk "Set project": files the selection under a project (or none). The
+   * moved rows leave this list when the target is another project, so the
+   * notice says where they went — counted from the writes that landed.
+   */
+  const moveSelectedToProject = async (key: string) => {
+    const target = key === NO_PROJECT ? null : key;
+    let moved = 0;
+    await bulk.run(selected, "Project set", async (id) => {
+      await updateCompany.mutateAsync({ id, patch: { project_id: target } });
+      moved += 1;
+    });
+    if (moved > 0) {
+      notify({
+        recordProjectId: target,
+        noun: moved === 1 ? "1 company" : `${moved} companies`,
+        verb: "moved to",
+      });
+    }
+  };
+
+  /** Soft delete: the company moves to Deleted and can be restored. */
+  const deleteCompany = async (id: string) => {
+    try {
+      await setDeleted.mutateAsync({ id, deleted: true });
+      deselect(id);
+      message.success("Company deleted.");
+    } catch (err) {
+      message.error(errMsg(err, "Failed to delete."));
+    }
+  };
+
+  const restoreCompany = async (id: string) => {
+    try {
+      await setDeleted.mutateAsync({ id, deleted: false });
+      deselect(id);
+      message.success("Company restored.");
+    } catch (err) {
+      message.error(errMsg(err, "Failed to restore."));
+    }
+  };
+
+  const destroyCompanyForever = async (id: string) => {
+    try {
+      await destroyCompany.mutateAsync(id);
+      deselect(id);
+      message.success("Company permanently deleted.");
+    } catch (err) {
+      message.error(errMsg(err, "Failed to delete."));
+    }
+  };
+
+  const setOwner = async (id: string, ownerId: string | null) => {
+    try {
+      await updateCompany.mutateAsync({
+        id,
+        patch: { account_owner_id: ownerId },
+      });
+      message.success(
+        ownerId ? `Owner: ${memberName(ownerId)}.` : "Owner cleared.",
+      );
+    } catch (err) {
+      message.error(errMsg(err, "Couldn't set the owner."));
+    }
+  };
+
+  const setIcp = async (id: string, icp: boolean) => {
+    try {
+      await updateCompany.mutateAsync({ id, patch: { icp } });
+      message.success(icp ? "Marked as ICP." : "ICP removed.");
+    } catch (err) {
+      message.error(errMsg(err, "Couldn't update ICP."));
+    }
+  };
+
+  /**
+   * The right-click menu of a company row: the shared record items (open,
+   * edit, new task / note / reminder, website, copy) with this page's own —
+   * project, account owner, ICP — and delete, each the same write as the row
+   * buttons, the bulk bar and the edit drawer. A deleted company offers only
+   * Open, Copy, Restore and Delete forever.
+   */
+  const companyMenu = (c: CrmCompany): CrmMenuItem[] => {
+    const target = { type: "company" as const, id: c.id };
+    const onOpen = () => setViewTarget(target);
+
+    if (c.deleted_at) {
+      return recordMenu.build({
+        target,
+        name: c.name,
+        onOpen,
+        canCreate: false,
+        danger: [
+          {
+            key: "restore",
+            label: "Restore",
+            icon: "restore_from_trash",
+            onSelect: () => void restoreCompany(c.id),
+          },
+          {
+            key: "destroy",
+            label: "Delete forever…",
+            icon: "delete_forever",
+            danger: true,
+            onSelect: () =>
+              modal.confirm({
+                title: `Permanently delete ${c.name}?`,
+                content: "This cannot be undone. Its people and deals stay, unlinked.",
+                okText: "Delete forever",
+                okButtonProps: { danger: true },
+                onOk: () => destroyCompanyForever(c.id),
+              }),
+          },
+        ],
+      });
+    }
+
+    const owner = c.account_owner_id;
+    const ownerName = memberName(owner);
+    // An owner id that matches no team member reads as unowned, as in the
+    // owner column and filter.
+    const unowned = ownerName === "—";
+
+    return recordMenu.build({
+      target,
+      name: c.name,
+      onOpen,
+      onEdit: () => openEdit(c),
+      website: c.domain,
+      manage: [
+        ...(projects.length > 0
+          ? [
+              projectMoveItem({
+                current: c.project_id,
+                noun: "Company",
+                onMove: async (projectId) => {
+                  await updateCompany.mutateAsync({
+                    id: c.id,
+                    patch: { project_id: projectId },
+                  });
+                  if (!inScope(projectId)) deselect(c.id);
+                },
+              }),
+            ]
+          : []),
+        {
+          key: "owner",
+          label: "Set account owner",
+          icon: "person",
+          extra: unowned ? "No owner" : ownerName,
+          children: [
+            ...memberOptions.map((m) => ({
+              key: m.value,
+              label: m.label,
+              checked: m.value === owner,
+              onSelect:
+                m.value === owner ? undefined : () => void setOwner(c.id, m.value),
+            })),
+            { type: "divider" as const },
+            {
+              key: NO_OWNER,
+              label: "No owner",
+              icon: "person_off",
+              checked: unowned,
+              onSelect: owner === null ? undefined : () => void setOwner(c.id, null),
+            },
+          ],
+        },
+        c.icp
+          ? {
+              key: "icp",
+              label: "Remove ICP",
+              icon: "star_border",
+              onSelect: () => void setIcp(c.id, false),
+            }
+          : {
+              key: "icp",
+              label: "Mark as ICP",
+              icon: "star",
+              onSelect: () => void setIcp(c.id, true),
+            },
+      ],
+      danger: [
+        {
+          key: "delete",
+          label: "Delete…",
+          icon: "delete",
+          danger: true,
+          onSelect: () =>
+            modal.confirm({
+              title: `Delete ${c.name}?`,
+              content: "It moves to Deleted and can be restored.",
+              okText: "Delete",
+              okButtonProps: { danger: true },
+              onOk: () => deleteCompany(c.id),
+            }),
+        },
+      ],
+    });
+  };
 
   const numberCell = (value: React.ReactNode) => (
     <span
@@ -231,8 +571,21 @@ function CrmCompaniesPageInner() {
     </span>
   );
 
+  const filtersOn = createdSpan !== null || ownerFilter.length > 0;
+  const clearCreated = () => {
+    setCreatedPreset("any");
+    setCreatedRange(null);
+  };
+  const clearFilters = () => {
+    clearCreated();
+    setOwnerFilter([]);
+  };
+  const showOwnerFilter =
+    ownerFilterOptions.length > 1 || ownerFilter.length > 0;
+
   // A failed fetch must never fall through to "No companies yet" — an empty
   // account is a very different message from a query that didn't come back.
+  const query = search.trim();
   const emptyText = isError ? (
     <ErrorState
       compact
@@ -240,13 +593,34 @@ function CrmCompaniesPageInner() {
       error={error}
       onRetry={() => void refetch()}
     />
-  ) : search.trim() ? (
+  ) : query || filtersOn ? (
     <EmptyState
       compact
       icon="search_off"
-      title="No companies match your search"
-      description={`Nothing found for “${search.trim()}”. Try a company name, domain, city, or country.`}
-      action={<Button onClick={() => setSearch("")}>Clear search</Button>}
+      title={
+        query
+          ? "No companies match your search"
+          : "No companies match these filters"
+      }
+      description={
+        query
+          ? `Nothing found for “${query}”${filtersOn ? " with the current filters" : ""}. Try a company name, domain, city, or country.`
+          : "Nothing here matches the date and owner filters. Clear them to see every company."
+      }
+      action={
+        <Button
+          onClick={() => {
+            setSearch("");
+            clearFilters();
+          }}
+        >
+          {query && filtersOn
+            ? "Clear search and filters"
+            : query
+              ? "Clear search"
+              : "Clear filters"}
+        </Button>
+      }
     />
   ) : showDeleted ? (
     <EmptyState
@@ -255,6 +629,8 @@ function CrmCompaniesPageInner() {
       title="Nothing in Deleted"
       description="Companies you delete land here first, so you can restore them before they are permanently removed."
     />
+  ) : project ? (
+    <ScopedEmptyState compact nouns="companies" onCreate={openCreate} />
   ) : (
     <EmptyState
       compact
@@ -274,254 +650,291 @@ function CrmCompaniesPageInner() {
     />
   );
 
+  /** The owner's name for sorting; unowned accounts sort together. */
+  const ownerSortKey = (c: CrmCompany) => {
+    const name = memberName(c.account_owner_id);
+    return name === "—" ? "" : name;
+  };
+
+  const columns: TableColumnsType<CrmCompany> = [
+    {
+      title: "Company",
+      key: "name",
+      render: (_, c) => (
+        <EntityCell
+          kind="company"
+          name={c.name}
+          subtitle={c.domain || undefined}
+          muted={Boolean(c.deleted_at)}
+        />
+      ),
+      sorter: (a, b) => a.name.localeCompare(b.name),
+    },
+    {
+      title: "People",
+      key: "people",
+      width: 84,
+      align: "right",
+      render: (_, c) => numberCell(peopleCount.get(c.id) ?? 0),
+      sorter: (a, b) =>
+        (peopleCount.get(a.id) ?? 0) - (peopleCount.get(b.id) ?? 0),
+    },
+    {
+      title: "Account owner",
+      key: "owner",
+      width: 168,
+      render: (_, c) => {
+        const name = memberName(c.account_owner_id);
+        if (name === "—") return <EmptyCell />;
+        return (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              minWidth: 0,
+            }}
+          >
+            <EntityAvatar name={name} kind="person" size={22} />
+            <span
+              style={{
+                color: token.colorTextSecondary,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {name}
+            </span>
+          </div>
+        );
+      },
+      sorter: (a, b) => ownerSortKey(a).localeCompare(ownerSortKey(b)),
+    },
+    {
+      title: "Annual revenue",
+      key: "revenue",
+      width: 140,
+      align: "right",
+      render: (_, c) =>
+        c.annual_revenue === null
+          ? <EmptyCell />
+          : numberCell(crmMoney(c.annual_revenue, c.currency_code)),
+      sorter: (a, b) => (a.annual_revenue ?? 0) - (b.annual_revenue ?? 0),
+    },
+    {
+      title: "Employees",
+      key: "employees",
+      dataIndex: "employees",
+      width: 108,
+      align: "right",
+      render: (v: number | null) =>
+        v === null || v === undefined ? <EmptyCell /> : numberCell(v.toLocaleString()),
+      sorter: (a, b) => (a.employees ?? 0) - (b.employees ?? 0),
+    },
+    {
+      title: "ICP",
+      key: "icp",
+      width: 80,
+      render: (_, c) => (c.icp ? <TagPill label="ICP" tone="success" /> : <EmptyCell />),
+      sorter: (a, b) => Number(a.icp) - Number(b.icp),
+    },
+    {
+      title: "Date created",
+      key: "created",
+      dataIndex: "created_at",
+      width: 124,
+      render: (v: string) => <DateCell value={v} />,
+      sorter: (a, b) => a.created_at.localeCompare(b.created_at),
+    },
+    {
+      title: "Last update",
+      key: "updated",
+      dataIndex: "updated_at",
+      width: 116,
+      render: (v: string) => <UpdatedCell value={v} />,
+      sorter: (a, b) => a.updated_at.localeCompare(b.updated_at),
+    },
+    {
+      title: "",
+      key: "actions",
+      width: 88,
+      align: "right",
+      fixed: "right",
+      render: (_, c) => (
+        <RowActions open={confirmRow === c.id}>
+          {c.deleted_at ? (
+            <>
+              <Tooltip title="Restore">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<MIcon name="restore_from_trash" size={17} />}
+                  onClick={() => void restoreCompany(c.id)}
+                />
+              </Tooltip>
+              <Popconfirm
+                title="Permanently delete this company?"
+                description="This cannot be undone. Its people and deals stay, unlinked."
+                okText="Delete forever"
+                okButtonProps={{ danger: true }}
+                onOpenChange={(open) =>
+                  setConfirmRow(open ? c.id : null)
+                }
+                onConfirm={() => destroyCompanyForever(c.id)}
+              >
+                <Tooltip title="Delete forever">
+                  <Button
+                    type="text"
+                    size="small"
+                    danger
+                    icon={<MIcon name="delete_forever" size={17} />}
+                  />
+                </Tooltip>
+              </Popconfirm>
+            </>
+          ) : (
+            <>
+              <Tooltip title="Edit">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<MIcon name="edit" size={16} />}
+                  onClick={() => openEdit(c)}
+                />
+              </Tooltip>
+              <Popconfirm
+                title="Delete this company?"
+                description="It moves to Deleted and can be restored."
+                okText="Delete"
+                okButtonProps={{ danger: true }}
+                onOpenChange={(open) =>
+                  setConfirmRow(open ? c.id : null)
+                }
+                onConfirm={() => deleteCompany(c.id)}
+              >
+                <Tooltip title="Delete">
+                  <Button
+                    type="text"
+                    size="small"
+                    danger
+                    icon={<MIcon name="delete" size={16} />}
+                  />
+                </Tooltip>
+              </Popconfirm>
+            </>
+          )}
+        </RowActions>
+      ),
+    },
+  ];
+
+  // The user's order, hidden columns dropped; the actions column stays last.
+  const visibleColumns = columnLayout.arrange(columns);
+  // The company column has no width (it takes what is left), so while it
+  // shows it counts as its minimum; below this the table scrolls instead of
+  // squeezing names.
+  const scrollX = visibleColumns.reduce(
+    (sum, c) => sum + (typeof c.width === "number" ? c.width : NAME_COLUMN_MIN),
+    SELECTION_COLUMN,
+  );
+
   return (
     <div style={crmPageStyle()}>
       <CrmPageHeader
         title="Companies"
         count={isLoading || isError ? null : rows.length}
-        subtitle="The accounts your team sells to — their people, revenue and owner."
+        subtitle={
+          isNoProject
+            ? "Accounts not filed under any project. Select some and use Set project to file them."
+            : project
+              ? `The accounts filed under ${project.name} — their people, revenue and owner.`
+              : "The accounts your team sells to — their people, revenue and owner."
+        }
+        right={
+          <Button
+            type="primary"
+            icon={<MIcon name="add" size={16} />}
+            onClick={openCreate}
+          >
+            New company
+          </Button>
+        }
       />
 
-      <CrmToolbar>
-        <CrmSearch
-          value={search}
-          onChange={setSearch}
-          placeholder="Search companies…"
-        />
-        <CrmToggle
-          checked={showDeleted}
-          onChange={setShowDeleted}
-          label="Deleted"
-        />
-        <Button
-          type="primary"
-          icon={<MIcon name="add" size={16} />}
-          onClick={openCreate}
-          style={{ marginLeft: "auto" }}
-        >
-          New company
-        </Button>
-      </CrmToolbar>
-
-      <Panel padding={0}>
-        <Table
+      <CrmTableCard
+        toolbar={
+          <>
+            <TableSearch
+              value={search}
+              onChange={setSearch}
+              placeholder="Search companies…"
+            />
+            <DateCreatedFilter
+              preset={createdPreset}
+              range={createdRange}
+              onChange={(preset, range) => {
+                setCreatedPreset(preset);
+                setCreatedRange(range);
+              }}
+            />
+            {showOwnerFilter ? (
+              <FilterButton
+                icon="person"
+                label="Account owner"
+                activeCount={ownerFilter.length}
+                onClear={() => setOwnerFilter([])}
+              >
+                <Select
+                  mode="multiple"
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  maxTagCount="responsive"
+                  placeholder="Any owner"
+                  value={ownerFilter}
+                  onChange={setOwnerFilter}
+                  options={ownerFilterOptions}
+                  style={{ width: "100%" }}
+                />
+              </FilterButton>
+            ) : null}
+            <ToolbarSpacer />
+            <CrmToggle
+              checked={showDeleted}
+              onChange={setShowDeleted}
+              label="Deleted"
+            />
+            <ManageColumns layout={columnLayout} />
+            <ViewSwitch
+              value="companies"
+              options={[
+                { value: "people", label: "People", href: "/crm/people" },
+                { value: "companies", label: "Companies", href: "/crm/companies" },
+              ]}
+            />
+          </>
+        }
+      >
+        <CrmTable<CrmCompany>
           rowKey="id"
-          size="middle"
           loading={isLoading}
           dataSource={rows}
+          columns={visibleColumns}
           rowSelection={{
             selectedRowKeys: selected,
             onChange: (keys) => setSelected(keys as string[]),
             preserveSelectedRowKeys: true,
           }}
-          pagination={{
-            pageSize: 25,
-            hideOnSinglePage: true,
-            style: { marginInline: 16 },
-          }}
-          scroll={{ x: 1000 }}
+          pagination={{ pageSize: 25, hideOnSinglePage: true }}
+          scroll={{ x: scrollX }}
           locale={{
             emptyText: isLoading ? <div style={{ height: 120 }} /> : emptyText,
           }}
           onRow={(c) => ({
             onClick: () => setViewTarget({ type: "company", id: c.id }),
-            style: { cursor: "pointer" },
           })}
-          columns={[
-            {
-              title: "Company",
-              key: "name",
-              render: (_, c) => (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    minWidth: 0,
-                  }}
-                >
-                  <EntityCell
-                    kind="company"
-                    name={c.name}
-                    subtitle={c.domain || undefined}
-                    muted={Boolean(c.deleted_at)}
-                  />
-                  {c.icp ? <SoftChip tone="success">ICP</SoftChip> : null}
-                </div>
-              ),
-              sorter: (a, b) => a.name.localeCompare(b.name),
-            },
-            {
-              title: "People",
-              key: "people",
-              width: 92,
-              align: "right",
-              render: (_, c) => numberCell(peopleCount.get(c.id) ?? 0),
-              sorter: (a, b) =>
-                (peopleCount.get(a.id) ?? 0) - (peopleCount.get(b.id) ?? 0),
-            },
-            {
-              title: "Account owner",
-              key: "owner",
-              width: 190,
-              render: (_, c) => {
-                const name = memberName(c.account_owner_id);
-                if (name === "—") return dash;
-                return (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      minWidth: 0,
-                    }}
-                  >
-                    <EntityAvatar name={name} kind="person" size={22} />
-                    <span
-                      style={{
-                        color: token.colorTextSecondary,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {name}
-                    </span>
-                  </div>
-                );
-              },
-            },
-            {
-              title: "Annual revenue",
-              key: "revenue",
-              width: 150,
-              align: "right",
-              render: (_, c) =>
-                c.annual_revenue === null
-                  ? dash
-                  : numberCell(crmMoney(c.annual_revenue, c.currency_code)),
-              sorter: (a, b) => (a.annual_revenue ?? 0) - (b.annual_revenue ?? 0),
-            },
-            {
-              title: "Employees",
-              dataIndex: "employees",
-              width: 118,
-              align: "right",
-              render: (v: number | null) =>
-                v === null || v === undefined
-                  ? dash
-                  : numberCell(v.toLocaleString()),
-            },
-            {
-              title: "Created",
-              dataIndex: "created_at",
-              width: 130,
-              render: (v: string) => (
-                <span style={{ color: token.colorTextTertiary }}>
-                  {crmDate(v)}
-                </span>
-              ),
-              sorter: (a, b) => a.created_at.localeCompare(b.created_at),
-            },
-            {
-              title: "",
-              key: "actions",
-              width: 96,
-              align: "right",
-              render: (_, c) => (
-                <RowActions open={confirmRow === c.id}>
-                  {c.deleted_at ? (
-                    <>
-                      <Tooltip title="Restore">
-                        <Button
-                          type="text"
-                          size="small"
-                          icon={<MIcon name="restore_from_trash" size={17} />}
-                          onClick={async () => {
-                            try {
-                              await setDeleted.mutateAsync({
-                                id: c.id,
-                                deleted: false,
-                              });
-                              message.success("Company restored.");
-                            } catch (err) {
-                              message.error(errMsg(err, "Failed to restore."));
-                            }
-                          }}
-                        />
-                      </Tooltip>
-                      <Popconfirm
-                        title="Permanently delete this company?"
-                        description="This cannot be undone. Its people and deals stay, unlinked."
-                        okText="Delete forever"
-                        okButtonProps={{ danger: true }}
-                        onOpenChange={(open) =>
-                          setConfirmRow(open ? c.id : null)
-                        }
-                        onConfirm={async () => {
-                          try {
-                            await destroyCompany.mutateAsync(c.id);
-                            message.success("Company permanently deleted.");
-                          } catch (err) {
-                            message.error(errMsg(err, "Failed to delete."));
-                          }
-                        }}
-                      >
-                        <Tooltip title="Delete forever">
-                          <Button
-                            type="text"
-                            size="small"
-                            danger
-                            icon={<MIcon name="delete_forever" size={17} />}
-                          />
-                        </Tooltip>
-                      </Popconfirm>
-                    </>
-                  ) : (
-                    <>
-                      <Tooltip title="Edit">
-                        <Button
-                          type="text"
-                          size="small"
-                          icon={<MIcon name="edit" size={16} />}
-                          onClick={() => openEdit(c)}
-                        />
-                      </Tooltip>
-                      <Popconfirm
-                        title="Delete this company?"
-                        description="It moves to Deleted and can be restored."
-                        okText="Delete"
-                        okButtonProps={{ danger: true }}
-                        onOpenChange={(open) =>
-                          setConfirmRow(open ? c.id : null)
-                        }
-                        onConfirm={async () => {
-                          try {
-                            await setDeleted.mutateAsync({
-                              id: c.id,
-                              deleted: true,
-                            });
-                            message.success("Company deleted.");
-                          } catch (err) {
-                            message.error(errMsg(err, "Failed to delete."));
-                          }
-                        }}
-                      >
-                        <Tooltip title="Delete">
-                          <Button
-                            type="text"
-                            size="small"
-                            danger
-                            icon={<MIcon name="delete" size={16} />}
-                          />
-                        </Tooltip>
-                      </Popconfirm>
-                    </>
-                  )}
-                </RowActions>
-              ),
-            },
-          ]}
+          rowContextMenu={companyMenu}
         />
 
         <BulkBar count={selected.length} onClear={() => setSelected([])}>
@@ -534,14 +947,14 @@ function CrmCompaniesPageInner() {
                   label: m.label,
                 })),
                 { type: "divider" as const },
-                { key: "__none__", label: "No owner" },
+                { key: NO_OWNER, label: "No owner" },
               ],
               onClick: ({ key }) =>
                 void bulk.run(selected, "Owner set", (id) =>
                   updateCompany.mutateAsync({
                     id,
                     patch: {
-                      account_owner_id: key === "__none__" ? null : key,
+                      account_owner_id: key === NO_OWNER ? null : key,
                     },
                   }),
                 ),
@@ -549,6 +962,22 @@ function CrmCompaniesPageInner() {
           >
             <Button size="small" icon={<MIcon name="person" size={15} />}>
               Set owner
+            </Button>
+          </Dropdown>
+
+          <Dropdown
+            disabled={bulk.busy || projects.length === 0}
+            menu={{
+              items: [
+                ...projects.map((p) => ({ key: p.id, label: p.name })),
+                { type: "divider" as const },
+                { key: NO_PROJECT, label: "No project" },
+              ],
+              onClick: ({ key }) => void moveSelectedToProject(key),
+            }}
+          >
+            <Button size="small" icon={<MIcon name="folder_open" size={15} />}>
+              Set project
             </Button>
           </Dropdown>
 
@@ -615,7 +1044,7 @@ function CrmCompaniesPageInner() {
             </Popconfirm>
           )}
         </BulkBar>
-      </Panel>
+      </CrmTableCard>
 
       <Drawer
         open={formOpen}
@@ -649,6 +1078,15 @@ function CrmCompaniesPageInner() {
             </FormSection>
 
             <FormSection label="Business">
+              {projectOptions.length > 0 ? (
+                <Form.Item
+                  name="project_id"
+                  label="Project"
+                  tooltip="The project this account is filed under in the CRM."
+                >
+                  <ProjectSelect options={projectOptions} />
+                </Form.Item>
+              ) : null}
               <div style={{ display: "flex", gap: 12 }}>
                 <Form.Item
                   name="annual_revenue"
@@ -760,6 +1198,94 @@ function CrmCompaniesPageInner() {
       </Drawer>
 
       <RecordDrawer target={viewTarget} onClose={closeViewTarget} />
+      {recordMenu.dialogs}
     </div>
+  );
+}
+
+interface ProjectOption {
+  value: string;
+  label: string;
+  color: string | null;
+}
+
+/**
+ * The Project field's options: the team's live projects A–Z, plus any id the
+ * form may hold that is not among them (a project this user archived, or the
+ * pinned one) so the field shows a name, never a raw id.
+ */
+function useProjectFieldOptions(
+  ...extraIds: (string | null | undefined)[]
+): ProjectOption[] {
+  const { projects, project } = useCrmScope();
+  const { data: allProjects } = useProjects();
+  const extra = extraIds.filter((id): id is string => Boolean(id)).join(",");
+  return useMemo(() => {
+    const opts: ProjectOption[] = projects.map((p) => ({
+      value: p.id,
+      label: p.name,
+      color: p.color,
+    }));
+    for (const id of extra ? extra.split(",") : []) {
+      if (id === NO_PROJECT || opts.some((o) => o.value === id)) continue;
+      const row = (allProjects ?? []).find((p) => p.id === id);
+      opts.push({
+        value: id,
+        label: row
+          ? row.is_archived
+            ? `${row.name} (archived)`
+            : row.name
+          : project?.id === id
+            ? project.name
+            : "Another project",
+        color: row
+          ? (row.color_code ?? null)
+          : project?.id === id
+            ? project.color
+            : null,
+      });
+    }
+    return opts;
+  }, [projects, project, allProjects, extra]);
+}
+
+/** Clearable: an empty value files the record under no project. */
+function ProjectSelect({
+  options,
+  ...rest
+}: {
+  options: ProjectOption[];
+  value?: string | null;
+  onChange?: (value: string | null) => void;
+}) {
+  const { token } = theme.useToken();
+  return (
+    <Select
+      {...rest}
+      allowClear
+      showSearch
+      optionFilterProp="label"
+      options={options}
+      placeholder="No project"
+      optionRender={(opt) => {
+        const d = opt.data as unknown as ProjectOption;
+        return (
+          <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <span
+              style={{
+                width: 9,
+                height: 9,
+                borderRadius: 3,
+                background: d.color ?? token.colorTextQuaternary,
+                flex: "none",
+              }}
+            />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {d.label}
+            </span>
+          </span>
+        );
+      }}
+    />
   );
 }

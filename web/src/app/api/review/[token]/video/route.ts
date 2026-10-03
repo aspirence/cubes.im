@@ -4,6 +4,7 @@ import {
   type SupabaseClient,
 } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
+import { driveSourceFromRow, streamDriveRevision } from "@/lib/video-review/drive-stream";
 
 /**
  * Streams a shared review video's bytes to the public review page.
@@ -65,7 +66,7 @@ export async function GET(
 
   const { data: rev } = await db
     .from("app_video_review_revisions")
-    .select("storage_path, url")
+    .select("*")
     .eq("video_id", share.video_id)
     .eq("revision", revision)
     .maybeSingle();
@@ -73,8 +74,24 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  // An imported Drive copy is preferred over Drive itself: the bytes are local,
+  // need no Google round trip, and survive the file being moved or un-shared.
+  const storagePath: string | null =
+    rev.storage_path ??
+    (rev.import_status === "done" ? (rev.imported_storage_path as string | null) : null);
+
+  // A Drive-backed revision without a local copy is STREAMED through our server,
+  // never redirected to. Its `url` is a drive.google.com page, which a <video>
+  // cannot play, and the /preview iframe it would fall back to cannot report
+  // currentTime — so the client reviewer would lose exactly the timestamps this
+  // page exists for.
+  if (!storagePath) {
+    const drive = driveSourceFromRow(rev as never);
+    if (drive) return streamDriveRevision(admin, drive, request.headers.get("range"));
+  }
+
   // External-URL revisions redirect straight through.
-  if (!rev.storage_path) {
+  if (!storagePath) {
     if (!rev.url) {
       return NextResponse.json({ error: "No source" }, { status: 404 });
     }
@@ -83,7 +100,7 @@ export async function GET(
 
   // Uploaded object — a `<bucket>::<path>` prefix targets another bucket.
   let bucket: string = BUCKET;
-  let path = rev.storage_path;
+  let path = storagePath;
   const sep = path.indexOf("::");
   if (sep > 0) {
     bucket = path.slice(0, sep);

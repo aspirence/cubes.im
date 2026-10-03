@@ -91,8 +91,8 @@ export const AGENT_CONTEXTS: AgentContextDescriptor[] = [
   },
   {
     key: "social",
-    title: "Social Studio",
-    description: "Social posts, campaign state and publishing schedule.",
+    title: "Content Studio",
+    description: "Content items, campaign state and publishing schedule.",
     accent: "#ed4f9a",
   },
   {

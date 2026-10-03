@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { ReactNode } from "react";
+import Link from "next/link";
 import {
   App,
   Button,
@@ -24,6 +25,7 @@ import {
   ApiOutlined,
   DeleteOutlined,
   EditOutlined,
+  GlobalOutlined,
   MailOutlined,
   SendOutlined,
   SlackOutlined,
@@ -444,6 +446,26 @@ export default function AppsSettingsPage() {
             scroll={{ x: "max-content" }}
           />
         )}
+      </Card>
+
+      {/* The other half of "connect anything": a workflow's HTTP step reaches a
+          service we have no connector for, but only a host an admin has put on
+          the allowlist — empty by default, so the link has to be findable. */}
+      <Card size="small">
+        <Space align="start">
+          <span style={{ fontSize: 18, color: token.colorTextSecondary }}>
+            <GlobalOutlined />
+          </span>
+          <Space direction="vertical" size={2}>
+            <Link href="/settings/http-hosts">
+              <Typography.Text strong>Allowed HTTP hosts</Typography.Text>
+            </Link>
+            <Typography.Text type="secondary" style={{ fontSize: 12.5 }}>
+              A workflow&rsquo;s HTTP step can only call hosts on this list. Until one is
+              added, every HTTP step fails.
+            </Typography.Text>
+          </Space>
+        </Space>
       </Card>
 
       <Modal

@@ -34,6 +34,15 @@ export function useWorkflowRuns(workflowId: string | undefined) {
       if (error) throw error;
       return data ?? [];
     },
+    // A run parked on an app step or a delay finishes on the server a little
+    // later (the next runner tick at worst), so keep the list fresh while one
+    // is open.
+    refetchInterval: (query) =>
+      (query.state.data ?? []).some(
+        (r) => r.status === "running" || r.status === "waiting_app" || r.status === "waiting_delay",
+      )
+        ? 5000
+        : false,
   });
 }
 
@@ -64,26 +73,46 @@ export function useWorkflowRun(runId: string | undefined) {
       if (stepsErr) throw stepsErr;
       return { run, stepRuns: steps ?? [] };
     },
+    refetchInterval: (query) => {
+      const status = query.state.data?.run.status;
+      return status === "running" || status === "waiting_app" || status === "waiting_delay"
+        ? 4000
+        : false;
+    },
   });
 }
 
 /**
- * Runs a workflow now via start_workflow_run (executes synchronously in the DB
- * and returns the run id). Zero AI tokens — deterministic skills + templates.
+ * Runs a workflow now. start_workflow_run executes every in-database step
+ * synchronously and parks the run on its first app step (a Sheets sync, a CRM
+ * step…); the follow-up POST to /continue executes those app steps on the
+ * server straight away. If that call fails the run is not lost — the runner's
+ * next tick picks up any parked run — so it never fails the mutation.
+ * Resolves with the run id and its status after the app steps ran.
  */
 export function useRunNow() {
   const supabase = useMemo(() => createClient(), []);
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (workflowId: string): Promise<string> => {
+    mutationFn: async (
+      workflowId: string,
+    ): Promise<{ runId: string; status: string | null }> => {
       const { data, error } = await supabase.rpc("start_workflow_run", {
         p_workflow_id: workflowId,
       });
       if (error) throw error;
-      return data as string;
+      const runId = data as string;
+      try {
+        const res = await fetch(`/api/workflows/runs/${runId}/continue`, { method: "POST" });
+        const body = (await res.json().catch(() => ({}))) as { status?: string | null };
+        return { runId, status: res.ok ? (body.status ?? null) : null };
+      } catch {
+        return { runId, status: null };
+      }
     },
-    onSuccess: (_runId, workflowId) => {
+    onSuccess: ({ runId }, workflowId) => {
       queryClient.invalidateQueries({ queryKey: runsKey(workflowId) });
+      queryClient.invalidateQueries({ queryKey: runKey(runId) });
       queryClient.invalidateQueries({ queryKey: ["workflows"] });
     },
   });

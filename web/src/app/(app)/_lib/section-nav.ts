@@ -133,6 +133,7 @@ export const SECTION_NAVS: SectionNav[] = [
       { key: "/reporting/time", label: "Time Analytics", icon: "timer" },
       { type: "divider" },
       { key: "/reporting/overview", label: "Overview", icon: "space_dashboard", requiresAdmin: true },
+      { key: "/reporting/daily", label: "Daily report", icon: "summarize", requiresAdmin: true },
       { key: "/reporting/projects", label: "Projects", icon: "folder", requiresAdmin: true },
       { key: "/reporting/members", label: "Members", icon: "group", requiresAdmin: true },
       { key: "/reporting/time-sheets", label: "Time Sheets", icon: "schedule", requiresAdmin: true },

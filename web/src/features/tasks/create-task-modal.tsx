@@ -9,6 +9,7 @@ import {
   Dropdown,
   Input,
   Modal,
+  Popover,
   Segmented,
   Select,
   Typography,
@@ -20,6 +21,7 @@ import {
   ProfileOutlined,
   FolderOutlined,
 } from "@ant-design/icons";
+import { createClient } from "@/lib/supabase/client";
 import { useProjects } from "@/features/projects/use-projects";
 import {
   useTeamMembers,
@@ -46,6 +48,14 @@ import {
   useCreateTaskWithTemplate,
   useSetProjectDefaultTemplate,
 } from "@/features/templates/use-templates";
+import { RecurrencePicker } from "@/features/recurring/recurrence-picker";
+import {
+  DEFAULT_RECURRENCE,
+  describeRecurrence,
+  recurrenceError,
+  type RecurrenceDraft,
+} from "@/features/recurring/recurrence";
+import { useSetTaskRecurring } from "@/features/recurring/use-recurring";
 
 export interface CreateTaskModalProps {
   open: boolean;
@@ -61,8 +71,9 @@ export interface CreateTaskModalProps {
   defaultParentTaskId?: string;
   /** Label for the seeded parent, shown until the project's task list loads. */
   defaultParentTaskName?: string;
-  /** Called with the new task id after a successful create. */
-  onCreated?: (taskId: string) => void;
+  /** Called with the new task id after a successful create, plus the project
+   *  and due date the task ended up with (what a calendar needs to place it). */
+  onCreated?: (taskId: string, created: { projectId: string; due: Dayjs | null }) => void;
 }
 
 /** A compact "property" control (icon + inline control). */
@@ -98,6 +109,7 @@ export function CreateTaskModal({
   onCreated,
 }: CreateTaskModalProps) {
   const { message } = App.useApp();
+  const supabase = useMemo(() => createClient(), []);
   const { data: projects } = useProjects();
   const { data: members } = useTeamMembers();
   const isAdmin = useIsTeamAdmin();
@@ -109,6 +121,7 @@ export function CreateTaskModal({
   const createSubtask = useCreateTask();
   const updateTask = useUpdateTask();
   const setDefaultTemplate = useSetProjectDefaultTemplate();
+  const setRecurring = useSetTaskRecurring();
 
   const { profile } = useAuth();
   const { data: activeTeam } = useActiveTeam();
@@ -148,6 +161,14 @@ export function CreateTaskModal({
   // Start date defaults to today — clearable if the task shouldn't have one.
   const [start, setStart] = useState<Dayjs | null>(() => dayjs());
   const [due, setDue] = useState<Dayjs | null>(null);
+  // Repeat is top-level only (like templates) and counts from the task's own
+  // day: its start, else its due, else today — the same order the job uses.
+  // What is shown here is a preview; the schedule is anchored on the dates the
+  // created task actually ends up with, which a template can set on its own.
+  const [repeat, setRepeat] = useState<RecurrenceDraft | null>(null);
+  const [repeatOpen, setRepeatOpen] = useState(false);
+  const repeatAnchor = (start ?? due ?? dayjs()).format("YYYY-MM-DD");
+  const repeatProblem = repeat ? recurrenceError(repeat, repeatAnchor) : null;
   const [makeDefault, setMakeDefault] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteQuery, setInviteQuery] = useState("");
@@ -243,6 +264,8 @@ export function CreateTaskModal({
     setDeliverableType(undefined);
     setStart(dayjs());
     setDue(defaultDue ?? null);
+    setRepeat(null);
+    setRepeatOpen(false);
     setMakeDefault(false);
     setInviteOpen(false);
   } else if (!open && seededOpen) {
@@ -353,12 +376,46 @@ export function CreateTaskModal({
           // Non-fatal: the task was still created.
         }
       }
+      // The schedule hangs off the task, so it can only be written now. If it
+      // fails the task still exists — say so, rather than "Task created" as if
+      // it repeats.
+      let repeatSaved = false;
+      if (repeat && !parentTaskId) {
+        try {
+          // Anchor on what the task ENDED UP with: a template's
+          // due_offset_days sets a due date this form never saw, and anchoring
+          // on the form's dates would schedule a different day from the one the
+          // job will shift copies by.
+          const { data: createdRow } = await supabase
+            .from("tasks")
+            .select("start_date, end_date")
+            .eq("id", taskId)
+            .maybeSingle();
+          const createdAnchor = createdRow?.start_date ?? createdRow?.end_date ?? null;
+          await setRecurring.mutateAsync({
+            taskId,
+            projectId,
+            ...repeat,
+            startsOn: createdAnchor
+              ? dayjs(createdAnchor).format("YYYY-MM-DD")
+              : repeatAnchor,
+          });
+          repeatSaved = true;
+        } catch {
+          message.warning(
+            "Task created, but its repeat could not be saved — set it from the task.",
+          );
+        }
+      }
+      const created = parentTaskId
+        ? "Subtask created."
+        : stepCount > 0
+          ? `Task created with ${stepCount} subtask${stepCount === 1 ? "" : "s"}.`
+          : "Task created.";
       message.success(
-        parentTaskId
-          ? "Subtask created."
-          : stepCount > 0
-            ? `Task created with ${stepCount} subtask${stepCount === 1 ? "" : "s"}.`
-            : "Task created.",
+        repeatSaved && repeat
+          ? `${created} Repeats ${describeRecurrence(repeat).toLowerCase()}.`
+          : created,
       );
       // Mention fan-out from the description — best-effort, never blocks
       // creation; recipients get a "mention" notification linking to the task.
@@ -372,7 +429,7 @@ export function CreateTaskModal({
           teamId: activeTeam?.id,
         }).catch(() => {});
       }
-      onCreated?.(taskId);
+      onCreated?.(taskId, { projectId, due });
       onClose();
     } catch (err) {
       message.error(err instanceof Error ? err.message : "Failed to create task.");
@@ -393,7 +450,10 @@ export function CreateTaskModal({
     label: p.name,
   }));
   const pending =
-    createTask.isPending || createSubtask.isPending || updateTask.isPending;
+    createTask.isPending ||
+    createSubtask.isPending ||
+    updateTask.isPending ||
+    setRecurring.isPending;
 
   return (
     <>
@@ -639,6 +699,65 @@ export function CreateTaskModal({
               style={{ width: 122 }}
             />
           </Property>
+          {kind === "task" ? (
+            <Popover
+              open={repeatOpen}
+              onOpenChange={setRepeatOpen}
+              trigger="click"
+              placement="bottomLeft"
+              content={
+                <div style={{ width: 340, display: "grid", gap: 10 }}>
+                  <RecurrencePicker
+                    value={repeat ?? DEFAULT_RECURRENCE}
+                    onChange={setRepeat}
+                    startsOn={repeatAnchor}
+                  />
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                    {repeat ? (
+                      <Button
+                        size="small"
+                        onClick={() => {
+                          setRepeat(null);
+                          setRepeatOpen(false);
+                        }}
+                      >
+                        Don&apos;t repeat
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="small"
+                      type="primary"
+                      disabled={Boolean(repeatProblem)}
+                      title={repeatProblem ?? undefined}
+                      onClick={() => {
+                        if (!repeat) setRepeat(DEFAULT_RECURRENCE);
+                        setRepeatOpen(false);
+                      }}
+                    >
+                      {repeat ? "Done" : "Repeat"}
+                    </Button>
+                  </div>
+                </div>
+              }
+            >
+              <Button
+                size="small"
+                type="text"
+                style={{
+                  marginLeft: 6,
+                  padding: "0 6px",
+                  color: repeat ? "#4a4ad0" : "#9a9da8",
+                }}
+                icon={
+                  <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
+                    repeat
+                  </span>
+                }
+              >
+                {repeat ? describeRecurrence(repeat) : "Repeat"}
+              </Button>
+            </Popover>
+          ) : null}
         </div>
       </div>
 
@@ -715,7 +834,8 @@ export function CreateTaskModal({
           type="primary"
           loading={pending}
           onClick={handleSubmit}
-          disabled={!projectId || !name.trim()}
+          disabled={!projectId || !name.trim() || Boolean(repeatProblem)}
+          title={repeatProblem ?? undefined}
         >
           Create Task
         </Button>

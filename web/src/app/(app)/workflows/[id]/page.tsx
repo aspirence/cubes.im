@@ -6,9 +6,9 @@ import {
   App,
   Button,
   Drawer,
-  Dropdown,
   Input,
   InputNumber,
+  Popconfirm,
   Segmented,
   Select,
   Skeleton,
@@ -42,15 +42,67 @@ import { useTeamMembers } from "@/features/team-members/use-team-members";
 import { MemberSingleSelect } from "@/features/team-members/member-select";
 import { useProjects } from "@/features/projects/use-projects";
 import {
-  CONDITION_OPS,
-  STEP_CAPABILITIES,
+  appActionForStep,
+  appActionTiles,
   capabilityForStep,
   skillByKey,
   type FieldDef,
   type StepCapability,
   type StepType,
 } from "@/lib/workflows/capabilities";
+import {
+  BUILDER_STEP_TYPES,
+  TRIGGER_KINDS,
+  appActionByKey,
+  builderStepForStep,
+  describeSchedule,
+  workflowEventByKey,
+} from "@/lib/workflows/app-action-catalog";
+import { useInstalledApps } from "@/features/apps-platform/use-installed-apps";
+import { AppStepInspector, isAppStepComplete } from "@/features/workflows/app-step-inspector";
+import { normalizeScheduleConfig } from "@/features/workflows/schedule-trigger-form";
+import { buildFieldTree, type FieldGroup } from "@/features/workflows/field-tokens";
+import {
+  builderFieldSources,
+  triggerSampleState,
+  type StepSampleInput,
+} from "@/features/workflows/field-sources";
+import { TokenInput } from "@/features/workflows/field-picker";
+import {
+  BranchPicker,
+  CreateTaskInspector,
+  DelayInspector,
+  DeleteStepButton,
+  FilterInspector,
+  HttpInspector,
+  NotifyInspector,
+  RouterInspector,
+} from "@/features/workflows/step-inspectors";
+import { TestStepPanel } from "@/features/workflows/test-step-panel";
+import {
+  compactConditionConfig,
+  describeRuleGroup,
+  normalizeConditionConfig,
+  normalizeRouterConfig,
+  validateRouterConfig,
+  validateRuleGroup,
+} from "@/features/workflows/rule-groups";
+import {
+  compactDelayConfig,
+  compactHttpConfig,
+  describeDelay,
+  describeHttp,
+  normalizeDelayConfig,
+  normalizeHttpConfig,
+  validateDelayConfig,
+  validateHttpConfig,
+} from "@/features/workflows/step-config";
+import {
+  useWebhookEvents,
+  useWorkflowWebhook,
+} from "@/features/workflows/use-workflow-automation";
 import { RunHistory } from "./_components/run-history";
+import { TriggerPanel } from "./_components/trigger-panel";
 
 function useT() {
   const { token } = theme.useToken();
@@ -80,28 +132,63 @@ function MIcon({ name, size = 18, color }: { name: string; size?: number; color?
 type Cfg = Record<string, unknown>;
 
 /** Nice one-line summary of a step's config for the canvas card. */
-function stepSummary(
-  step: WorkflowStep,
-  agents: Agent[],
-  steps: WorkflowStep[],
-  index: number,
-): string {
+function stepSummary(step: WorkflowStep, agents: Agent[]): string {
   const cfg = (step.config as Cfg) ?? {};
   if (step.step_type === "agent") {
     const a = agents.find((x) => x.id === cfg.agent_id);
     return a ? `Agent: ${a.name}` : "Agent: (pick one)";
   }
   if (step.step_type === "condition") {
-    const left = cfg.left
-      ? tokenDisplay(String(cfg.left), steps, index, agents)
-      : "…";
-    const op = CONDITION_OPS.find((o) => o.value === cfg.op)?.label ?? "?";
-    return `Continue if ${left} ${op} ${cfg.right ?? "…"}`;
+    const c = normalizeConditionConfig(cfg);
+    const lead = c.mode === "filter" ? "Continue when" : "Stop unless";
+    return `${lead} ${describeRuleGroup(c)}`;
+  }
+  if (step.step_type === "router") {
+    const routes = normalizeRouterConfig(cfg).routes;
+    return `${routes.length} route${routes.length === 1 ? "" : "s"}: ${routes
+      .map((r) => r.label)
+      .join(", ")}`;
+  }
+  if (step.step_type === "delay") {
+    return describeDelay(normalizeDelayConfig(cfg));
   }
   if (step.step_type === "action") {
+    if (cfg.action === "create_task") return String(cfg.name ?? "Create a task");
+    if (cfg.action === "notify_user") return String(cfg.message ?? "Send a notification");
     return String(cfg.action ?? "action");
   }
+  if (step.step_type === "http") return describeHttp(normalizeHttpConfig(cfg));
+  if (step.step_type === "app") {
+    const action = appActionForStep(cfg);
+    if (!action) return "App: (unknown action)";
+    const params = (cfg.params ?? {}) as Cfg;
+    if (action.key === "sheets.sync") return params.sheet_id ? "Sync the chosen sheet" : "Pick a sheet";
+    return action.description;
+  }
   return step.step_type;
+}
+
+/** The name a step carries on its card and in the field picker. */
+function stepTitle(step: WorkflowStep, agents: Agent[]): string {
+  const cfg = (step.config as Cfg) ?? {};
+  if (step.step_type === "agent")
+    return agents.find((a) => a.id === cfg.agent_id)?.name ?? "Agent";
+  const builder = builderStepForStep(step.step_type, cfg);
+  if (builder) return builder.title;
+  const action = appActionForStep(cfg);
+  if (action) return action.label;
+  return capabilityForStep(step.step_type as StepType, cfg)?.title ?? step.step_type;
+}
+
+/** The glyph a step carries on its card. */
+function stepIcon(step: WorkflowStep): string {
+  const cfg = (step.config as Cfg) ?? {};
+  if (step.step_type === "agent") return "smart_toy";
+  const builder = builderStepForStep(step.step_type, cfg);
+  if (builder) return builder.icon;
+  return (
+    appActionForStep(cfg)?.icon ?? capabilityForStep(step.step_type as StepType, cfg)?.icon ?? "widgets"
+  );
 }
 
 /** Whether a step's required config is filled in (drives the ⚠ badge). */
@@ -110,6 +197,11 @@ function isStepComplete(step: WorkflowStep, agents: Agent[]): boolean {
   if (step.step_type === "agent") {
     return agents.some((a) => a.id === cfg.agent_id);
   }
+  if (step.step_type === "condition") return validateRuleGroup(normalizeConditionConfig(cfg)) === null;
+  if (step.step_type === "router") return validateRouterConfig(normalizeRouterConfig(cfg)) === null;
+  if (step.step_type === "delay") return validateDelayConfig(normalizeDelayConfig(cfg)) === null;
+  if (step.step_type === "http") return validateHttpConfig(normalizeHttpConfig(cfg)) === null;
+  if (step.step_type === "app") return isAppStepComplete(cfg);
   const cap = capabilityForStep(step.step_type as StepType, cfg);
   if (!cap) return false;
   return cap.fields.every(
@@ -117,73 +209,6 @@ function isStepComplete(step: WorkflowStep, agents: Agent[]): boolean {
       !f.required ||
       (cfg[f.key] !== undefined && String(cfg[f.key] ?? "").trim() !== ""),
   );
-}
-
-/** "leave_pending" → "Leave pending" — plain words for non-technical users. */
-function humanize(key: string): string {
-  const words = key.replace(/_/g, " ").trim();
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
-
-/** Tokens the "Insert data" picker offers, from upstream steps' outputs. */
-function upstreamTokens(
-  steps: WorkflowStep[],
-  currentIndex: number,
-  agents: Agent[],
-): { label: string; tokens: { label: string; token: string }[] }[] {
-  const groups: { label: string; tokens: { label: string; token: string }[] }[] = [];
-  for (let i = 0; i < currentIndex; i++) {
-    const s = steps[i];
-    const cfg = (s.config as Cfg) ?? {};
-    const tokens: { label: string; token: string }[] = [];
-    let stepTitle = s.step_key;
-    if (s.step_type === "agent") {
-      const a = agents.find((x) => x.id === cfg.agent_id);
-      if (a) stepTitle = a.name;
-      const skills = Array.isArray(a?.skills) ? (a!.skills as { skill: string }[]) : [];
-      for (const sk of skills) {
-        const desc = skillByKey(sk.skill);
-        if (!desc) continue;
-        if (desc.isList) {
-          tokens.push({ label: `${desc.title} (list)`, token: `steps.${s.step_key}.${sk.skill}` });
-        } else {
-          for (const out of desc.outputs) {
-            tokens.push({
-              label: `${desc.title} · ${humanize(out)}`,
-              token: `steps.${s.step_key}.${sk.skill}.${out}`,
-            });
-          }
-        }
-      }
-    } else if (s.step_type === "condition") {
-      stepTitle = "Condition";
-      tokens.push({ label: "Condition passed", token: `steps.${s.step_key}.passed` });
-    } else if (s.step_type === "action" && cfg.action === "notify_user") {
-      stepTitle = "Notify member";
-      tokens.push({ label: "Notification sent", token: `steps.${s.step_key}.notified` });
-    } else if (s.step_type === "action" && cfg.action === "create_task") {
-      stepTitle = "Create task";
-      tokens.push({ label: "Created task id", token: `steps.${s.step_key}.task_id` });
-    }
-    if (tokens.length) groups.push({ label: `Step ${i + 1} · ${stepTitle}`, tokens });
-  }
-  return groups;
-}
-
-/** Friendly label for a stored "{{steps.…}}" value (or the raw text itself). */
-function tokenDisplay(
-  value: string,
-  steps: WorkflowStep[],
-  stepIndex: number,
-  agents: Agent[],
-): string {
-  const m = /^\{\{(.+)\}\}$/.exec(value.trim());
-  if (!m) return value;
-  for (const g of upstreamTokens(steps, stepIndex, agents)) {
-    const hit = g.tokens.find((t) => t.token === m[1]);
-    if (hit) return hit.label;
-  }
-  return value;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -196,38 +221,34 @@ function FieldInput({
   onChange,
   members,
   projects,
-  insertGroups,
+  groups,
+  disabled,
 }: {
   field: FieldDef;
   value: unknown;
   onChange: (v: unknown) => void;
   members: { value: string; label: string }[];
   projects: { value: string; label: string }[];
-  insertGroups: { label: string; tokens: { label: string; token: string }[] }[];
+  groups: FieldGroup[];
+  disabled?: boolean;
 }) {
-  const insertMenu =
-    field.supportsInsert && insertGroups.length > 0 ? (
-      <Dropdown
-        trigger={["click"]}
-        menu={{
-          items: insertGroups.map((g) => ({
-            key: g.label,
-            type: "group" as const,
-            label: g.label,
-            children: g.tokens.map((t) => ({
-              key: t.token,
-              label: t.label,
-              onClick: () =>
-                onChange(`${typeof value === "string" ? value : ""}{{${t.token}}}`),
-            })),
-          })),
-        }}
-      >
-        <Button size="small" type="link" style={{ padding: 0 }}>
-          Insert data
-        </Button>
-      </Dropdown>
-    ) : null;
+  // A text field that can carry data gets the full picker, not a menu of
+  // guessed token names: the picker knows what the samples actually contain.
+  if (field.supportsInsert && (field.type === "string" || field.type === "text")) {
+    return (
+      <TokenInput
+        label={field.title}
+        required={field.required}
+        multiline={field.type === "text"}
+        rows={3}
+        value={typeof value === "string" ? value : ""}
+        onChange={onChange}
+        groups={groups}
+        disabled={disabled}
+        placeholder={field.placeholder}
+      />
+    );
+  }
 
   let control: React.ReactNode;
   if (field.type === "enum") {
@@ -237,6 +258,7 @@ function FieldInput({
         value={value as string}
         options={field.enumOptions}
         onChange={onChange}
+        disabled={disabled}
         placeholder="Select"
       />
     );
@@ -245,17 +267,19 @@ function FieldInput({
       <InputNumber
         style={{ width: "100%" }}
         value={value as number}
+        disabled={disabled}
         onChange={(v) => onChange(v)}
       />
     );
   } else if (field.type === "boolean") {
-    control = <Switch checked={Boolean(value)} onChange={onChange} />;
+    control = <Switch checked={Boolean(value)} disabled={disabled} onChange={onChange} />;
   } else if (field.type === "member") {
     control = (
       <MemberSingleSelect
         style={{ width: "100%" }}
         value={(value as string) || undefined}
         options={members}
+        disabled={disabled}
         onChange={onChange}
         placeholder="Select member"
       />
@@ -268,6 +292,7 @@ function FieldInput({
         optionFilterProp="label"
         value={(value as string) || undefined}
         options={projects}
+        disabled={disabled}
         onChange={onChange}
         placeholder="Select project"
       />
@@ -278,6 +303,7 @@ function FieldInput({
         rows={3}
         value={(value as string) ?? ""}
         placeholder={field.placeholder}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
       />
     );
@@ -286,6 +312,7 @@ function FieldInput({
       <Input
         value={(value as string) ?? ""}
         placeholder={field.placeholder}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
       />
     );
@@ -293,20 +320,10 @@ function FieldInput({
 
   return (
     <div style={{ marginBottom: 14 }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 4,
-        }}
-      >
-        <Typography.Text style={{ fontSize: 13 }}>
-          {field.title}
-          {field.required ? <span style={{ color: "#e0556a" }}> *</span> : null}
-        </Typography.Text>
-        {insertMenu}
-      </div>
+      <Typography.Text style={{ fontSize: 13, display: "block", marginBottom: 4 }}>
+        {field.title}
+        {field.required ? <span style={{ color: "#e0556a" }}> *</span> : null}
+      </Typography.Text>
       {control}
     </div>
   );
@@ -331,6 +348,7 @@ export default function WorkflowBuilderPage() {
   const { data: agents } = useAgents();
   const { data: members } = useTeamMembers();
   const { data: projects } = useProjects();
+  const { data: installedApps } = useInstalledApps();
 
   const updateWorkflow = useUpdateWorkflow();
   const createStep = useCreateStep();
@@ -375,6 +393,70 @@ export default function WorkflowBuilderPage() {
   const selected = stepList.find((s) => s.id === selectedId) ?? null;
   const selectedIndex = stepList.findIndex((s) => s.id === selectedId);
 
+  /* ------------------------------------------------------------- samples -- */
+  // The webhook's capture buffer doubles as the trigger's sample until one is
+  // saved, so the field picker is useful the moment a request lands.
+  const { data: hook } = useWorkflowWebhook(workflowId, workflow?.trigger_type === "webhook");
+  const { data: hookEvents } = useWebhookEvents(hook?.row?.id, { limit: 1 });
+  const capturedSample = hookEvents?.row?.[0]?.payload ?? undefined;
+
+  const storedTriggerSample = (workflow as { trigger_sample?: unknown } | undefined)
+    ?.trigger_sample;
+
+  const triggerState = useMemo(
+    () =>
+      triggerSampleState({
+        triggerType: workflow?.trigger_type ?? "manual",
+        triggerConfig: workflow?.trigger_config,
+        storedSample: storedTriggerSample,
+        capturedSample,
+      }),
+    [workflow?.trigger_type, workflow?.trigger_config, storedTriggerSample, capturedSample],
+  );
+
+  const sampleSteps = useMemo<StepSampleInput[]>(
+    () =>
+      stepList.map((s) => {
+        const cfg = (s.config as Cfg) ?? {};
+        const agent = agentList.find((a) => a.id === cfg.agent_id);
+        // An agent has no catalog shape of its own: its outputs are one block
+        // per skill it bundles, which is what the run context ends up holding.
+        let fallbackSample: unknown;
+        if (s.step_type === "agent") {
+          const skills = Array.isArray(agent?.skills)
+            ? (agent.skills as { skill: string }[])
+            : [];
+          const shape: Record<string, unknown> = {};
+          for (const sk of skills) {
+            const desc = skillByKey(sk.skill);
+            if (!desc) continue;
+            const fields = Object.fromEntries(desc.outputs.map((o) => [o, null]));
+            shape[sk.skill] = desc.isList ? [fields] : fields;
+          }
+          fallbackSample = shape;
+        }
+        return {
+          step_key: s.step_key,
+          step_type: s.step_type,
+          config: cfg,
+          sampleOutput: (s as { sample_output?: unknown }).sample_output,
+          label: stepTitle(s, agentList),
+          fallbackSample,
+        };
+      }),
+    [stepList, agentList],
+  );
+
+  /** The picker's tree for the step at `index` — trigger plus earlier steps. */
+  const groupsFor = (index: number): FieldGroup[] =>
+    buildFieldTree(builderFieldSources(triggerState, sampleSteps, index));
+
+  /** The nearest router above a step, so the step can pick its route. */
+  const routerBefore = (index: number): WorkflowStep | null => {
+    for (let i = index - 1; i >= 0; i--) if (stepList[i].step_type === "router") return stepList[i];
+    return null;
+  };
+
   const nextStepKey = () => {
     let max = 0;
     for (const s of stepList) {
@@ -386,7 +468,7 @@ export default function WorkflowBuilderPage() {
 
   /** Adds a step, inserting at `at` (chain index) when given. */
   const addStep = async (
-    stepType: StepType,
+    stepType: string,
     fixedConfig: Record<string, string> | undefined,
     agentId?: string,
     at?: number | null,
@@ -395,6 +477,20 @@ export default function WorkflowBuilderPage() {
     try {
       const config: Cfg = { ...(fixedConfig ?? {}) };
       if (agentId) config.agent_id = agentId;
+      // App steps start with the catalog defaults, so the step is runnable
+      // as soon as it is added (unless it needs a pick, like a sheet).
+      if (stepType === "app" && typeof config.action === "string") {
+        const params: Cfg = {};
+        for (const p of appActionByKey(config.action)?.params ?? []) params[p.key] = p.default;
+        config.params = params;
+      }
+      // The logic steps start from a complete, editable shape rather than {},
+      // so the drawer has something to show and the canvas card reads sensibly.
+      if (stepType === "condition")
+        Object.assign(config, compactConditionConfig(normalizeConditionConfig(config)));
+      if (stepType === "router") Object.assign(config, normalizeRouterConfig(null));
+      if (stepType === "delay") Object.assign(config, compactDelayConfig(normalizeDelayConfig(null)));
+      if (stepType === "http") Object.assign(config, compactHttpConfig(normalizeHttpConfig(null)));
       const created = await createStep.mutateAsync({
         workflowId,
         position: stepList.length + 1,
@@ -411,12 +507,26 @@ export default function WorkflowBuilderPage() {
       setSelectedId(created.id);
       setPickerAt(null);
     } catch (err) {
+      // A step_type the engine has not learned yet comes back as a CHECK
+      // violation, which reads like nonsense — say what is actually missing.
+      if ((err as { code?: string })?.code === "23514") {
+        message.error(
+          "This step type needs migration 20261132000000_workflow_automation.sql, which has not been applied here yet.",
+        );
+        setPickerAt(null);
+        return;
+      }
       message.error(err instanceof Error ? err.message : "Failed to add step.");
     }
   };
 
   const saveConfig = async (step: WorkflowStep, config: Cfg) => {
-    if (!canEdit) return;
+    // Silently dropping the change left a non-admin looking at edits that were
+    // never stored and vanished on reload; say so instead.
+    if (!canEdit) {
+      message.warning("Only workspace admins can change a workflow's steps.");
+      return;
+    }
     try {
       await updateStep.mutateAsync({ id: step.id, workflowId, config });
     } catch (err) {
@@ -436,10 +546,16 @@ export default function WorkflowBuilderPage() {
   const handleRun = async () => {
     setRunning(true);
     try {
-      const runId = await runNow.mutateAsync(workflowId);
+      const { runId, status } = await runNow.mutateAsync(workflowId);
       setLastRunId(runId);
       setHistoryOpen(true);
-      message.success("Run complete — 0 AI tokens used.");
+      if (status === "error") message.error("The run failed — see the run history for the step that stopped it.");
+      else if (status === "waiting_app" || status === "running" || status === null)
+        // null = the /continue call did not come back with a status (the run is
+        // started either way and the next runner tick finishes it), so do not
+        // claim "complete" for something that may still be working.
+        message.info("Run started — app steps are still working; the history updates as they finish.");
+      else message.success("Run complete.");
     } catch (err) {
       message.error(err instanceof Error ? err.message : "Run failed.");
     } finally {
@@ -456,7 +572,7 @@ export default function WorkflowBuilderPage() {
   }
 
   /* ------------------------------------------------------------ picker data */
-  const pickerCats = ["All", "Agents", "Logic", "Actions", "Apps", "Human"];
+  const pickerCats = ["All", "Agents", "Logic", "Actions", "Apps"];
   const q = pickerQ.trim().toLowerCase();
   const agentTiles = agentList
     .filter((a) => !q || a.name.toLowerCase().includes(q))
@@ -468,7 +584,7 @@ export default function WorkflowBuilderPage() {
       available: true,
       onAdd: () => void addStep("agent", undefined, a.id, pickerAt),
     }));
-  const capTiles = STEP_CAPABILITIES.filter(
+  const capTiles = BUILDER_STEP_TYPES.filter(
     (c) =>
       (pickerCat === "All" || c.category === pickerCat) &&
       (!q || c.title.toLowerCase().includes(q) || c.description.toLowerCase().includes(q)),
@@ -477,15 +593,54 @@ export default function WorkflowBuilderPage() {
     icon: c.icon,
     title: c.title,
     desc: c.description,
-    available: c.available,
+    available: true,
+    reason: undefined as string | undefined,
     onAdd: () => void addStep(c.stepType, c.fixedConfig, undefined, pickerAt),
   }));
+  const appTiles =
+    pickerCat === "All" || pickerCat === "Apps"
+      ? appActionTiles(installedApps ?? [])
+          .filter((a) => a.appKey !== "")
+          .filter(
+            (a) =>
+              !q || a.label.toLowerCase().includes(q) || a.description.toLowerCase().includes(q),
+          )
+          .map((a) => ({
+            key: `app-${a.key}`,
+            icon: a.icon,
+            title: a.label,
+            desc: a.available ? a.description : a.reason ?? a.description,
+            available: a.available,
+            reason: a.reason,
+            onAdd: () => void addStep("app", { action: a.key }, undefined, pickerAt),
+          }))
+      : [];
   const tiles = [
     ...(pickerCat === "All" || pickerCat === "Agents" ? agentTiles : []),
     ...(pickerCat === "Agents" ? [] : capTiles),
+    ...(pickerCat === "Agents" ? [] : appTiles),
   ];
 
   /* ------------------------------------------------------------- rendering */
+
+  /* ---------------------------------------------------------- trigger card */
+  const triggerDescriptor = TRIGGER_KINDS.find((t) => t.value === workflow.trigger_type);
+  const triggerIcon = triggerDescriptor?.icon ?? "bolt";
+  const triggerEventKey = ((workflow.trigger_config ?? {}) as { event_key?: string }).event_key;
+  const triggerText =
+    workflow.trigger_type === "schedule"
+      ? `${describeSchedule(normalizeScheduleConfig(workflow.trigger_config))} (${
+          normalizeScheduleConfig(workflow.trigger_config).timezone
+        })`
+      : workflow.trigger_type === "event"
+        ? (workflowEventByKey(triggerEventKey ?? "")?.label ?? "Pick an event")
+        : workflow.trigger_type === "webhook"
+          ? hook?.row
+            ? hook.row.capture_mode
+              ? "Webhook — capturing requests, not running"
+              : "Webhook — live"
+            : "Webhook — no URL issued yet"
+          : "Manual / test run";
 
   const connector = (at: number) => (
     <div key={`conn-${at}`} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
@@ -580,7 +735,7 @@ export default function WorkflowBuilderPage() {
             aria-label="Run history"
           />
         </Tooltip>
-        <Tooltip title="Test run">
+        <Tooltip title="Run now">
           <Button
             type="text"
             size="small"
@@ -588,7 +743,7 @@ export default function WorkflowBuilderPage() {
             loading={running}
             disabled={savePending}
             onClick={() => void handleRun()}
-            aria-label="Test run"
+            aria-label="Run now"
           />
         </Tooltip>
         <Tooltip title={workflow.enabled ? "Enabled" : "Disabled"}>
@@ -742,16 +897,20 @@ export default function WorkflowBuilderPage() {
                 flex: "none",
               }}
             >
-              <MIcon name="bolt" size={19} color={T.accent} />
+              <MIcon name={triggerIcon} size={19} color={T.accent} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, fontWeight: 600 }}>Trigger</div>
-              <div style={{ fontSize: 12, color: T.textTertiary }}>
-                {workflow.trigger_type === "schedule"
-                  ? "On a schedule"
-                  : workflow.trigger_type === "event"
-                    ? "On a task event"
-                    : "Manual / test run"}
+              <div
+                style={{
+                  fontSize: 12,
+                  color: T.textTertiary,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {triggerText}
               </div>
             </div>
             <Tag style={{ margin: 0 }}>{workflow.trigger_type}</Tag>
@@ -796,14 +955,17 @@ export default function WorkflowBuilderPage() {
           ) : (
             <>
               {stepList.map((s, i) => {
-                const cap = capabilityForStep(s.step_type as StepType, (s.config as Cfg) ?? {});
-                const icon = s.step_type === "agent" ? "smart_toy" : cap?.icon ?? "widgets";
-                const title =
-                  s.step_type === "agent"
-                    ? agentList.find((a) => a.id === ((s.config as Cfg)?.agent_id as string))?.name ?? "Agent"
-                    : cap?.title ?? s.step_type;
+                const icon = stepIcon(s);
+                const title = stepTitle(s, agentList);
                 const complete = isStepComplete(s, agentList);
                 const isSel = s.id === selectedId;
+                const branch = (s as WorkflowStep & { branch_key?: string | null }).branch_key;
+                const router = routerBefore(i);
+                const routeLabel = branch
+                  ? normalizeRouterConfig((router?.config as Cfg) ?? {}).routes.find(
+                      (r) => r.key === branch,
+                    )?.label ?? branch
+                  : null;
                 return (
                   <div key={s.id} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                     {connector(i)}
@@ -824,6 +986,7 @@ export default function WorkflowBuilderPage() {
                         gap: 10,
                         cursor: "pointer",
                         position: "relative",
+                        opacity: s.enabled ? 1 : 0.55,
                       }}
                     >
                       <div
@@ -864,12 +1027,35 @@ export default function WorkflowBuilderPage() {
                             whiteSpace: "nowrap",
                           }}
                         >
-                          {stepSummary(s, agentList, stepList, i)}
+                          {s.enabled ? stepSummary(s, agentList) : "Off — this step is skipped."}
                         </div>
                       </div>
+                      {routeLabel ? (
+                        <Tooltip title="This step only runs on that route">
+                          <Tag color="purple" style={{ margin: 0, fontSize: 10.5 }}>
+                            {routeLabel}
+                          </Tag>
+                        </Tooltip>
+                      ) : null}
                       <Tag style={{ margin: 0, fontSize: 10.5 }}>{s.step_key}</Tag>
                       {canEdit ? (
-                        <div className="wl-wf-actions" style={{ display: "flex", gap: 0 }}>
+                        <div className="wl-wf-actions" style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                          <Tooltip title={s.enabled ? "Turn this step off" : "Turn this step on"}>
+                            <Switch
+                              size="small"
+                              checked={s.enabled}
+                              onClick={(_checked, e) => e.stopPropagation()}
+                              onChange={(checked) =>
+                                void updateStep
+                                  .mutateAsync({ id: s.id, workflowId, enabled: checked })
+                                  .catch((err: unknown) =>
+                                    message.error(
+                                      err instanceof Error ? err.message : "Could not change the step.",
+                                    ),
+                                  )
+                              }
+                            />
+                          </Tooltip>
                           <Button
                             type="text"
                             size="small"
@@ -890,20 +1076,25 @@ export default function WorkflowBuilderPage() {
                               void move(i, 1);
                             }}
                           />
-                          <Button
-                            type="text"
-                            size="small"
-                            danger
-                            icon={<DeleteOutlined style={{ fontSize: 11 }} />}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void deleteStep
-                                .mutateAsync({ id: s.id, workflowId })
-                                .then(() => {
-                                  if (selectedId === s.id) setSelectedId(null);
-                                });
-                            }}
-                          />
+                          <Popconfirm
+                            title="Delete this step?"
+                            okText="Delete"
+                            okButtonProps={{ danger: true }}
+                            onConfirm={() =>
+                              void deleteStep.mutateAsync({ id: s.id, workflowId }).then(() => {
+                                if (selectedId === s.id) setSelectedId(null);
+                              })
+                            }
+                          >
+                            <Button
+                              type="text"
+                              size="small"
+                              danger
+                              aria-label="Delete step"
+                              icon={<DeleteOutlined style={{ fontSize: 11 }} />}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </Popconfirm>
                         </div>
                       ) : null}
                     </div>
@@ -978,7 +1169,9 @@ export default function WorkflowBuilderPage() {
                 <div style={{ fontSize: 13, fontWeight: 600 }}>
                   {t.title}
                   {!t.available ? (
-                    <Tag style={{ marginInlineStart: 6, fontSize: 10 }}>Soon</Tag>
+                    <Tag style={{ marginInlineStart: 6, fontSize: 10 }}>
+                      {"reason" in t && t.reason ? "Install app" : "Soon"}
+                    </Tag>
                   ) : null}
                 </div>
                 <div style={{ fontSize: 11.5, color: T.textTertiary, marginTop: 3 }}>{t.desc}</div>
@@ -996,21 +1189,73 @@ export default function WorkflowBuilderPage() {
 
       {/* Inspector drawer ------------------------------------------------ */}
       <Drawer
-        title={selected ? `Configure — ${selected.step_key}` : "Configure"}
+        title={
+          selected ? `${stepTitle(selected, agentList)} — ${selected.step_key}` : "Configure"
+        }
         placement="right"
-        width={420}
+        width={480}
         open={Boolean(selected)}
         onClose={() => setSelectedId(null)}
+        extra={
+          selected ? (
+            <Tooltip title={selected.enabled ? "Step is on" : "Step is off"}>
+              <Switch
+                size="small"
+                checked={selected.enabled}
+                disabled={!canEdit}
+                onChange={(checked) =>
+                  void updateStep
+                    .mutateAsync({ id: selected.id, workflowId, enabled: checked })
+                    .catch((err: unknown) =>
+                      message.error(
+                        err instanceof Error ? err.message : "Could not change the step.",
+                      ),
+                    )
+                }
+              />
+            </Tooltip>
+          ) : null
+        }
       >
         {selected ? (
           <Inspector
             key={selected.id}
             step={selected}
+            index={selectedIndex}
+            workflowId={workflowId}
             agents={agentList}
             members={memberOptions}
             projects={projectOptions}
-            insertGroups={upstreamTokens(stepList, selectedIndex, agentList)}
+            groups={groupsFor(selectedIndex)}
+            routerBefore={routerBefore(selectedIndex)}
+            readOnly={!canEdit}
             onSave={(cfg) => void saveConfig(selected, cfg)}
+            onBranchChange={(key) =>
+              // workflow_steps_branch_check: a branch_key is only legal with the
+              // parent router's id alongside it, so the two are always written
+              // together.
+              void updateStep
+                .mutateAsync({
+                  id: selected.id,
+                  workflowId,
+                  branchKey: key,
+                  parentStepId: key ? (routerBefore(selectedIndex)?.id ?? null) : null,
+                })
+                .catch((err: unknown) =>
+                  message.error(
+                    (err as { code?: string })?.code === "42703"
+                      ? "Routes need migration 20261132000000_workflow_automation.sql, which has not been applied here yet."
+                      : err instanceof Error
+                        ? err.message
+                        : "Could not set the route.",
+                  ),
+                )
+            }
+            onDelete={() =>
+              void deleteStep
+                .mutateAsync({ id: selected.id, workflowId })
+                .then(() => setSelectedId(null))
+            }
           />
         ) : null}
       </Drawer>
@@ -1019,34 +1264,16 @@ export default function WorkflowBuilderPage() {
       <Drawer
         title="Trigger"
         placement="right"
-        width={380}
+        width={480}
         open={triggerOpen}
         onClose={() => setTriggerOpen(false)}
       >
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12.5 }}>
-          What starts this workflow.
-        </Typography.Paragraph>
-        <Typography.Text style={{ fontSize: 13 }}>Trigger type</Typography.Text>
-        <Select
-          style={{ width: "100%", marginTop: 4 }}
-          value={workflow.trigger_type}
-          disabled={!canEdit}
-          onChange={(v) => void updateWorkflow.mutateAsync({ id: workflow.id, trigger_type: v })}
-          options={[
-            { value: "manual", label: "Manual / test run" },
-            { value: "schedule", label: "On a schedule" },
-            { value: "event", label: "On a task event" },
-          ]}
+        <TriggerPanel
+          workflow={workflow}
+          canEdit={canEdit}
+          trigger={triggerState}
+          storedSample={storedTriggerSample}
         />
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 16 }}>
-          <Typography.Text style={{ fontSize: 13, flex: 1 }}>Enabled</Typography.Text>
-          <Switch
-            size="small"
-            checked={workflow.enabled}
-            disabled={!canEdit}
-            onChange={(c) => void updateWorkflow.mutateAsync({ id: workflow.id, enabled: c })}
-          />
-        </div>
       </Drawer>
 
       {/* Run history drawer ---------------------------------------------- */}
@@ -1057,7 +1284,7 @@ export default function WorkflowBuilderPage() {
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
       >
-        <RunHistory workflowId={workflowId} highlightRunId={lastRunId} />
+        <RunHistory workflowId={workflowId} highlightRunId={lastRunId} canReplay={canEdit} />
       </Drawer>
 
       <style>{`
@@ -1073,155 +1300,41 @@ export default function WorkflowBuilderPage() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Inspector (unchanged).                                                     */
+/* Inspector — one drawer body per step type, all sharing the field picker.   */
 /* -------------------------------------------------------------------------- */
-
-/**
- * Point-and-click condition editor for non-technical users: pick a value that
- * an earlier step produced, choose a plain-language comparison, type the
- * number/text to compare against — and read the sentence it makes. The raw
- * "{{steps.…}}" template stays available behind an "advanced" toggle and old
- * configs load into it automatically.
- */
-function ConditionBuilder({
-  draft,
-  set,
-  insertGroups,
-}: {
-  draft: Cfg;
-  set: (key: string, value: unknown) => void;
-  insertGroups: { label: string; tokens: { label: string; token: string }[] }[];
-}) {
-  const { token } = theme.useToken();
-  const T = useT();
-  const left = typeof draft.left === "string" ? draft.left : "";
-  const selectOptions = insertGroups.map((g) => ({
-    label: g.label,
-    options: g.tokens.map((t) => ({ value: `{{${t.token}}}`, label: t.label })),
-  }));
-  const knownValues = insertGroups.flatMap((g) => g.tokens.map((t) => `{{${t.token}}}`));
-  // Old / hand-written configs that aren't a known token open in advanced mode.
-  const [advanced, setAdvanced] = useState(() => Boolean(left) && !knownValues.includes(left));
-
-  const leftLabel = left
-    ? insertGroups.flatMap((g) => g.tokens).find((t) => `{{${t.token}}}` === left)?.label ?? left
-    : null;
-  const opLabel = CONDITION_OPS.find((o) => o.value === draft.op)?.label ?? null;
-  const right = draft.right === undefined || draft.right === null ? "" : String(draft.right);
-
-  return (
-    <div>
-      <Typography.Title level={5} style={{ marginTop: 0 }}>
-        Condition
-      </Typography.Title>
-      <Typography.Paragraph type="secondary" style={{ fontSize: 12.5 }}>
-        The workflow continues past this step only when the check below is true.
-      </Typography.Paragraph>
-
-      <div style={{ marginBottom: 14 }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: 4,
-          }}
-        >
-          <Typography.Text style={{ fontSize: 13 }}>
-            Check this value<span style={{ color: "#e0556a" }}> *</span>
-          </Typography.Text>
-          <Button
-            size="small"
-            type="link"
-            style={{ padding: 0, fontSize: 12 }}
-            onClick={() => setAdvanced((v) => !v)}
-          >
-            {advanced ? "Pick from a list" : "Type a custom value"}
-          </Button>
-        </div>
-        {advanced ? (
-          <Input
-            value={left}
-            placeholder="A number, text, or {{data from a step}}"
-            onChange={(e) => set("left", e.target.value)}
-          />
-        ) : insertGroups.length === 0 ? (
-          <Typography.Paragraph type="secondary" style={{ fontSize: 12.5, margin: 0 }}>
-            No data to check yet — add a step <b>before</b> this one that produces
-            data (for example an agent report), and its numbers will show up here.
-          </Typography.Paragraph>
-        ) : (
-          <Select
-            style={{ width: "100%" }}
-            showSearch
-            optionFilterProp="label"
-            placeholder="Pick data from a previous step"
-            value={knownValues.includes(left) ? left : undefined}
-            options={selectOptions}
-            onChange={(v) => set("left", v)}
-          />
-        )}
-      </div>
-
-      <div style={{ marginBottom: 14 }}>
-        <Typography.Text style={{ fontSize: 13 }}>
-          Comparison<span style={{ color: "#e0556a" }}> *</span>
-        </Typography.Text>
-        <Select
-          style={{ width: "100%", marginTop: 4 }}
-          placeholder="How to compare"
-          value={(draft.op as string) || undefined}
-          options={CONDITION_OPS}
-          onChange={(v) => set("op", v)}
-        />
-      </div>
-
-      <div style={{ marginBottom: 14 }}>
-        <Typography.Text style={{ fontSize: 13 }}>Compared to</Typography.Text>
-        <Input
-          style={{ marginTop: 4 }}
-          value={right}
-          placeholder="e.g. 0"
-          onChange={(e) => set("right", e.target.value)}
-        />
-      </div>
-
-      {leftLabel && opLabel ? (
-        <div
-          style={{
-            background: token.colorFillTertiary,
-            border: `1px solid ${T.border}`,
-            borderRadius: 10,
-            padding: "10px 12px",
-            fontSize: 12.5,
-            lineHeight: 1.55,
-            color: T.textSecondary,
-          }}
-        >
-          Continue only when <b>{leftLabel}</b> {opLabel} <b>{right || "…"}</b>.
-          Otherwise the run stops here.
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 function Inspector({
   step,
+  index,
+  workflowId,
   agents,
   members,
   projects,
-  insertGroups,
+  groups,
+  routerBefore,
+  readOnly,
   onSave,
+  onDelete,
+  onBranchChange,
 }: {
   step: WorkflowStep;
+  index: number;
+  workflowId: string;
   agents: Agent[];
   members: { value: string; label: string }[];
   projects: { value: string; label: string }[];
-  insertGroups: { label: string; tokens: { label: string; token: string }[] }[];
+  groups: FieldGroup[];
+  /** The nearest router above this step, when there is one. */
+  routerBefore: WorkflowStep | null;
+  /** Non-admins may look but not change: the save is refused by RLS anyway. */
+  readOnly?: boolean;
   onSave: (cfg: Cfg) => void;
+  onDelete: () => void;
+  /** Writes workflow_steps.branch_key — a column, not part of the config. */
+  onBranchChange: (key: string | null) => void;
 }) {
   const [draft, setDraft] = useState<Cfg>((step.config as Cfg) ?? {});
+  const cfg = (step.config as Cfg) ?? {};
 
   const set = (key: string, value: unknown) => {
     const next = { ...draft, [key]: value };
@@ -1229,8 +1342,13 @@ function Inspector({
     onSave(next);
   };
 
+  const branch = (step as WorkflowStep & { branch_key?: string | null }).branch_key ?? null;
+  const incomplete = !isStepComplete(step, agents);
+
+  let body: React.ReactNode;
+
   if (step.step_type === "agent") {
-    return (
+    body = (
       <div>
         <Typography.Title level={5} style={{ marginTop: 0 }}>
           Agent step
@@ -1239,6 +1357,7 @@ function Inspector({
         <Select
           style={{ width: "100%", marginTop: 4 }}
           value={(draft.agent_id as string) || undefined}
+          disabled={readOnly}
           options={agents.map((a) => ({ value: a.id, label: `${a.emoji ?? ""} ${a.name}`.trim() }))}
           onChange={(v) => set("agent_id", v)}
           placeholder="Select an agent"
@@ -1249,18 +1368,86 @@ function Inspector({
         </Typography.Paragraph>
       </div>
     );
-  }
-
-  if (step.step_type === "condition") {
-    return <ConditionBuilder draft={draft} set={set} insertGroups={insertGroups} />;
-  }
-
-  const cap: StepCapability | undefined = capabilityForStep(
-    step.step_type as StepType,
-    (step.config as Cfg) ?? {},
-  );
-  if (!cap) {
-    return (
+  } else if (step.step_type === "condition") {
+    body = (
+      <FilterInspector config={cfg} groups={groups} disabled={readOnly} onSave={onSave} />
+    );
+  } else if (step.step_type === "router") {
+    body = (
+      <RouterInspector
+        config={cfg}
+        groups={groups}
+        disabled={readOnly}
+        onSave={onSave}
+        stepKey={step.step_key}
+      />
+    );
+  } else if (step.step_type === "delay") {
+    body = <DelayInspector config={cfg} groups={groups} disabled={readOnly} onSave={onSave} />;
+  } else if (step.step_type === "http" || (step.step_type === "app" && cfg.action === "http.request")) {
+    body = (
+      <HttpInspector
+        config={cfg}
+        groups={groups}
+        disabled={readOnly}
+        onSave={onSave}
+        stepKey={step.step_key}
+      />
+    );
+  } else if (step.step_type === "app") {
+    body = (
+      <AppStepInspector
+        stepKey={step.step_key}
+        config={draft}
+        groups={groups}
+        disabled={readOnly}
+        onSave={onSave}
+      />
+    );
+  } else if (step.step_type === "action" && cfg.action === "notify_user") {
+    body = (
+      <NotifyInspector
+        config={cfg}
+        groups={groups}
+        disabled={readOnly}
+        onSave={onSave}
+        members={members}
+      />
+    );
+  } else if (step.step_type === "action" && cfg.action === "create_task") {
+    body = (
+      <CreateTaskInspector
+        config={cfg}
+        groups={groups}
+        disabled={readOnly}
+        onSave={onSave}
+        projects={projects}
+      />
+    );
+  } else {
+    const cap: StepCapability | undefined = capabilityForStep(step.step_type as StepType, cfg);
+    body = cap ? (
+      <div>
+        <Typography.Title level={5} style={{ marginTop: 0 }}>
+          {cap.title}
+        </Typography.Title>
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12.5 }}>
+          {cap.description}
+        </Typography.Paragraph>
+        {cap.fields.map((f) => (
+          <FieldInput
+            key={f.key}
+            field={f}
+            value={draft[f.key]}
+            onChange={(v) => set(f.key, v)}
+            members={members}
+            projects={projects}
+            groups={groups}
+            disabled={readOnly}
+          />
+        ))}
+      </div>
+    ) : (
       <Typography.Text type="secondary">
         This step type ({step.step_type}) has no editable config yet.
       </Typography.Text>
@@ -1269,23 +1456,32 @@ function Inspector({
 
   return (
     <div>
-      <Typography.Title level={5} style={{ marginTop: 0 }}>
-        {cap.title}
-      </Typography.Title>
-      <Typography.Paragraph type="secondary" style={{ fontSize: 12.5 }}>
-        {cap.description}
-      </Typography.Paragraph>
-      {cap.fields.map((f) => (
-        <FieldInput
-          key={f.key}
-          field={f}
-          value={draft[f.key]}
-          onChange={(v) => set(f.key, v)}
-          members={members}
-          projects={projects}
-          insertGroups={insertGroups}
+      {routerBefore ? (
+        <BranchPicker
+          routerConfig={(routerBefore.config as Cfg) ?? {}}
+          value={branch}
+          disabled={readOnly}
+          onChange={onBranchChange}
         />
-      ))}
+      ) : null}
+
+      {body}
+
+      <TestStepPanel
+        stepId={step.id}
+        workflowId={workflowId}
+        disabled={readOnly}
+        blockedReason={
+          incomplete ? "Finish this step's settings before testing it." : null
+        }
+      />
+
+      <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 10 }}>
+        <Typography.Text type="secondary" style={{ fontSize: 11.5, flex: 1 }}>
+          Step {index + 1} · <code>{step.step_key}</code>
+        </Typography.Text>
+        <DeleteStepButton disabled={readOnly} onConfirm={onDelete} />
+      </div>
     </div>
   );
 }

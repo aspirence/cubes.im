@@ -119,3 +119,73 @@ export function resolveVideoSource(raw: string | null | undefined): MediaSource 
   // Unknown — try to play it directly; the UI offers "open original" if it fails.
   return { kind: "file", url };
 }
+
+/** A Google Drive link points at one file, or at a folder of them. */
+export type DriveTarget = { kind: "file" | "folder"; id: string };
+
+/**
+ * Extracts the Drive id out of a link, or out of an already-resolved source.
+ *
+ * ADDITIVE ONLY — `resolveVideoSource` above is untouched, because the public
+ * share page renders from its answer and any change there is a change to what a
+ * client sees mid-review. This helper is what the newer Drive paths ask instead:
+ * a `file` can be streamed through our server (giving a real `<video>`, and with
+ * it timestamped comments), and a `folder` can be browsed rather than rejected.
+ *
+ * Accepts either the raw link or the MediaSource it resolved to, since callers
+ * have one or the other depending on where in the flow they sit.
+ */
+export function driveTarget(
+  input: MediaSource | string | null | undefined,
+): DriveTarget | null {
+  if (!input) return null;
+  const raw = typeof input === "string" ? input : input.url;
+  if (!raw) return null;
+
+  let u: URL;
+  try {
+    u = new URL(raw.trim());
+  } catch {
+    return null;
+  }
+  const host = u.hostname.replace(/^www\./, "").toLowerCase();
+  if (
+    host !== "drive.google.com" &&
+    host !== "docs.google.com" &&
+    host !== "drive.usercontent.google.com"
+  ) {
+    return null;
+  }
+
+  const parts = u.pathname.split("/").filter(Boolean);
+
+  // drive.google.com/drive/folders/<id>, and the older /folderview?id=<id>.
+  if (parts[0] === "drive" && parts[1] === "folders" && parts[2]) {
+    return { kind: "folder", id: parts[2] };
+  }
+  if (parts[0] === "folderview") {
+    const id = u.searchParams.get("id");
+    if (id) return { kind: "folder", id };
+  }
+
+  // /file/d/<id>/(view|preview|edit), which is also what resolveVideoSource
+  // hands back as the embed url, so a resolved source round-trips through here.
+  if (parts[0] === "file" && parts[1] === "d" && parts[2]) {
+    return { kind: "file", id: parts[2] };
+  }
+  // open?id=, uc?id=, download?id= — all the query-string spellings.
+  const queryId = u.searchParams.get("id");
+  if (queryId) return { kind: "file", id: queryId };
+
+  return null;
+}
+
+/** True when a source is a Drive file we could stream ourselves. */
+export function isDriveFile(input: MediaSource | string | null | undefined): boolean {
+  return driveTarget(input)?.kind === "file";
+}
+
+/** True when a source is a Drive folder — browsable, but not playable as-is. */
+export function isDriveFolder(input: MediaSource | string | null | undefined): boolean {
+  return driveTarget(input)?.kind === "folder";
+}

@@ -73,7 +73,7 @@ export const useUIStore = create<UIState>()(
       // Bump when a NEW item is added to the default rail so it reaches users
       // who already have a persisted (older) pinned set — otherwise the saved
       // localStorage value hides the new default forever.
-      version: 2,
+      version: 3,
       migrate: (persisted) => {
         const s = (persisted ?? {}) as {
           themeMode?: UIState["themeMode"];
@@ -94,6 +94,16 @@ export const useUIStore = create<UIState>()(
           const anchor = ids.indexOf("/schedule");
           if (anchor >= 0) ids.splice(anchor + 1, 0, "/reporting/time");
           else ids.splice(Math.min(1, ids.length), 0, "/reporting/time");
+        }
+        // v3: Social Studio became Content Studio. An installed app's rail item is
+        // identified as `app:${app.key}`, so anyone who had it pinned has the old
+        // key sitting in localStorage. The catalog no longer answers to it, and the
+        // reverse lookup in primary-sidebar.ts would quietly drop the item off their
+        // rail. Rewrite it in place rather than re-pinning, so it keeps its position.
+        const stale = ids.indexOf("app:social_studio");
+        if (stale >= 0) {
+          if (ids.includes("app:content_studio")) ids.splice(stale, 1);
+          else ids[stale] = "app:content_studio";
         }
         return { ...s, sidebarPinnedItemIds: ids };
       },

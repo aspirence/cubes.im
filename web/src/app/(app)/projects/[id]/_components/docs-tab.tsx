@@ -12,7 +12,7 @@ import {
   theme,
 } from "antd";
 import type { MenuProps } from "antd";
-import { PlusOutlined } from "@ant-design/icons";
+import { LoadingOutlined, PlusOutlined } from "@ant-design/icons";
 import {
   useDocs,
   usePages,
@@ -22,6 +22,7 @@ import {
   useUpdatePage,
   useDeletePage,
   type Page,
+  type UpdatePageInput,
 } from "@/features/app-docs/use-docs";
 import { useProjectMembers } from "@/features/projects/use-project-members";
 import { NotionEditor } from "@/features/editor/notion-editor";
@@ -155,53 +156,234 @@ export function DocsTab({ projectId }: { projectId: string }) {
   const htmlRef = useRef("");
   const timerRef = useRef<number | undefined>(undefined);
 
-  // Reads only refs (page id, doc id, title, html) + the stable
-  // updatePage.mutate — so it stays correct even when captured by the unmount
-  // cleanup, with no stale first-render closure over state (the bug that
-  // silently dropped the last 700ms of edits on tab-away).
+  /**
+   * What the header tells the writer about their words. Until this existed a
+   * save could fail — no network, a private page of someone else's (RLS says
+   * "forbidden") — and the page looked exactly as if it had saved.
+   *
+   *   saving  edits are waiting for the debounce, or a save is in flight
+   *   saved   every page's last save landed and nothing has changed since
+   *   error   a save failed and its words are still only here; Retry (or the
+   *           next keystroke on that page) sends them again
+   */
+  const [saveState, setSaveState] = useState<"saving" | "saved" | "error">("saved");
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  // The bookkeeping, keyed by page: edits since the last flush of the page
+  // being shown; the saves waiting their turn (newest wins per page); the
+  // save on the wire; the saves that failed and are kept until they land.
+  // Refs, because flush() and the unmount cleanup read them outside render.
+  const dirtyRef = useRef(false);
+  const pendingRef = useRef(new Map<string, UpdatePageInput>());
+  const inFlightRef = useRef<UpdatePageInput | null>(null);
+  const failedRef = useRef(new Map<string, UpdatePageInput>());
+  // Pages deleted (or gone from the list) while something of theirs was still
+  // unsaved: a late answer for them is noise, never a failure to report.
+  const goneRef = useRef(new Set<string>());
+  const mountedRef = useRef(true);
+  const errorToastAtRef = useRef(0);
+
+  const settleState = () => {
+    if (dirtyRef.current || inFlightRef.current || pendingRef.current.size > 0) setSaveState("saving");
+    else setSaveState(failedRef.current.size > 0 ? "error" : "saved");
+  };
+
+  // One save on the wire at a time: two PATCHes racing can land out of order
+  // and leave the older text in the database. Promises rather than mutate
+  // callbacks: react-query drops per-call callbacks once the component is
+  // gone, and the tab-away flush must still run and still be able to say it
+  // failed. A failure keeps its payload (failedRef) and stops the pump —
+  // offline, a loop of retries would only burn the network; Retry and the
+  // next keystroke on that page send it again.
+  const pump = () => {
+    if (inFlightRef.current) return;
+    const next = pendingRef.current.values().next().value as UpdatePageInput | undefined;
+    if (!next) return;
+    pendingRef.current.delete(next.id);
+    if (goneRef.current.has(next.id)) {
+      pump();
+      return;
+    }
+    inFlightRef.current = next;
+    setSaveState("saving");
+    updatePage
+      .mutateAsync(next)
+      .then(() => {
+        inFlightRef.current = null;
+        if (!goneRef.current.has(next.id)) {
+          failedRef.current.delete(next.id);
+          setSavedAt(Date.now());
+        }
+        pump();
+      })
+      .catch((err: unknown) => {
+        inFlightRef.current = null;
+        // The row was deleted while this was on the wire: nothing to report.
+        if (goneRef.current.has(next.id)) {
+          pump();
+          return;
+        }
+        const now = Date.now();
+        if (!mountedRef.current) {
+          // The chip is gone (tab left): every page still queued gets its one
+          // attempt and its own honest toast — nothing can be retried here.
+          errorToastAtRef.current = now;
+          message.error(`Couldn't save "${next.title ?? "Untitled"}" — the last edits there were not saved.`);
+          pump();
+          return;
+        }
+        // On screen: the pump stops (offline, a loop of retries would only
+        // burn the network), so everything still queued is unsaved too and
+        // moves to the failed set, newest words per page kept. Retry, or the
+        // next keystroke on a page, sends it again.
+        if (!pendingRef.current.has(next.id)) failedRef.current.set(next.id, next);
+        for (const [id, payload] of pendingRef.current) failedRef.current.set(id, payload);
+        pendingRef.current.clear();
+        // The chip says it while the page is on screen; a failure on another
+        // page has no chip, so its toast must not be throttled away.
+        const elsewhere = next.id !== activePageRef.current;
+        if (elsewhere || now - errorToastAtRef.current > 60_000) {
+          errorToastAtRef.current = now;
+          const forbidden = err instanceof Error && err.message === "forbidden";
+          message.error(
+            elsewhere
+              ? `Couldn't save "${next.title ?? "Untitled"}" — its edits are kept here; press Retry.`
+              : forbidden
+                ? "This page couldn't be saved — you can't edit it."
+                : "Couldn't save the page. Your edits are still here — Retry, or keep typing.",
+          );
+        }
+      })
+      .finally(() => {
+        settleState();
+      });
+  };
+
+  // Reads only refs (page id, doc id, title, html) — so it stays correct even
+  // when captured by the unmount cleanup, with no stale first-render closure
+  // over state (the bug that silently dropped the last 700ms of edits on
+  // tab-away). A no-op when nothing changed: a blur or a page switch must not
+  // write the seeded copy back (it would bump updated_at, flash "Saving…",
+  // and on a shared page overwrite a teammate's newer words).
   const flush = () => {
     if (timerRef.current) window.clearTimeout(timerRef.current);
+    timerRef.current = undefined;
+    if (!dirtyRef.current) return;
     const pid = activePageRef.current;
     const did = docIdRef.current;
     if (!pid || !did) return;
-    updatePage.mutate({
+    dirtyRef.current = false;
+    failedRef.current.delete(pid); // newer words supersede the failed ones
+    pendingRef.current.set(pid, {
       id: pid,
       docId: did,
       title: titleRef.current.trim() || "Untitled",
       content: htmlToPageContent(htmlRef.current),
     });
+    pump();
+  };
+  /** Sends every failed page again, then whatever is unsaved on the page shown. */
+  const retry = () => {
+    for (const payload of failedRef.current.values()) {
+      if (goneRef.current.has(payload.id)) continue;
+      if (!pendingRef.current.has(payload.id)) pendingRef.current.set(payload.id, payload);
+    }
+    failedRef.current.clear();
+    if (dirtyRef.current) flush();
+    else pump();
   };
   const schedule = () => {
+    dirtyRef.current = true;
+    setSaveState("saving");
     if (timerRef.current) window.clearTimeout(timerRef.current);
     timerRef.current = window.setTimeout(flush, 700);
   };
+  /** Forgets everything unsaved about a page that no longer exists. */
+  const forget = (pageId: string) => {
+    goneRef.current.add(pageId);
+    pendingRef.current.delete(pageId);
+    failedRef.current.delete(pageId);
+    if (activePageRef.current === pageId) {
+      if (timerRef.current) window.clearTimeout(timerRef.current);
+      timerRef.current = undefined;
+      dirtyRef.current = false;
+    }
+    settleState();
+  };
+
+  // Closing the tab with edits still waiting or failing would lose them; the
+  // browser's own "leave site?" prompt is the only thing that can stop that.
+  useEffect(() => {
+    const guard = (e: BeforeUnloadEvent) => {
+      if (dirtyRef.current || inFlightRef.current || pendingRef.current.size > 0 || failedRef.current.size > 0) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, []);
 
   const seededRef = useRef<string | null>(null);
   useEffect(() => {
+    // Pages that left the list (a subpage cascade-deleted with its parent, a
+    // teammate's delete) take their unsaved words with them; only once the
+    // list has really answered, so a cold start cannot wipe the queue.
+    if (pages !== undefined && !pagesLoading) {
+      for (const id of [...pendingRef.current.keys(), ...failedRef.current.keys()]) {
+        if (!pageList.some((x) => x.id === id)) forget(id);
+      }
+    }
     if (activePage && seededRef.current !== activePage.id) {
       if (activePageRef.current && activePageRef.current !== activePage.id) {
-        flush(); // save the page we're leaving
+        // Save the page we're leaving — unless it was just deleted, in which
+        // case there is no row to save into.
+        if (pageList.some((x) => x.id === activePageRef.current)) flush();
+        else forget(activePageRef.current);
       }
       seededRef.current = activePage.id;
       activePageRef.current = activePage.id;
-      setTitle(activePage.title);
-      titleRef.current = activePage.title;
-      const seeded = pageContentToHtml(activePage.content);
+      // The freshest words for this page: what is still waiting to be saved
+      // (queued, on the wire, or failed) beats the cache, which only knows
+      // about saves that landed.
+      const local =
+        pendingRef.current.get(activePage.id) ??
+        failedRef.current.get(activePage.id) ??
+        (inFlightRef.current?.id === activePage.id ? inFlightRef.current : undefined);
+      const seededTitle = local?.title ?? activePage.title;
+      setTitle(seededTitle);
+      titleRef.current = seededTitle;
+      const seeded = pageContentToHtml(local?.content !== undefined ? local.content : activePage.content);
       setHtml(seeded);
       htmlRef.current = seeded;
+      dirtyRef.current = false;
+      settleState();
     }
     if (!activePage && activePageRef.current) {
-      flush(); // deselected (e.g. deleted) — don't lose pending edits
+      // Deselected (deleted, or the list emptied) — save if the row is still
+      // there, forget it if not.
+      if (pageList.some((x) => x.id === activePageRef.current)) flush();
+      else forget(activePageRef.current);
       seededRef.current = null;
       activePageRef.current = null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePage?.id]);
+  }, [activePage?.id, pageList]);
 
   // Flush on unmount (leaving the Doc tab unmounts this component). `flush`
-  // reads only refs, so the first-render closure is safe.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => () => flush(), []);
+  // reads only refs, so the first-render closure is safe; mountedRef tells a
+  // failing save that the chip is gone and a toast is all it can do.
+  useEffect(() => {
+    // StrictMode runs this cleanup once on mount and mounts again; the flag
+    // must come back with it.
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      // One last attempt for every page — failed ones included — each with
+      // its own honest toast if it fails; nothing can be retried after this.
+      retry();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const onTitle = (t: string) => {
     setTitle(t);
@@ -264,6 +446,9 @@ export function DocsTab({ projectId }: { projectId: string }) {
         deletePage
           .mutateAsync({ id: p.id, docId })
           .then(() => {
+            // Nothing unsaved may chase a row that is gone (it would come
+            // back as "forbidden" and look like a save failure).
+            forget(p.id);
             if (selectedPageId === p.id) setSelectedPageId(null);
           })
           .catch(() => message.error("Couldn't delete the page.")),
@@ -473,11 +658,13 @@ export function DocsTab({ projectId }: { projectId: string }) {
               style={{
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "flex-end",
+                flexWrap: "wrap",
                 gap: 8,
                 marginBottom: 10,
               }}
             >
+              <SaveStatus state={saveState} savedAt={savedAt} onRetry={retry} />
+              <span style={{ flex: 1 }} />
               {sharedUsers.length > 0 ? (
                 <Avatar.Group
                   max={{ count: 5 }}
@@ -569,5 +756,68 @@ export function DocsTab({ projectId }: { projectId: string }) {
         onClose={() => setShareOpen(false)}
       />
     </div>
+  );
+}
+
+
+/**
+ * The save indicator in the page header. Quiet when all is well, loud when it
+ * is not: "Saving…" while edits wait or travel, "Saved" (hover for the time)
+ * when they landed, and a red "Couldn't save · Retry" that stays until a save
+ * succeeds — because a page that silently didn't save is the worst outcome
+ * an editor can have.
+ */
+function SaveStatus({
+  state,
+  savedAt,
+  onRetry,
+}: {
+  state: "saving" | "saved" | "error";
+  savedAt: number | null;
+  onRetry: () => void;
+}) {
+  const { token } = theme.useToken();
+  const color = state === "error" ? token.colorError : token.colorTextTertiary;
+  const when = savedAt ? new Date(savedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null;
+  // One live region that stays mounted whatever the state, so assistive
+  // tech hears the text change instead of a new element appearing; only the
+  // outcomes are announced, not the transient "Saving…".
+  return (
+    <span
+      role="status"
+      aria-live={state === "saving" ? "off" : "polite"}
+      aria-atomic="true"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        fontSize: 12.5,
+        lineHeight: 1,
+        whiteSpace: "nowrap",
+        color,
+      }}
+    >
+      {state === "error" ? (
+        <>
+          <MIcon name="cloud_off" size={15} color={color} />
+          Couldn&apos;t save
+          <Button type="link" size="small" style={{ padding: 0, height: "auto", fontSize: 12.5 }} onClick={onRetry}>
+            Retry
+          </Button>
+        </>
+      ) : state === "saving" ? (
+        <>
+          <LoadingOutlined spin style={{ fontSize: 13 }} />
+          Saving…
+        </>
+      ) : (
+        <Tooltip title={when ? `Saved at ${when}` : "Nothing to save yet"}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            <MIcon name="cloud_done" size={15} color={color} />
+            Saved
+          </span>
+        </Tooltip>
+      )}
+    </span>
   );
 }

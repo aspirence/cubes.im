@@ -1,7 +1,7 @@
 # Cubes — Design & Brand Guidelines
 
 The product's brand is **Cubes** — one workspace built from many blocks:
-projects, docs, video review, social, reporting. The identity leans on the
+projects, docs, video review, content, reporting. The identity leans on the
 cube metaphor everywhere (logo, hero cube-field, App Center "Cubes Apps").
 
 ---

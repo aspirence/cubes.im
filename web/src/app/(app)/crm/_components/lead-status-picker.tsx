@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { App, Dropdown, Spin } from "antd";
 import type { MenuProps } from "antd";
 import { useUpdateCrmDeal } from "@/features/app-crm/use-crm-deals";
@@ -36,6 +36,7 @@ export function LeadStatusPicker({
   const updateDeal = useUpdateCrmDeal();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<CrmLeadStatus | null>(null);
+  const chipRef = useRef<HTMLSpanElement>(null);
 
   // Show the value being written straight away; the row's own data catches up
   // when the query settles.
@@ -69,42 +70,78 @@ export function LeadStatusPicker({
       : { cursor: "pointer" };
 
   return (
-    <Dropdown
-      open={open}
-      onOpenChange={setOpen}
-      trigger={["click"]}
-      menu={{
-        items,
-        selectable: true,
-        selectedKeys: [current.value],
-        onClick: ({ key }) => pick(key as CrmLeadStatus),
+    // The wrapper, not just the chip, guards the card or row underneath: the
+    // menu renders in a portal, and React bubbles its events along the
+    // component tree.
+    //  - click: picking a status would also open the drawer underneath;
+    //  - pointerdown from the menu: would arm a board card's drag, and a
+    //    small wobble while picking would move the card instead;
+    //  - Enter/Space: a board card's keyboard drag starts on Space;
+    //  - Escape while the menu is open: closes the menu only, not the
+    //    RecordDrawer around it (rc-drawer closes on Escape).
+    <span
+      style={{ flex: "none", display: "inline-flex" }}
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => {
+        if (!e.currentTarget.contains(e.target as Node)) e.stopPropagation();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+        else if (e.key === "Escape" && open) {
+          e.stopPropagation();
+          setOpen(false);
+          chipRef.current?.focus();
+        }
       }}
     >
-      <span
-        role="button"
-        tabIndex={0}
-        aria-label={`Status: ${current.label}. Change it.`}
-        onClick={(e) => {
-          e.stopPropagation();
-          e.preventDefault();
+      <Dropdown
+        open={open}
+        onOpenChange={setOpen}
+        trigger={["click"]}
+        // Focus moves into the menu when it opens, so arrow keys pick.
+        autoFocus
+        menu={{
+          items,
+          selectable: true,
+          selectedKeys: [current.value],
+          onClick: ({ key }) => pick(key as CrmLeadStatus),
         }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") e.stopPropagation();
-        }}
-        style={{ flex: "none", display: "inline-flex" }}
       >
-        <SoftChip
-          tone={current.tone}
-          icon={pending ? undefined : leadStatusIcon(current.value)}
-          style={chipStyle}
+        <span
+          ref={chipRef}
+          role="button"
+          tabIndex={0}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={`Status: ${current.label}. Change it.`}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }}
+          onKeyDown={(e) => {
+            // A span is not a native button: Enter/Space open the menu here
+            // (and Space must not scroll the page).
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              setOpen((o) => !o);
+            }
+          }}
+          style={{ flex: "none", display: "inline-flex" }}
         >
-          {pending ? (
-            <Spin size="small" style={{ marginRight: 4 }} />
-          ) : null}
-          {current.label}
-          <MIcon name="arrow_drop_down" size={size === "small" ? 14 : 16} />
-        </SoftChip>
-      </span>
-    </Dropdown>
+          <SoftChip
+            tone={current.tone}
+            icon={pending ? undefined : leadStatusIcon(current.value)}
+            style={chipStyle}
+          >
+            {pending ? (
+              <Spin size="small" style={{ marginRight: 4 }} />
+            ) : null}
+            {current.label}
+            <MIcon name="arrow_drop_down" size={size === "small" ? 14 : 16} />
+          </SoftChip>
+        </span>
+      </Dropdown>
+    </span>
   );
 }

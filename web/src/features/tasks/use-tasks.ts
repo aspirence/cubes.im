@@ -66,6 +66,8 @@ export type TaskWithRelations = Task & {
   labels: TaskLabelEmbed[];
   /** PostgREST count aggregate — `[{ count: N }]` (empty when no comments). */
   comments: { count: number }[];
+  /** The task's own repeat schedule — at most one row; empty for most tasks. */
+  recurring?: { id: string; active: boolean }[];
 };
 
 /** When the task last changed status, as epoch ms (created_at for rows that
@@ -126,7 +128,8 @@ const TASK_SELECT = `
     label_id,
     label:team_labels!task_labels_label_id_fk ( id, name, color_code )
   ),
-  comments:task_comments!task_comments_task_id_fk ( count )
+  comments:task_comments!task_comments_task_id_fk ( count ),
+  recurring:task_recurring_schedules!task_recurring_schedules_task_id_fk ( id, active )
 `;
 
 /**

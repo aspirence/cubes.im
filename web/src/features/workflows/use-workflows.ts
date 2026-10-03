@@ -213,11 +213,19 @@ export function useUpdateStep() {
       config?: Record<string, unknown>;
       position?: number;
       enabled?: boolean;
+      /** Which router route this step belongs to; a column the automation
+       *  migration adds, so writing it fails loudly until that lands. */
+      branchKey?: string | null;
+      parentStepId?: string | null;
     }): Promise<WorkflowStep> => {
       const patch: Database["public"]["Tables"]["workflow_steps"]["Update"] = {};
       if (input.config !== undefined) patch.config = input.config as never;
       if (input.position !== undefined) patch.position = input.position;
       if (input.enabled !== undefined) patch.enabled = input.enabled;
+      // branch_key / parent_step_id are newer than the generated types.
+      const loosePatch = patch as Record<string, unknown>;
+      if (input.branchKey !== undefined) loosePatch.branch_key = input.branchKey;
+      if (input.parentStepId !== undefined) loosePatch.parent_step_id = input.parentStepId;
       const { data, error } = await supabase
         .from("workflow_steps")
         .update(patch)

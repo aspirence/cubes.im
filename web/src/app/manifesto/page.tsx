@@ -14,7 +14,7 @@ const PHASES: { n: string; status: string; now?: boolean; title: string; desc: s
     status: "Shipping now",
     now: true,
     title: "The workspace management system",
-    desc: "The all-in-one workspace — projects, docs, video review, client portals, social and people ops — behind one login. This is what we launch first, and it works on its own.",
+    desc: "The all-in-one workspace — projects, docs, video review, client portals, content and people ops — behind one login. This is what we launch first, and it works on its own.",
   },
   {
     n: "02",

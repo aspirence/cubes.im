@@ -1,6 +1,9 @@
 "use client";
 
 import { useMemo } from "react";
+import Link from "next/link";
+import { Button } from "antd";
+import { DownloadOutlined } from "@ant-design/icons";
 import {
   useTeamOverview,
   useReportMembers,
@@ -101,6 +104,13 @@ export default function ReportingOverviewPage() {
       <PageHeader
         title="Team overview"
         subtitle="A snapshot of work and time across the active team."
+        right={
+          <Link href="/reporting/daily">
+            <Button type="primary" icon={<DownloadOutlined />}>
+              Daily report
+            </Button>
+          </Link>
+        }
       />
 
       {isError ? (

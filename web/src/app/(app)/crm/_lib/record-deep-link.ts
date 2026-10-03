@@ -10,7 +10,9 @@
  * drawer's "Leads" list pushes the same URL.
  *
  * The param is stripped on close, so hitting back doesn't silently re-open the
- * drawer and a reload of the tidied URL shows the plain list.
+ * drawer and a reload of the tidied URL shows the plain list. Only this param:
+ * the page's own (`?import=` on deals) stays, so closing the lead a finished
+ * import opened leaves the list on that import.
  */
 
 import { useCallback, useState } from "react";
@@ -46,8 +48,12 @@ export function useRecordDeepLink(type: CrmTargetType) {
 
   const close = useCallback(() => {
     setTarget(null);
-    if (linked) router.replace(pathname, { scroll: false });
-  }, [linked, pathname, router]);
+    if (!linked) return;
+    const rest = new URLSearchParams(searchParams.toString());
+    rest.delete(CRM_RECORD_PARAM);
+    const qs = rest.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [linked, pathname, router, searchParams]);
 
   return [target, setTarget, close] as const;
 }

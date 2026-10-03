@@ -11,6 +11,9 @@ import { createClient } from "@/lib/supabase/client";
 import { useActiveTeam } from "@/features/teams/use-teams";
 import { useAuth } from "@/features/auth/use-auth";
 import type { Database } from "@/types/database";
+import { revisionSourceColumns, type DriveRevisionSource } from "./drive/revision-columns";
+
+export type { DriveRevisionSource } from "./drive/revision-columns";
 
 /** The share tables are newer than the generated database types. */
 function loose(s: ReturnType<typeof createClient>) {
@@ -181,11 +184,25 @@ export function useRevisionUrl(revision: RevisionRow | undefined) {
     enabled: Boolean(revision),
     queryFn: async (): Promise<string | null> => {
       if (!revision) return null;
-      if (revision.storage_path) {
+      // A Drive revision must NOT fall through to its `url`: that link plays in
+      // Drive's cross-origin iframe, where the playhead is unreadable and every
+      // timestamped comment silently does nothing. Our stream route serves the
+      // same bytes from this origin, so the <video> element stays ours.
+      // An imported copy wins over the stream — same bytes, no Google round
+      // trip and no dependency on the file still being shared.
+      const drive = revision as RevisionRow & {
+        drive_file_id?: string | null;
+        imported_storage_path?: string | null;
+      };
+      const storedPath = revision.storage_path ?? drive.imported_storage_path ?? null;
+      if (!storedPath && drive.drive_file_id) {
+        return `/api/video-review/${revision.video_id}/stream?rev=${revision.revision}`;
+      }
+      if (storedPath) {
         // A `<bucket>::<path>` prefix references an object in another bucket
         // (e.g. a video sent from the Files app without re-uploading).
         let bucket: string = BUCKET;
-        let path = revision.storage_path;
+        let path = storedPath;
         const sep = path.indexOf("::");
         if (sep > 0) {
           bucket = path.slice(0, sep);
@@ -225,6 +242,7 @@ export interface CreateVideoInput {
   folderId?: string | null;
   file?: File | null;
   url?: string | null;
+  drive?: DriveRevisionSource | null;
 }
 
 /** Creates a video + its first revision (uploaded file or external URL). */
@@ -260,14 +278,19 @@ export function useCreateVideoReview() {
         if (input.file) {
           storagePath = await uploadToBucket(supabase, teamId, video.id, input.file);
         }
-        const { error: rErr } = await supabase
+        // `loose` because the drive_* columns are newer than the generated
+        // database types, which this app may not regenerate.
+        const { error: rErr } = await loose(supabase)
           .from("app_video_review_revisions")
           .insert({
             video_id: video.id,
             revision: 1,
-            storage_path: storagePath,
-            url: storagePath ? null : (input.url ?? null),
             uploaded_by: user?.id ?? null,
+            ...revisionSourceColumns({
+              storagePath,
+              url: input.url,
+              drive: input.drive,
+            }),
           });
         if (rErr) throw rErr;
       } catch (err) {
@@ -290,6 +313,7 @@ export interface AddRevisionInput {
   summary?: string | null;
   file?: File | null;
   url?: string | null;
+  drive?: DriveRevisionSource | null;
 }
 
 /** Uploads a new revision and bumps the video's latest_revision. */
@@ -309,15 +333,18 @@ export function useAddRevision() {
           input.file,
         );
       }
-      const { error: rErr } = await supabase
+      const { error: rErr } = await loose(supabase)
         .from("app_video_review_revisions")
         .insert({
           video_id: input.videoId,
           revision: input.nextRevision,
-          storage_path: storagePath,
-          url: storagePath ? null : (input.url ?? null),
           summary: input.summary ?? null,
           uploaded_by: user?.id ?? null,
+          ...revisionSourceColumns({
+            storagePath,
+            url: input.url,
+            drive: input.drive,
+          }),
         });
       if (rErr) throw rErr;
       // A new cut re-opens the loop: back to the editing stage as a draft so
@@ -338,6 +365,100 @@ export function useAddRevision() {
       queryClient.invalidateQueries({ queryKey: revisionsKey(input.videoId) });
       queryClient.invalidateQueries({ queryKey: videoKey(input.videoId) });
       queryClient.invalidateQueries({ queryKey: ["video-review"] });
+    },
+  });
+}
+
+/**
+ * The server's import vocabulary, as stored on the revision row. 'none' is the
+ * normal, healthy state: streaming works perfectly well without a copy.
+ */
+export type DriveImportStatus = "none" | "queued" | "running" | "done" | "error";
+
+/**
+ * Asks the server to copy a Drive-backed revision into Cubes storage.
+ *
+ * Streaming from Drive already works and already carries timestamps, so this is
+ * an upgrade, not a repair: a stored copy scrubs faster and keeps playing after
+ * the file is moved, renamed or un-shared in Drive — which is exactly what
+ * happens to a client's folder a month after the project ends.
+ *
+ * Fired WITHOUT `wait=1`. The route can copy synchronously, but a gigabyte of
+ * footage does not finish inside a serverless request, and a request that dies
+ * mid-copy would report a failure for work that is still running. So the call
+ * queues the copy and returns; `useRevisionImportStatus` watches the row.
+ *
+ * `rev` is left off to mean "the latest revision", which is what the caller
+ * always wants right after adding one.
+ */
+export function useImportDriveCopy() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      videoId: string;
+      revision?: number | null;
+    }): Promise<{ status: DriveImportStatus }> => {
+      const query = input.revision != null ? `?rev=${input.revision}` : "";
+      const res = await fetch(
+        `/api/video-review/${encodeURIComponent(input.videoId)}/import${query}`,
+        { method: "POST" },
+      );
+      const text = await res.text();
+      let body: { error?: string; status?: string; ok?: boolean; message?: string } | null = null;
+      try {
+        body = text ? JSON.parse(text) : null;
+      } catch {
+        // An HTML body means the route is not deployed yet. Say that, rather
+        // than letting a JSON parse error surface as gibberish.
+        throw new Error(
+          res.status === 404
+            ? "Importing a copy isn’t available on this server yet — the video still plays from Drive."
+            : `The import failed (${res.status}).`,
+        );
+      }
+      if (!res.ok) {
+        throw new Error(body?.error || body?.message || `The import failed (${res.status}).`);
+      }
+      return { status: "queued" };
+    },
+    onSuccess: (_result, input) => {
+      queryClient.invalidateQueries({ queryKey: revisionsKey(input.videoId) });
+    },
+  });
+}
+
+/**
+ * Watches a revision's import until it settles.
+ *
+ * The copy runs on the server after the request has already answered, so the
+ * only honest progress report is the row itself. Polling stops the moment the
+ * status is terminal, so an idle review page makes no requests.
+ */
+export function useRevisionImportStatus(
+  videoId: string | undefined,
+  revisionId: string | undefined,
+  enabled = true,
+) {
+  const supabase = useMemo(() => createClient(), []);
+  return useQuery({
+    queryKey: ["video-review-import", revisionId],
+    enabled: Boolean(videoId && revisionId && enabled),
+    queryFn: async (): Promise<{ status: DriveImportStatus; error: string | null }> => {
+      const { data, error } = await loose(supabase)
+        .from("app_video_review_revisions")
+        .select("import_status, import_error")
+        .eq("id", revisionId as string)
+        .maybeSingle();
+      if (error) throw error;
+      const row = (data ?? {}) as { import_status?: string; import_error?: string | null };
+      return {
+        status: (row.import_status as DriveImportStatus) ?? "none",
+        error: row.import_error ?? null,
+      };
+    },
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "queued" || status === "running" ? 3000 : false;
     },
   });
 }

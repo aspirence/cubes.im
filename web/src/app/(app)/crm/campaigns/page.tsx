@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   App,
@@ -11,11 +11,11 @@ import {
   Input,
   InputNumber,
   Popconfirm,
-  Segmented,
+  Radio,
   Select,
-  Table,
   Tooltip,
   theme,
+  type TableColumnsType,
 } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import { EChart, CHART_FONT } from "@/features/home/echart";
@@ -46,6 +46,26 @@ import {
 import { errMsg } from "@/lib/err";
 import { MIcon } from "../_components/m-icon";
 import { CrmToggle } from "../_components/crm-toggle";
+import {
+  CrmTable,
+  CrmTableCard,
+  DateCell,
+  DateCreatedFilter,
+  EmptyCell,
+  FilterButton,
+  ManageColumns,
+  TableSearch,
+  TagPill,
+  ToolbarSpacer,
+  UpdatedCell,
+  createdWindow,
+  inCreatedWindow,
+  useColumnLayout,
+  type ColumnChoice,
+  type CreatedPreset,
+  type CreatedRange,
+  type CrmMenuItem,
+} from "../_components/data-table";
 import { CrmListRow } from "../_components/list-row";
 import { KpiStrip, type KpiItem } from "../_components/kpi-strip";
 import { CampaignGlyph } from "../_components/deal-glyph";
@@ -61,8 +81,6 @@ import {
 } from "../_components/drawer-footer";
 import {
   CrmPageHeader,
-  CrmSearch,
-  CrmToolbar,
   EmptyState,
   ErrorState,
   OverviewField,
@@ -90,6 +108,54 @@ const CRM_CAMPAIGN_CURRENCY_DEFAULT = "INR";
 const DETAIL_DRAWER_WIDTH = 560;
 
 type StatusFilter = "ALL" | CrmCampaignStatus;
+
+/** The Channel filter's value for campaigns that have no channel set. */
+const NO_CHANNEL = "__none__";
+
+/** The spend composer's amount field, as its ref hands it over. */
+type AmountFieldRef = React.ComponentRef<typeof InputNumber>;
+
+/** The glyph beside each status in the row menu's Status submenu. */
+const CAMPAIGN_STATUS_ICON: Record<CrmCampaignStatus, string> = {
+  draft: "edit_note",
+  active: "play_circle",
+  paused: "pause_circle",
+  ended: "stop_circle",
+};
+
+/**
+ * What deleting and permanently deleting say — the row's trash buttons ask in
+ * a popover, the right-click menu in a dialog, and both must say the same.
+ */
+const DELETE_COPY = {
+  description: "It moves to Deleted and can be restored, spend and all.",
+  okText: "Delete",
+};
+const DESTROY_COPY = {
+  description:
+    "This cannot be undone. Its daily spend goes with it and its leads stay, unattributed.",
+  okText: "Delete forever",
+};
+
+/**
+ * The columns "Manage columns" can hide and reorder, in their default order —
+ * every data column, the campaign name included. Only the row actions stay out.
+ */
+const COLUMN_CHOICES: ColumnChoice[] = [
+  { key: "name", title: "Campaign" },
+  { key: "channel", title: "Channel" },
+  { key: "status", title: "Status" },
+  { key: "dates", title: "Running" },
+  { key: "spend", title: "Total spend" },
+  { key: "leads", title: "Leads" },
+  { key: "cpl", title: "Cost per lead" },
+  { key: "created", title: "Date created" },
+  { key: "updated", title: "Last update" },
+];
+/** "Running" already dates a campaign; the created date is one click away. */
+const DEFAULT_HIDDEN = ["created"];
+/** What the name column is counted as when sizing the horizontal scroll. */
+const NAME_COLUMN_BASIS = 220;
 
 type CampaignFormValues = {
   name: string;
@@ -209,6 +275,98 @@ function dealLabel(deal: CrmDealWithRefs): string {
 }
 
 /**
+ * First-column cell: the campaign tile and name, with the daily budget under
+ * it when one is set — that budget is what the nightly sweep logs as spend, so
+ * it explains most of the numbers further along the row.
+ */
+function CampaignCell({ campaign }: { campaign: CrmCampaign }) {
+  const { token } = theme.useToken();
+  const ellipsis: React.CSSProperties = {
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  };
+  const budget = campaign.daily_budget;
+  return (
+    <div
+      style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}
+    >
+      <CampaignGlyph name={campaign.name} />
+      <div style={{ minWidth: 0 }}>
+        <div
+          style={{
+            fontWeight: 500,
+            color: campaign.deleted_at
+              ? token.colorTextTertiary
+              : token.colorText,
+            lineHeight: 1.35,
+            ...ellipsis,
+          }}
+        >
+          {campaign.name}
+        </div>
+        {budget !== null && budget > 0 ? (
+          <div
+            style={{
+              fontSize: 12,
+              color: token.colorTextTertiary,
+              lineHeight: 1.35,
+              ...ellipsis,
+            }}
+          >
+            {/* A per-day figure: "$12.50" must not print as "$13", nor a
+                sub-unit budget as "$0" (which reads as free). Whole budgets
+                keep whole units. */}
+            {Number.isInteger(budget)
+              ? crmMoney(budget, campaign.currency_code)
+              : crmMoneyPrecise(budget, campaign.currency_code)}
+            /day budget
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The run in the table's date format — "Mar 12, 2025 → ongoing" — with either
+ * end open.
+ */
+function RunningCell({
+  started,
+  ended,
+}: {
+  started: string | null;
+  ended: string | null;
+}) {
+  const { token } = theme.useToken();
+  const quiet: React.CSSProperties = { color: token.colorTextTertiary };
+  if (!started && !ended) {
+    return <EmptyCell />;
+  }
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {started ? (
+        <>
+          <DateCell value={started} />
+          <span style={quiet}>→</span>
+        </>
+      ) : (
+        <span style={quiet}>until</span>
+      )}
+      {ended ? <DateCell value={ended} /> : <span style={quiet}>ongoing</span>}
+    </span>
+  );
+}
+
+/**
  * Channel picker. The seven suggestions cover most spend, but `channel` is free
  * text in the database on purpose — anything typed that isn't on the list is
  * offered as its own option, so a partner or offline source can be named.
@@ -254,14 +412,17 @@ function ChannelSelect({
  * The body of the campaign detail drawer: what the campaign is, its daily spend
  * ledger, and the leads it bought. Mounted only while a campaign is open (and
  * keyed by id), so the "add spend" composer never carries values between
- * campaigns.
+ * campaigns. `amountRef` is the composer's amount field, which the row menu's
+ * "Log spend…" focuses once the drawer has opened.
  */
 function CampaignDetail({
   campaign,
   leads,
+  amountRef,
 }: {
   campaign: CrmCampaign;
   leads: CrmDealWithRefs[];
+  amountRef: React.Ref<AmountFieldRef>;
 }) {
   const { token } = theme.useToken();
   const { message } = App.useApp();
@@ -759,6 +920,7 @@ function CampaignDetail({
               style={{ width: 148 }}
             />
             <InputNumber<number>
+              ref={amountRef}
               value={amount}
               onChange={(next) => setAmount(next)}
               min={0}
@@ -987,7 +1149,7 @@ function CampaignDetail({
 
 export default function CrmCampaignsPage() {
   const { token } = theme.useToken();
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const {
     data: campaigns,
     isLoading,
@@ -1004,12 +1166,21 @@ export default function CrmCampaignsPage() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [channelFilter, setChannelFilter] = useState<string[]>([]);
+  const [createdPreset, setCreatedPreset] = useState<CreatedPreset>("any");
+  const [createdRange, setCreatedRange] = useState<CreatedRange | null>(
+    null,
+  );
   const [showDeleted, setShowDeleted] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CrmCampaign | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [confirmRow, setConfirmRow] = useState<string | null>(null);
+  /** The detail drawer's spend amount field, and whether to focus it on open. */
+  const spendAmountRef = useRef<AmountFieldRef>(null);
+  const focusSpendOnOpen = useRef(false);
   const [form] = Form.useForm<CampaignFormValues>();
+  const layout = useColumnLayout("campaigns", COLUMN_CHOICES, DEFAULT_HIDDEN);
 
   const liveCampaigns = useMemo(
     () => (campaigns ?? []).filter((c) => !c.deleted_at),
@@ -1126,11 +1297,22 @@ export default function CrmCampaignsPage() {
     [liveCampaigns],
   );
 
+  const created = useMemo(
+    () => createdWindow(createdPreset, createdRange),
+    [createdPreset, createdRange],
+  );
+
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return (campaigns ?? [])
       .filter((c) => (showDeleted ? Boolean(c.deleted_at) : !c.deleted_at))
       .filter((c) => statusFilter === "ALL" || c.status === statusFilter)
+      .filter(
+        (c) =>
+          channelFilter.length === 0 ||
+          channelFilter.includes(c.channel || NO_CHANNEL),
+      )
+      .filter((c) => inCreatedWindow(created, c.created_at))
       .filter((c) => {
         if (!needle) return true;
         return [c.name, c.channel ?? "", c.notes ?? ""]
@@ -1138,7 +1320,32 @@ export default function CrmCampaignsPage() {
           .toLowerCase()
           .includes(needle);
       });
-  }, [campaigns, search, statusFilter, showDeleted]);
+  }, [campaigns, search, statusFilter, channelFilter, created, showDeleted]);
+
+  /** Campaigns per status in the current view (live or Deleted). */
+  const statusCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const c of campaigns ?? []) {
+      if (showDeleted ? !c.deleted_at : c.deleted_at) continue;
+      counts.set(c.status, (counts.get(c.status) ?? 0) + 1);
+    }
+    return counts;
+  }, [campaigns, showDeleted]);
+
+  /** Every channel in use — `channel` is free text, so read it off the data. */
+  const channelOptions = useMemo(() => {
+    const names = new Set<string>();
+    let blank = false;
+    for (const c of campaigns ?? []) {
+      if (c.channel) names.add(c.channel);
+      else blank = true;
+    }
+    const list = [...names]
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => ({ value: name, label: name }));
+    if (blank) list.push({ value: NO_CHANNEL, label: "No channel" });
+    return list;
+  }, [campaigns]);
 
   const detailCampaign = useMemo(
     () => (campaigns ?? []).find((c) => c.id === detailId) ?? null,
@@ -1201,8 +1408,159 @@ export default function CrmCampaignsPage() {
     }
   };
 
-  /** Quiet em dash for empty cells. */
-  const dash = <span style={{ color: token.colorTextQuaternary }}>—</span>;
+  const deleteCampaign = async (c: CrmCampaign) => {
+    try {
+      await setDeleted.mutateAsync({ id: c.id, deleted: true });
+      message.success("Campaign deleted.");
+    } catch (err) {
+      message.error(errMsg(err, "Failed to delete."));
+    }
+  };
+
+  const restoreCampaign = async (c: CrmCampaign) => {
+    try {
+      await setDeleted.mutateAsync({ id: c.id, deleted: false });
+      message.success("Campaign restored.");
+    } catch (err) {
+      message.error(errMsg(err, "Failed to restore."));
+    }
+  };
+
+  const destroyForever = async (c: CrmCampaign) => {
+    try {
+      await destroyCampaign.mutateAsync(c.id);
+      message.success("Campaign permanently deleted.");
+    } catch (err) {
+      message.error(errMsg(err, "Failed to delete."));
+    }
+  };
+
+  /** The edit form's write, for one field: the row menu's Status submenu. */
+  const changeStatus = async (c: CrmCampaign, status: CrmCampaignStatus) => {
+    try {
+      await updateCampaign.mutateAsync({ id: c.id, patch: { status } });
+      message.success(`Status: ${crmCampaignStatusMeta(status).label}.`);
+    } catch (err) {
+      message.error(errMsg(err, "Failed to change the status."));
+    }
+  };
+
+  /** Opens the campaign on its spend composer, amount field focused. */
+  const logSpend = (c: CrmCampaign) => {
+    focusSpendOnOpen.current = true;
+    setDetailId(c.id);
+  };
+
+  const copyName = (name: string) => {
+    void navigator.clipboard.writeText(name).then(
+      () => message.success("Name copied."),
+      () => message.error("Couldn't copy the name."),
+    );
+  };
+
+  /**
+   * The right-click menu on a campaign row: the row's own actions (open, edit,
+   * delete — or restore and delete forever in Deleted) plus a status switch
+   * and a jump to the spend composer. Campaigns aren't task/note/reminder
+   * targets, so the record menu's New task / Add note / Remind me don't apply.
+   */
+  const rowMenu = (c: CrmCampaign): CrmMenuItem[] | null => {
+    // While the row's own delete confirm is up, a right-click (inside the
+    // confirm's portal, which bubbles here, or on the row) gets the browser's
+    // menu: the row menu's Edit… and Delete… would stack over the confirm.
+    if (confirmRow === c.id) return null;
+    const open: CrmMenuItem = {
+      key: "open",
+      label: "Open",
+      icon: "open_in_new",
+      onSelect: () => setDetailId(c.id),
+    };
+    const copy: CrmMenuItem = {
+      key: "copy",
+      label: "Copy name",
+      icon: "content_copy",
+      onSelect: () => copyName(c.name),
+    };
+    if (c.deleted_at) {
+      return [
+        open,
+        { type: "divider" },
+        {
+          key: "restore",
+          label: "Restore",
+          icon: "restore_from_trash",
+          onSelect: () => void restoreCampaign(c),
+        },
+        { type: "divider" },
+        copy,
+        { type: "divider" },
+        {
+          key: "destroy",
+          label: "Delete forever…",
+          icon: "delete_forever",
+          danger: true,
+          onSelect: () =>
+            modal.confirm({
+              title: `Permanently delete “${c.name}”?`,
+              content: DESTROY_COPY.description,
+              okText: DESTROY_COPY.okText,
+              okButtonProps: { danger: true },
+              onOk: () => destroyForever(c),
+            }),
+        },
+      ];
+    }
+    const current = crmCampaignStatusMeta(c.status);
+    return [
+      open,
+      {
+        key: "edit",
+        label: "Edit…",
+        icon: "edit",
+        onSelect: () => openEdit(c),
+      },
+      { type: "divider" },
+      {
+        key: "status",
+        label: "Status",
+        icon: "flag",
+        extra: current.label,
+        children: CRM_CAMPAIGN_STATUSES.map((s) => ({
+          key: s.value,
+          label: s.label,
+          icon: CAMPAIGN_STATUS_ICON[s.value],
+          checked: s.value === current.value,
+          onSelect:
+            s.value === current.value
+              ? undefined
+              : () => void changeStatus(c, s.value),
+        })),
+      },
+      {
+        key: "spend",
+        label: "Log spend…",
+        icon: "payments",
+        onSelect: () => logSpend(c),
+      },
+      { type: "divider" },
+      copy,
+      { type: "divider" },
+      {
+        key: "delete",
+        label: "Delete…",
+        icon: "delete",
+        danger: true,
+        onSelect: () =>
+          modal.confirm({
+            title: `Delete “${c.name}”?`,
+            content: DELETE_COPY.description,
+            okText: DELETE_COPY.okText,
+            okButtonProps: { danger: true },
+            onOk: () => deleteCampaign(c),
+          }),
+      },
+    ];
+  };
 
   const numberCell = (value: React.ReactNode) => (
     <span
@@ -1215,7 +1573,19 @@ export default function CrmCampaignsPage() {
     </span>
   );
 
-  const filtered = Boolean(search.trim()) || statusFilter !== "ALL";
+  const filtered =
+    Boolean(search.trim()) ||
+    statusFilter !== "ALL" ||
+    channelFilter.length > 0 ||
+    created !== null;
+
+  const clearFilters = () => {
+    setSearch("");
+    setStatusFilter("ALL");
+    setChannelFilter([]);
+    setCreatedPreset("any");
+    setCreatedRange(null);
+  };
 
   // Spend numbers that fail to load must not read as a campaign list that is
   // simply empty — one means "nothing to see", the other means "don't trust
@@ -1235,18 +1605,11 @@ export default function CrmCampaignsPage() {
       description={
         search.trim()
           ? `Nothing found for “${search.trim()}”. Try a campaign name or a channel.`
-          : "No campaign has that status right now."
+          : channelFilter.length === 0 && created === null
+            ? "No campaign has that status right now."
+            : "No campaign matches these filters right now."
       }
-      action={
-        <Button
-          onClick={() => {
-            setSearch("");
-            setStatusFilter("ALL");
-          }}
-        >
-          Clear filters
-        </Button>
-      }
+      action={<Button onClick={clearFilters}>Clear filters</Button>}
     />
   ) : showDeleted ? (
     <EmptyState
@@ -1274,45 +1637,188 @@ export default function CrmCampaignsPage() {
     />
   );
 
+  /** Where a status sits in its lifecycle order, for sorting. */
+  const statusRank = (value: string) =>
+    CRM_CAMPAIGN_STATUSES.indexOf(crmCampaignStatusMeta(value));
+
+  const columns: TableColumnsType<CrmCampaign> = [
+    {
+      title: "Campaign",
+      key: "name",
+      render: (_, c) => <CampaignCell campaign={c} />,
+      sorter: (a, b) => a.name.localeCompare(b.name),
+    },
+    {
+      title: "Channel",
+      key: "channel",
+      width: 120,
+      render: (_, c) =>
+        c.channel ? <TagPill label={c.channel} /> : <EmptyCell />,
+      sorter: (a, b) => (a.channel ?? "").localeCompare(b.channel ?? ""),
+    },
+    {
+      title: "Status",
+      key: "status",
+      width: 108,
+      render: (_, c) => {
+        const meta = crmCampaignStatusMeta(c.status);
+        return <TagPill label={meta.label} tone={meta.tone} />;
+      },
+      sorter: (a, b) => statusRank(a.status) - statusRank(b.status),
+    },
+    {
+      title: "Running",
+      key: "dates",
+      width: 220,
+      render: (_, c) => (
+        <RunningCell started={c.started_on} ended={c.ended_on} />
+      ),
+      sorter: (a, b) => (a.started_on ?? "").localeCompare(b.started_on ?? ""),
+    },
+    {
+      title: "Total spend",
+      key: "spend",
+      width: 128,
+      align: "right",
+      render: (_, c) =>
+        numberCell(crmMoney(spendByCampaign.get(c.id) ?? 0, c.currency_code)),
+      sorter: (a, b) =>
+        (spendByCampaign.get(a.id) ?? 0) - (spendByCampaign.get(b.id) ?? 0),
+    },
+    {
+      title: "Leads",
+      key: "leads",
+      width: 84,
+      align: "right",
+      render: (_, c) => numberCell((leadsByCampaign.get(c.id) ?? []).length),
+      sorter: (a, b) =>
+        (leadsByCampaign.get(a.id) ?? []).length -
+        (leadsByCampaign.get(b.id) ?? []).length,
+    },
+    {
+      title: (
+        <Tooltip title="Spend ÷ leads, with junk leads left out of the denominator.">
+          <span>Cost per lead</span>
+        </Tooltip>
+      ),
+      key: "cpl",
+      width: 128,
+      align: "right",
+      render: (_, c) => {
+        const leads = billableLeads(leadsByCampaign.get(c.id) ?? []);
+        if (leads === 0) return <EmptyCell />;
+        return numberCell(
+          costPerLead(spendByCampaign.get(c.id) ?? 0, leads, c.currency_code),
+        );
+      },
+    },
+    {
+      title: "Date created",
+      key: "created",
+      width: 124,
+      render: (_, c) => <DateCell value={c.created_at} />,
+      sorter: (a, b) => a.created_at.localeCompare(b.created_at),
+    },
+    {
+      title: "Last update",
+      key: "updated",
+      width: 124,
+      render: (_, c) => <UpdatedCell value={c.updated_at} />,
+      sorter: (a, b) => a.updated_at.localeCompare(b.updated_at),
+    },
+    {
+      title: "",
+      key: "actions",
+      width: 96,
+      align: "right",
+      fixed: "right",
+      render: (_, c) => (
+        <RowActions open={confirmRow === c.id}>
+          {c.deleted_at ? (
+            <>
+              <Tooltip title="Restore">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<MIcon name="restore_from_trash" size={17} />}
+                  onClick={() => void restoreCampaign(c)}
+                />
+              </Tooltip>
+              <Popconfirm
+                title="Permanently delete this campaign?"
+                description={DESTROY_COPY.description}
+                okText={DESTROY_COPY.okText}
+                okButtonProps={{ danger: true }}
+                onOpenChange={(open) => setConfirmRow(open ? c.id : null)}
+                onConfirm={() => destroyForever(c)}
+              >
+                <Tooltip title="Delete forever">
+                  <Button
+                    type="text"
+                    size="small"
+                    danger
+                    icon={<MIcon name="delete_forever" size={17} />}
+                  />
+                </Tooltip>
+              </Popconfirm>
+            </>
+          ) : (
+            <>
+              <Tooltip title="Edit">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<MIcon name="edit" size={16} />}
+                  onClick={() => openEdit(c)}
+                />
+              </Tooltip>
+              <Popconfirm
+                title="Delete this campaign?"
+                description={DELETE_COPY.description}
+                okText={DELETE_COPY.okText}
+                okButtonProps={{ danger: true }}
+                onOpenChange={(open) => setConfirmRow(open ? c.id : null)}
+                onConfirm={() => deleteCampaign(c)}
+              >
+                <Tooltip title="Delete">
+                  <Button
+                    type="text"
+                    size="small"
+                    danger
+                    icon={<MIcon name="delete" size={16} />}
+                  />
+                </Tooltip>
+              </Popconfirm>
+            </>
+          )}
+        </RowActions>
+      ),
+    },
+  ];
+
+  const visibleColumns = layout.arrange(columns);
+  const scrollX = visibleColumns.reduce(
+    (sum, col) =>
+      sum + (typeof col.width === "number" ? col.width : NAME_COLUMN_BASIS),
+    0,
+  );
+
   return (
     <div style={crmPageStyle()}>
       <CrmPageHeader
         title="Campaigns"
         count={isLoading || isError ? null : rows.length}
         subtitle="What each paid channel spends, and what it costs to buy a lead there."
+        right={
+          <Button
+            type="primary"
+            icon={<MIcon name="add" size={16} />}
+            onClick={openCreate}
+          >
+            New campaign
+          </Button>
+        }
       />
-
-      <CrmToolbar>
-        <CrmSearch
-          value={search}
-          onChange={setSearch}
-          placeholder="Search campaigns…"
-        />
-        <Segmented
-          value={statusFilter}
-          onChange={(v) => setStatusFilter(v as StatusFilter)}
-          options={[
-            { value: "ALL", label: "All" },
-            ...CRM_CAMPAIGN_STATUSES.map((s) => ({
-              value: s.value,
-              label: s.label,
-            })),
-          ]}
-        />
-        <CrmToggle
-          checked={showDeleted}
-          onChange={setShowDeleted}
-          label="Deleted"
-        />
-        <Button
-          type="primary"
-          icon={<MIcon name="add" size={16} />}
-          onClick={openCreate}
-          style={{ marginLeft: "auto" }}
-        >
-          New campaign
-        </Button>
-      </CrmToolbar>
 
       <div style={TILE_GRID}>
         <StatTile
@@ -1357,231 +1863,121 @@ export default function CrmCampaignsPage() {
         />
       </div>
 
-      <Panel padding={0}>
-        <Table<CrmCampaign>
+      <CrmTableCard
+        toolbar={
+          <>
+            <TableSearch
+              value={search}
+              onChange={setSearch}
+              placeholder="Search campaigns…"
+            />
+            <FilterButton
+              icon="flag"
+              label="Status"
+              activeCount={statusFilter === "ALL" ? 0 : 1}
+              onClear={() => setStatusFilter("ALL")}
+              width={220}
+            >
+              <Radio.Group
+                value={statusFilter}
+                onChange={(e) =>
+                  setStatusFilter(e.target.value as StatusFilter)
+                }
+                style={{ display: "flex", flexDirection: "column", gap: 8 }}
+              >
+                <Radio value="ALL">All statuses</Radio>
+                {CRM_CAMPAIGN_STATUSES.map((s) => (
+                  <Radio key={s.value} value={s.value}>
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                    >
+                      <TagPill label={s.label} tone={s.tone} />
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: token.colorTextTertiary,
+                          fontVariantNumeric: "tabular-nums",
+                        }}
+                      >
+                        {statusCounts.get(s.value) ?? 0}
+                      </span>
+                    </span>
+                  </Radio>
+                ))}
+              </Radio.Group>
+            </FilterButton>
+            <FilterButton
+              icon="hub"
+              label="Channel"
+              activeCount={channelFilter.length}
+              onClear={() => setChannelFilter([])}
+            >
+              <Select
+                mode="multiple"
+                allowClear
+                placeholder="Any channel"
+                value={channelFilter}
+                onChange={setChannelFilter}
+                options={channelOptions}
+                optionFilterProp="label"
+                maxTagCount="responsive"
+                notFoundContent="No channels yet"
+                style={{ width: "100%" }}
+              />
+            </FilterButton>
+            <DateCreatedFilter
+              preset={createdPreset}
+              range={createdRange}
+              onChange={(preset, range) => {
+                setCreatedPreset(preset);
+                setCreatedRange(range);
+              }}
+            />
+            <ToolbarSpacer />
+            <CrmToggle
+              checked={showDeleted}
+              onChange={setShowDeleted}
+              label="Deleted"
+            />
+            <ManageColumns layout={layout} />
+          </>
+        }
+      >
+        <CrmTable<CrmCampaign>
           rowKey="id"
-          size="middle"
           loading={isLoading}
           dataSource={rows}
-          pagination={{
-            pageSize: 25,
-            hideOnSinglePage: true,
-            style: { marginInline: 16 },
-          }}
-          scroll={{ x: 1040 }}
+          pagination={{ pageSize: 25, hideOnSinglePage: true }}
+          scroll={{ x: scrollX }}
           locale={{
             emptyText: isLoading ? <div style={{ height: 120 }} /> : emptyText,
           }}
-          onRow={(c) => ({
-            onClick: () => setDetailId(c.id),
-            style: { cursor: "pointer" },
-          })}
-          columns={[
-            {
-              title: "Campaign",
-              key: "name",
-              render: (_, c) => (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    minWidth: 0,
-                  }}
-                >
-                  <CampaignGlyph name={c.name} />
-                  <span
-                    style={{
-                      fontWeight: 500,
-                      color: c.deleted_at
-                        ? token.colorTextTertiary
-                        : token.colorText,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      minWidth: 0,
-                    }}
-                  >
-                    {c.name}
-                  </span>
-                  {c.channel ? (
-                    <SoftChip style={{ flex: "none" }}>{c.channel}</SoftChip>
-                  ) : null}
-                </div>
-              ),
-              sorter: (a, b) => a.name.localeCompare(b.name),
-            },
-            {
-              title: "Status",
-              key: "status",
-              width: 118,
-              render: (_, c) => {
-                const meta = crmCampaignStatusMeta(c.status);
-                return <SoftChip tone={meta.tone}>{meta.label}</SoftChip>;
-              },
-            },
-            {
-              title: "Running",
-              key: "dates",
-              width: 210,
-              render: (_, c) => (
-                <span style={{ color: token.colorTextTertiary }}>
-                  {dateRange(c.started_on, c.ended_on)}
-                </span>
-              ),
-              sorter: (a, b) =>
-                (a.started_on ?? "").localeCompare(b.started_on ?? ""),
-            },
-            {
-              title: "Total spend",
-              key: "spend",
-              width: 140,
-              align: "right",
-              render: (_, c) =>
-                numberCell(
-                  crmMoney(spendByCampaign.get(c.id) ?? 0, c.currency_code),
-                ),
-              sorter: (a, b) =>
-                (spendByCampaign.get(a.id) ?? 0) -
-                (spendByCampaign.get(b.id) ?? 0),
-            },
-            {
-              title: "Leads",
-              key: "leads",
-              width: 92,
-              align: "right",
-              render: (_, c) =>
-                numberCell((leadsByCampaign.get(c.id) ?? []).length),
-              sorter: (a, b) =>
-                (leadsByCampaign.get(a.id) ?? []).length -
-                (leadsByCampaign.get(b.id) ?? []).length,
-            },
-            {
-              title: (
-                <Tooltip title="Spend ÷ leads, with junk leads left out of the denominator.">
-                  <span>Cost per lead</span>
-                </Tooltip>
-              ),
-              key: "cpl",
-              width: 140,
-              align: "right",
-              render: (_, c) => {
-                const leads = billableLeads(leadsByCampaign.get(c.id) ?? []);
-                if (leads === 0) return dash;
-                return numberCell(
-                  costPerLead(
-                    spendByCampaign.get(c.id) ?? 0,
-                    leads,
-                    c.currency_code,
-                  ),
-                );
-              },
-            },
-            {
-              title: "",
-              key: "actions",
-              width: 96,
-              align: "right",
-              render: (_, c) => (
-                <RowActions open={confirmRow === c.id}>
-                  {c.deleted_at ? (
-                    <>
-                      <Tooltip title="Restore">
-                        <Button
-                          type="text"
-                          size="small"
-                          icon={<MIcon name="restore_from_trash" size={17} />}
-                          onClick={async () => {
-                            try {
-                              await setDeleted.mutateAsync({
-                                id: c.id,
-                                deleted: false,
-                              });
-                              message.success("Campaign restored.");
-                            } catch (err) {
-                              message.error(errMsg(err, "Failed to restore."));
-                            }
-                          }}
-                        />
-                      </Tooltip>
-                      <Popconfirm
-                        title="Permanently delete this campaign?"
-                        description="This cannot be undone. Its daily spend goes with it and its leads stay, unattributed."
-                        okText="Delete forever"
-                        okButtonProps={{ danger: true }}
-                        onOpenChange={(open) =>
-                          setConfirmRow(open ? c.id : null)
-                        }
-                        onConfirm={async () => {
-                          try {
-                            await destroyCampaign.mutateAsync(c.id);
-                            message.success("Campaign permanently deleted.");
-                          } catch (err) {
-                            message.error(errMsg(err, "Failed to delete."));
-                          }
-                        }}
-                      >
-                        <Tooltip title="Delete forever">
-                          <Button
-                            type="text"
-                            size="small"
-                            danger
-                            icon={<MIcon name="delete_forever" size={17} />}
-                          />
-                        </Tooltip>
-                      </Popconfirm>
-                    </>
-                  ) : (
-                    <>
-                      <Tooltip title="Edit">
-                        <Button
-                          type="text"
-                          size="small"
-                          icon={<MIcon name="edit" size={16} />}
-                          onClick={() => openEdit(c)}
-                        />
-                      </Tooltip>
-                      <Popconfirm
-                        title="Delete this campaign?"
-                        description="It moves to Deleted and can be restored, spend and all."
-                        okText="Delete"
-                        okButtonProps={{ danger: true }}
-                        onOpenChange={(open) =>
-                          setConfirmRow(open ? c.id : null)
-                        }
-                        onConfirm={async () => {
-                          try {
-                            await setDeleted.mutateAsync({
-                              id: c.id,
-                              deleted: true,
-                            });
-                            message.success("Campaign deleted.");
-                          } catch (err) {
-                            message.error(errMsg(err, "Failed to delete."));
-                          }
-                        }}
-                      >
-                        <Tooltip title="Delete">
-                          <Button
-                            type="text"
-                            size="small"
-                            danger
-                            icon={<MIcon name="delete" size={16} />}
-                          />
-                        </Tooltip>
-                      </Popconfirm>
-                    </>
-                  )}
-                </RowActions>
-              ),
-            },
-          ]}
+          onRow={(c) => ({ onClick: () => setDetailId(c.id) })}
+          rowContextMenu={rowMenu}
+          columns={visibleColumns}
         />
-      </Panel>
+      </CrmTableCard>
 
       <Drawer
         open={Boolean(detailCampaign)}
         onClose={() => setDetailId(null)}
+        afterOpenChange={(open) => {
+          // "Log spend…" lands on the composer: it sits below the charts, so
+          // bring it into view and put the cursor in the amount. The flag is
+          // spent on every settle, open or closed: a drawer shut mid-animation
+          // only reports the close, and must not hand the focus to the next
+          // plain Open.
+          const focus = focusSpendOnOpen.current;
+          focusSpendOnOpen.current = false;
+          if (!open || !focus) return;
+          const amount = spendAmountRef.current;
+          amount?.scrollIntoView({ block: "center", behavior: "smooth" });
+          amount?.focus({ preventScroll: true });
+        }}
         width={DETAIL_DRAWER_WIDTH}
         destroyOnHidden
         styles={{
@@ -1674,6 +2070,7 @@ export default function CrmCampaignsPage() {
             key={detailCampaign.id}
             campaign={detailCampaign}
             leads={leadsByCampaign.get(detailCampaign.id) ?? []}
+            amountRef={spendAmountRef}
           />
         ) : null}
       </Drawer>

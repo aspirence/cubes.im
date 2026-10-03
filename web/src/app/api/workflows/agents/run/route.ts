@@ -165,11 +165,11 @@ async function fetchContextForMention(
     }
     case "social": {
       const { data, error } = await supabase
-        .from("app_social_studio_posts")
+        .from("app_content_studio_items")
         .select(
           `id, title, status, scheduled_for, published_at, updated_at,
-           project:projects!app_social_studio_posts_project_fk ( id, name, color_code ),
-           task:tasks!app_social_studio_posts_task_fk ( id, name, task_no )`,
+           project:projects!app_content_studio_items_project_fk ( id, name, color_code ),
+           task:tasks!app_content_studio_items_task_fk ( id, name, task_no )`,
         )
         .eq("team_id", teamId)
         .order("updated_at", { ascending: false })

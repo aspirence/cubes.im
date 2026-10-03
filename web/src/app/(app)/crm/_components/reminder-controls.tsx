@@ -55,6 +55,27 @@ export function crmDefaultRemindAt(): Dayjs {
   return dayjs().add(1, "day").hour(10).minute(0).second(0).millisecond(0);
 }
 
+/**
+ * The quick "remind me / snooze" choices every CRM menu offers, computed from
+ * `now`: an hour from now (rounded UP to the next 5 minutes, so never less
+ * than an hour), tomorrow morning, and next Monday morning — left out on a
+ * Sunday, when it would be the same moment as "tomorrow morning".
+ */
+export function crmReminderPresets(now: Dayjs = dayjs()): { key: string; label: string; at: Dayjs }[] {
+  let hour = now.add(1, "hour").second(0).millisecond(0);
+  if (now.second() || now.millisecond()) hour = hour.add(1, "minute");
+  const up = (5 - (hour.minute() % 5)) % 5;
+  hour = hour.add(up, "minute");
+  const tomorrow = crmDefaultRemindAt();
+  const days = (8 - now.day()) % 7 || 7;
+  const monday = now.add(days, "day").hour(10).minute(0).second(0).millisecond(0);
+  return [
+    { key: "hour", label: "In an hour", at: hour },
+    { key: "tomorrow", label: "Tomorrow morning", at: tomorrow },
+    ...(monday.isSame(tomorrow) ? [] : [{ key: "monday", label: "Next Monday", at: monday }]),
+  ];
+}
+
 /** The picker format — same shape as `crmDateTime`, so set and shown agree. */
 export const CRM_REMIND_AT_FORMAT = "DD MMM YYYY, HH:mm";
 

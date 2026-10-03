@@ -26,6 +26,20 @@ const nextConfig: NextConfig = {
     "rc-input",
     "rc-field-form",
   ],
+  // Social Studio became Content Studio, and the folder name under app/(app)/apps
+  // is the public URL — so /apps/social-studio stopped resolving the moment it was
+  // renamed. Anyone holding a bookmark or an old deep link would hit a 404, so the
+  // old path is kept alive here. 308 rather than 307: the move is permanent and
+  // the method should be preserved.
+  async redirects() {
+    return [
+      {
+        source: "/apps/social-studio",
+        destination: "/apps/content-studio",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

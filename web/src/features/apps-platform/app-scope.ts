@@ -88,7 +88,9 @@ export function useAppActivatedProjects(appKey: string) {
 export const VIEW_KEY_TO_APP_KEY: Record<string, string> = {
   "video-review": "video_review",
   files: "files",
-  "social-studio": "social_studio",
+  "content-studio": "content_studio",
+  sheets: "sheets",
+  client: "client",
 };
 
 export function appKeyForViewKey(viewKey: string): string | undefined {

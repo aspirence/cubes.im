@@ -443,6 +443,11 @@ function TaskCardBody({ task, onOpen, statusName, statusAccent, overlay, activeS
               <Glyph name="chat_bubble_outline" size={13} /> {commentCount}
             </span>
           ) : null}
+          {task.recurring?.some((r) => r.active) ? (
+            <span title="Repeats" style={{ display: "inline-flex", alignItems: "center" }}>
+              <Glyph name="repeat" size={13} />
+            </span>
+          ) : null}
           {due ? (
             <span
               style={{

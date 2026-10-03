@@ -7,6 +7,8 @@
  * New step type / skill = one descriptor here + one executor branch there.
  */
 
+import { APP_ACTIONS, appActionByKey, type AppActionDescriptor } from "./app-action-catalog";
+
 export type StepType = "agent" | "condition" | "action" | "app" | "human" | "ai";
 
 /** A form field descriptor (a small JSON-Schema subset the renderer supports). */
@@ -236,13 +238,17 @@ export const STEP_CAPABILITIES: StepCapability[] = [
     ],
   },
   {
+    // The generic "app" capability. The Builder palette does not show this
+    // tile itself: it shows one tile per APP_ACTIONS entry whose app is
+    // installed (see appActionTiles), and every app step resolves back to this
+    // entry. The per-action params are rendered from the catalog, not `fields`.
     key: "app",
     stepType: "app",
-    title: "App delivery",
-    description: "Send via a connected app (Slack, webhook, …). Coming in Phase C.",
-    icon: "send",
+    title: "App action",
+    description: "Run an action in an installed app (Sheets, CRM). Runs on the server right after the steps before it.",
+    icon: "apps",
     category: "Apps",
-    available: false,
+    available: true,
     fields: [],
   },
   {
@@ -256,6 +262,27 @@ export const STEP_CAPABILITIES: StepCapability[] = [
     fields: [],
   },
 ];
+
+/**
+ * App-step palette tiles: one per catalog action, flagged unavailable (with the
+ * reason) when its app is not installed and enabled for the team. Pure so the
+ * list can be unit-tested against an installed-apps list.
+ */
+export function appActionTiles(
+  installed: { app_key: string; enabled: boolean }[],
+): (AppActionDescriptor & { available: boolean; reason?: string })[] {
+  return APP_ACTIONS.map((a) => {
+    const row = installed.find((i) => i.app_key === a.appKey);
+    if (!row) return { ...a, available: false, reason: `Install the ${a.appKey} app to use this step.` };
+    if (!row.enabled) return { ...a, available: false, reason: `The ${a.appKey} app is turned off.` };
+    return { ...a, available: true };
+  });
+}
+
+/** The catalog descriptor an app step points at (config.action), if any. */
+export function appActionForStep(config: Record<string, unknown>): AppActionDescriptor | undefined {
+  return typeof config.action === "string" ? appActionByKey(config.action) : undefined;
+}
 
 export const stepCapByKey = (key: string): StepCapability | undefined =>
   STEP_CAPABILITIES.find((c) => c.key === key);

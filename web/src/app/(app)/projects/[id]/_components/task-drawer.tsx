@@ -78,7 +78,11 @@ import {
   extractMentionUserIds,
   type MentionEntity,
 } from "@/features/team-members/team-mention-input";
-import { TaskIdChip } from "@/features/tasks/task-id-label";
+import {
+  TaskIdChip,
+  copyText,
+  taskShareUrl,
+} from "@/features/tasks/task-id-label";
 import {
   useTaskStatuses,
   useTaskPriorities,
@@ -126,6 +130,7 @@ import {
 } from "@/features/app-video-review/use-video-review";
 import { NewReviewModal } from "@/features/app-video-review/new-review-modal";
 import { CreateTaskModal } from "@/features/tasks/create-task-modal";
+import { TaskRecurrenceControl } from "@/features/recurring/task-recurrence-control";
 
 /* -------------------------------------------------------------------------- */
 /* Local types.                                                               */
@@ -554,6 +559,32 @@ function TaskDrawerContent({
     });
   };
 
+  /** Copies the task's link — the same one notifications deep-link with. */
+  const copyTaskLink = async () => {
+    if (!task) return;
+    const ok = await copyText(taskShareUrl(task.project_id, task.id));
+    if (ok) message.success("Link copied — anyone in this project can open it.");
+    else message.error("Couldn't copy — copy it from the address bar.");
+  };
+
+  // The OS share sheet (WhatsApp, Mail, Slack…) where the browser has one —
+  // phones and Safari; desktop Chrome/Firefox mostly don't, so it's hidden there.
+  const canNativeShare =
+    typeof navigator !== "undefined" && typeof navigator.share === "function";
+  const shareTask = async () => {
+    if (!task) return;
+    try {
+      await navigator.share({
+        title: task.name?.trim() || "Task",
+        url: taskShareUrl(task.project_id, task.id),
+      });
+    } catch (err) {
+      // Closing the sheet rejects with AbortError — that's a choice, not a failure.
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      void copyTaskLink();
+    }
+  };
+
   // ---- Lookups -------------------------------------------------------------
   const { data: statusesRaw } = useTaskStatuses(projectId);
   const celebrateTaskDone = useCelebrateTaskDone();
@@ -733,7 +764,7 @@ function TaskDrawerContent({
     // Wait only for the INITIAL load; a settled error is consumable (otherwise
     // the render-time tab adjustment above would pin the panel to Comments).
     if (commentsRaw === undefined && !commentsError) return;
-    // Scoped to this pane — a second drawer mount (e.g. Social Studio's) may
+    // Scoped to this pane — a second drawer mount (e.g. Content Studio's) may
     // render the same rows elsewhere in the DOM.
     const row = commentsPaneRef.current?.querySelector<HTMLElement>(
       `[data-comment-id="${CSS.escape(focusCommentId)}"]`,
@@ -1271,12 +1302,37 @@ function TaskDrawerContent({
           />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 2, flex: "none", paddingTop: 2 }}>
-          {/* Task actions (⋯) — Delete is available to every project member. */}
+          {/* Task actions (⋯) — share, then Delete (every project member can). */}
           <Dropdown
             trigger={["click"]}
             placement="bottomRight"
             menu={{
               items: [
+                {
+                  key: "copy-link",
+                  icon: (
+                    <span className="material-symbols-rounded" aria-hidden style={{ fontSize: 16 }}>
+                      link
+                    </span>
+                  ),
+                  label: "Copy link",
+                  onClick: () => void copyTaskLink(),
+                },
+                ...(canNativeShare
+                  ? [
+                      {
+                        key: "share",
+                        icon: (
+                          <span className="material-symbols-rounded" aria-hidden style={{ fontSize: 16 }}>
+                            ios_share
+                          </span>
+                        ),
+                        label: "Share…",
+                        onClick: () => void shareTask(),
+                      },
+                    ]
+                  : []),
+                { type: "divider" as const },
                 {
                   key: "delete",
                   danger: true,
@@ -1494,6 +1550,26 @@ function TaskDrawerContent({
               placeholder="No start date"
             />
           </MetaRow>
+
+          {/* Repeat is top-level only: a series is made of whole tasks, and a
+              subtask is copied along with its parent. */}
+          {task.parent_task_id == null ? (
+            <MetaRow icon="repeat" label="Repeat">
+              <TaskRecurrenceControl
+                taskId={task.id}
+                projectId={task.project_id}
+                // The task's own day, start first — the same order the job
+                // anchors on. Null for a dateless task: the control then keeps
+                // the series' stored day instead of drifting with today.
+                anchor={
+                  task.start_date ?? task.end_date
+                    ? dayjs(task.start_date ?? task.end_date ?? undefined).format("YYYY-MM-DD")
+                    : null
+                }
+                inPage={isPage}
+              />
+            </MetaRow>
+          ) : null}
 
           <MetaRow icon="timer" label="Time logged">
             {timeByPerson.length === 0 ? (

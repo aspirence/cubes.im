@@ -52,12 +52,12 @@ export async function sendResendEmail(
     if (res.status === 401 || res.status === 403) {
       return { ok: false, reason: "Resend rejected the API key. Check the key and try again." };
     }
-    if (res.status === 422) {
-      return {
-        ok: false,
-        reason:
-          "Resend rejected the message — usually an unverified sender domain or a bad address. Verify the from-address domain in Resend.",
-      };
+    if (res.status === 422 || res.status === 400) {
+      // Resend answers a rejected message with {name, message}. Blaming the
+      // sender domain for every one of them sent people to verify a domain that
+      // was already verified, when the real problem was the address they typed.
+      // The mapped strings below are authored here, never echoed from Resend.
+      return { ok: false, reason: await rejectionReason(res) };
     }
     if (res.status === 429) {
       return { ok: false, reason: "Resend rate limit hit. Try again shortly." };
@@ -74,6 +74,38 @@ export async function sendResendEmail(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Turn a Resend rejection into something the person reading it can act on.
+ * Their body is `{ statusCode, name, message }`; we match on it and answer with
+ * our own sentence, so no provider text (which can quote headers) is stored in
+ * the member-readable columns.
+ */
+async function rejectionReason(res: Response): Promise<string> {
+  let name = "";
+  let message = "";
+  try {
+    const body = (await res.json()) as { name?: string; message?: string };
+    name = (body.name ?? "").toLowerCase();
+    message = (body.message ?? "").toLowerCase();
+  } catch {
+    // A non-JSON body tells us nothing; fall through to the generic answer.
+  }
+
+  if (name === "invalid_from_address" || message.includes("domain is not verified") || message.includes("verify a domain")) {
+    return "The from-address domain isn't verified in Resend. Verify it there, then try again.";
+  }
+  if (message.includes("testing emails") || message.includes("your own email address")) {
+    return "This Resend account is still in testing, so it can only email the account owner. Verify a domain in Resend to email anyone else.";
+  }
+  if (message.includes("invalid `to`") || message.includes("invalid to") || (name === "validation_error" && message.includes("to"))) {
+    return "That recipient address was rejected as invalid — check the spelling of the email address.";
+  }
+  if (name === "validation_error") {
+    return "Resend rejected the message as invalid. Check the recipient address and the sender address.";
+  }
+  return "Resend rejected the message. Check the recipient address, then the sender domain in Resend.";
 }
 
 /** "Name <email>" when a display name is set, else the bare address. */

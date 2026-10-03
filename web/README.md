@@ -12,7 +12,7 @@
 
 <p align="center">
   The open-source all-in-one workspace for agencies and business owners —<br />
-  project management, video review, client portals, and social publishing in one place.
+  project management, video review, client portals, and content publishing in one place.
 </p>
 
 <p align="center">
@@ -40,7 +40,7 @@
 ## Why Cubes?
 
 Agencies run on five subscriptions duct-taped together: a PM tool, a video-review
-tool, a client-portal tool, a social scheduler, and a file locker. Cubes replaces
+tool, a client-portal tool, a content scheduler, and a file locker. Cubes replaces
 the stack with **one workspace and one login** — and prices it honestly:
 
 - **Self-hosted** — free forever, unlimited seats. It's open source.
@@ -80,7 +80,7 @@ One login, installable per workspace from the **App Center**:
 | --- | --- |
 | 🎬 **Video Review** | Upload cuts, timestamped comments, versions, and approvals |
 | 🤝 **Client Portal** | Token-gated public portal — clients see progress, reviews, and billing, and submit work requests. **No client login needed.** 5 portal templates including a live sheet view |
-| 📣 **Social Studio** | Plan and schedule posts across your social channels |
+| 📣 **Content Studio** | Plan and schedule social posts, blog posts, newsletters, video and podcasts |
 | 📁 **Files** | Shared file management across projects and teams |
 | 📄 **Docs** | Project docs — a page tree with per-page privacy |
 
@@ -104,6 +104,12 @@ npm run dev
 
 Open http://localhost:3000 — logged-out visitors land on the marketing site,
 authenticated users go to `/home`.
+
+`npm run dev` raises Node's request-header limit to 64 KB via
+`--max-http-header-size`. Every app on `localhost` shares one cookie jar no
+matter which port it runs on, so a couple of other Supabase-backed dev servers
+can push the `Cookie` header past Node's 16 KB default and every logged-in
+request fails with HTTP 431. Clearing cookies for `localhost` is the other fix.
 
 **Optional — seed a demo workspace** (5 users, projects, tasks, HR data):
 

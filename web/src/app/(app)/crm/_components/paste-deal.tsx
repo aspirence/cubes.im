@@ -30,6 +30,7 @@ import {
 } from "@/features/app-crm/types";
 import { errMsg } from "@/lib/err";
 import { MIcon } from "./m-icon";
+import { ProjectPicker } from "./target-picker";
 import {
   CRM_REMIND_AT_FORMAT,
   crmDefaultRemindAt,
@@ -37,6 +38,8 @@ import {
 } from "./reminder-controls";
 import { SoftChip, fallbackDealName } from "../_lib/ui";
 import { useCrmPrefsStore } from "../_lib/crm-prefs-store";
+import { useCrmScope, useScopeMismatchNotice } from "../_lib/crm-scope";
+import { looksLikePastedTable } from "../_lib/lead-import";
 import {
   hasUsefulSignal,
   parsePastedDeal,
@@ -56,6 +59,8 @@ type DealFormValues = {
   /** Where the lead came from; without it the lead has no cost per lead. */
   campaign_id?: string | null;
   close_date?: Dayjs | null;
+  /** The project the deal is filed under; cleared = no project. */
+  project_id?: string | null;
   company_id?: string | null;
   owner_id?: string | null;
   /** Set a personal follow-up nudge on the new deal. Off by default. */
@@ -110,11 +115,18 @@ export function DealQuickCreate({
   open = false,
   onClose,
   capturePaste = true,
+  onPasteTable,
 }: {
   /** External open request (button-triggered); paste opens it on its own. */
   open?: boolean;
   onClose?: () => void;
   capturePaste?: boolean;
+  /**
+   * A pasted block of spreadsheet rows is many leads, not one: when given,
+   * such a paste goes here (the page opens the importer on it) instead of
+   * filling this form with the first row.
+   */
+  onPasteTable?: (text: string) => void;
 }) {
   const { token } = theme.useToken();
   const { message } = App.useApp();
@@ -128,6 +140,12 @@ export function DealQuickCreate({
   const setLastCompanyId = useCrmPrefsStore((s) => s.setLastCompanyId);
   const lastCampaignId = useCrmPrefsStore((s) => s.lastCampaignId);
   const setLastCampaignId = useCrmPrefsStore((s) => s.setLastCampaignId);
+  // The CRM's current project (the bar above the CRM tabs, or the pinned
+  // project view) is where the new deal is filed by default; the Project field
+  // stays editable and a deal saved elsewhere is announced, never blocked.
+  // Outside the CRM layout both fall back to unscoped no-ops (no project).
+  const { projectId } = useCrmScope();
+  const notify = useScopeMismatchNotice();
 
   const { data: stages } = useCrmStages();
   const { data: campaigns } = useCrmCampaigns();
@@ -210,11 +228,16 @@ export function DealQuickCreate({
       if (isEditableTarget(e.target) || overlayOpen()) return;
       const text = e.clipboardData?.getData("text/plain") ?? "";
       if (text.trim().length < 3) return;
+      if (onPasteTable && looksLikePastedTable(text)) {
+        e.preventDefault();
+        onPasteTable(text);
+        return;
+      }
       if (openFrom(text)) e.preventDefault();
     };
     document.addEventListener("paste", onPaste);
     return () => document.removeEventListener("paste", onPaste);
-  }, [parsed, open, capturePaste, openFrom]);
+  }, [parsed, open, capturePaste, openFrom, onPasteTable]);
 
   /** Open either way; a button-opened dialog starts from a blank parse. */
   const active = parsed ?? (open ? BLANK : null);
@@ -242,6 +265,8 @@ export function DealQuickCreate({
       // A pasted date wins; otherwise today, since a lead captured now is
       // usually being worked now.
       close_date: active.closeDate ? dayjs(active.closeDate) : dayjs(),
+      // Filed under the project the CRM is on (none under "No project").
+      project_id: projectId,
       // Nothing in the paste identified a company? Fall back to the one used
       // last time — leads tend to arrive in runs for the same account.
       company_id:
@@ -264,6 +289,7 @@ export function DealQuickCreate({
     canCreateCompany,
     liveCompanies,
     lastCompanyId,
+    projectId,
     liveCampaigns,
     lastCampaignId,
     user?.id,
@@ -312,14 +338,18 @@ export function DealQuickCreate({
     if (!active) return;
     setSubmitting(true);
     try {
+      // One lead, one project: a company or contact created from this paste
+      // is filed where the deal is.
+      const dealProjectId = values.project_id ?? null;
       // Create the referenced records first so the deal can point at them.
-      let companyId = values.company_id ?? null;
-      if (companyId === CREATE_NEW) {
+      let dealCompanyId = values.company_id ?? null;
+      if (dealCompanyId === CREATE_NEW) {
         const created = await createCompany.mutateAsync({
           name: active.companyName ?? "New company",
           domain: active.domain ?? null,
+          project_id: dealProjectId,
         });
-        companyId = created.id;
+        dealCompanyId = created.id;
       }
 
       const phone = values.phone?.trim() || null;
@@ -335,7 +365,8 @@ export function DealQuickCreate({
           last_name: rest.join(" "),
           email: active.email ?? null,
           phone,
-          company_id: companyId,
+          company_id: dealCompanyId,
+          project_id: dealProjectId,
         });
         contactId = created.id;
       }
@@ -353,7 +384,7 @@ export function DealQuickCreate({
           fallbackDealName({
             company:
               active.companyName ??
-              liveCompanies.find((c) => c.id === companyId)?.name,
+              liveCompanies.find((c) => c.id === dealCompanyId)?.name,
             contact:
               active.personName ??
               crmPersonName(livePeople.find((p) => p.id === contactId)),
@@ -364,7 +395,8 @@ export function DealQuickCreate({
         status: values.status ?? CRM_LEAD_STATUS_DEFAULT,
         campaign_id: values.campaign_id ?? null,
         close_date: values.close_date ? values.close_date.format("YYYY-MM-DD") : null,
-        company_id: companyId,
+        project_id: dealProjectId,
+        company_id: dealCompanyId,
         contact_id: contactId,
         owner_id: values.owner_id ?? null,
         position: Math.max(0, ...stageDeals.map((d) => d.position)) + 1,
@@ -389,7 +421,7 @@ export function DealQuickCreate({
 
       // Remember the account and the campaign so the next capture defaults
       // to both — a run of leads from one ad shouldn't need re-picking.
-      if (companyId) setLastCompanyId(companyId);
+      if (dealCompanyId) setLastCompanyId(dealCompanyId);
       if (values.campaign_id) setLastCampaignId(values.campaign_id);
       if (reminderFailed) {
         message.warning("Deal created, but the follow-up reminder didn't save.");
@@ -398,6 +430,10 @@ export function DealQuickCreate({
           active.raw ? "Deal created from your clipboard." : "Deal created.",
         );
       }
+      // The deal was filed under a project other than the one the CRM is on
+      // (picked by hand in the Project field), so it is not on this page. Say
+      // so, with a way to go and look. A no-op while it is in scope.
+      notify({ recordProjectId: dealProjectId, noun: "Deal" });
       close();
     } catch (err) {
       setSubmitting(false);
@@ -511,6 +547,12 @@ export function DealQuickCreate({
                 />
               </Form.Item>
             </Space.Compact>
+
+            {/* Where the deal is filed — defaults to the project the CRM is
+                on, and decides which project's view the deal shows up in. */}
+            <Form.Item name="project_id" label="Project">
+              <ProjectPicker />
+            </Form.Item>
 
             {/* Company and owner pair up: two more one-line pickers stacked
                 would push the reminder row below the fold on a laptop. */}
@@ -633,7 +675,7 @@ export function PasteDealHint({ style }: { style?: React.CSSProperties }) {
       }}
     >
       <MIcon name="content_paste" size={14} color={token.colorTextQuaternary} />
-      Paste a lead anywhere on this page to start a deal
+      Paste a lead — or rows from a sheet — anywhere on this page
     </span>
   );
 }
