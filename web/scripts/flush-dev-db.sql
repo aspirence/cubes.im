@@ -55,6 +55,13 @@ select coalesce((select min(executed_at) from storage.migrations)
 \if :is_guard
   \quit
 \endif
+-- Since 2026-10-03 this project IS production (cubes.im runs on it). Nothing
+-- here may empty it again: only the read-only plan and the guard still run.
+\if :is_plan
+\else
+  \echo 'Refusing: sivarqzgyeniuveqnjtq has been the production database since 2026-10-03. This script no longer flushes it.'
+  select 1 / 0 as production_database;
+\endif
 \if :is_flush
   \if :{?backup}
   \else

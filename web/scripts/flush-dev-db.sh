@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# RETIRED 2026-10-03: the project below became production; flush/rehearse now refuse.
+#
 # Flush the DEV Supabase project back to an empty app: every row of app data,
 # every login and every uploaded file. What stays: the schema, the migration
 # history, the pg_cron jobs, the Storage buckets, and the reference / platform
@@ -56,6 +58,13 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+
+# Since 2026-10-03 this project is production (cubes.im runs on it): it is never
+# flushed again. --plan (read-only) and --grant-admin still work.
+if [ "$MODE" = "flush" ] || [ "$MODE" = "rehearse" ]; then
+  echo "Refusing: $DEV_REF has been the production database since 2026-10-03 — this script no longer flushes it." >&2
+  exit 1
+fi
 
 # --- guard: every credential must belong to the dev project ------------------
 ref_of_db_url() {

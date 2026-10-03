@@ -47,6 +47,12 @@ for arg in "$@"; do
   esac
 done
 
+# RETIRED 2026-10-03: the target project below became production (cubes.im runs
+# on it), so it is never cloned into again. Kept for the record and as the
+# template for the next dev database.
+echo "Refusing: $DEV_REF has been the production database since 2026-10-03 — nothing is cloned into it any more." >&2
+exit 1
+
 # --- production credentials ----------------------------------------------------
 # From the environment, else the first commented line in .env.local whose value
 # belongs to the production project. Values stay in this shell; nothing is printed.
