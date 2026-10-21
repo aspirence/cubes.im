@@ -600,7 +600,8 @@ export default function WorkflowBuilderPage() {
   const appTiles =
     pickerCat === "All" || pickerCat === "Apps"
       ? appActionTiles(installedApps ?? [])
-          .filter((a) => a.appKey !== "")
+          // The HTTP step has its own tile; platform integrations (Meta Ads) show here.
+          .filter((a) => a.key !== "http.request")
           .filter(
             (a) =>
               !q || a.label.toLowerCase().includes(q) || a.description.toLowerCase().includes(q),

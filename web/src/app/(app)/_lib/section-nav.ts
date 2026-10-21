@@ -114,6 +114,7 @@ export const SECTION_NAVS: SectionNav[] = [
     items: [
       { key: "/workflows", label: "Workflows", icon: "account_tree" },
       { key: "/workflows/agents", label: "Agents", icon: "smart_toy" },
+      { key: "/workflows/integrations", label: "Integrations", icon: "hub" },
     ],
   },
   {

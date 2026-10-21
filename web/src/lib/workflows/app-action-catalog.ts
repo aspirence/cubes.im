@@ -17,7 +17,8 @@ export type AppActionKey =
   | "crm.create_deal"
   | "crm.update_deal"
   | "crm.find_deal"
-  | "sheets.sync";
+  | "sheets.sync"
+  | "meta.get_insights";
 
 export interface AppActionParam {
   key: string;
@@ -41,7 +42,12 @@ export interface AppActionParam {
     /** A list of header name/value pairs. */
     | "headers"
     /** A multi-line body (JSON, usually). */
-    | "code";
+    | "code"
+    /**
+     * Ad accounts from the workspace's Meta (Facebook Ads) connections, picked
+     * by our row id. An empty list means every enabled account.
+     */
+    | "meta_ad_accounts";
   options?: { value: string; label: string }[];
   default: unknown;
   help?: string;
@@ -65,12 +71,74 @@ export interface AppActionDescriptor {
   key: AppActionKey;
   /** installed_apps.app_key that must be installed and enabled for the step to run. */
   appKey: string;
+  /**
+   * A platform integration the step needs instead of an app (appKey ""): it is
+   * offered in the palette like an app step, and checks its own connection
+   * when it runs.
+   */
+  integration?: "meta";
   label: string;
   description: string;
   icon: string;
   params: AppActionParam[];
   outputs: { key: string; label: string }[];
 }
+
+/** Rows per day at this level of a Meta ad account. */
+export type MetaInsightLevel = "account" | "campaign" | "adset" | "ad";
+
+/** The numbers the Meta Ads step can put on each row. */
+export type MetaInsightMetric =
+  | "spend"
+  | "impressions"
+  | "reach"
+  | "frequency"
+  | "clicks"
+  | "link_clicks"
+  | "ctr"
+  | "cpc"
+  | "cpm"
+  | "results"
+  | "cost_per_result"
+  | "leads"
+  | "cost_per_lead"
+  | "purchases"
+  | "purchase_value"
+  | "roas"
+  | "video_views";
+
+export const META_INSIGHT_METRICS: { value: MetaInsightMetric; label: string }[] = [
+  { value: "spend", label: "Amount spent" },
+  { value: "impressions", label: "Impressions" },
+  { value: "reach", label: "Reach" },
+  { value: "frequency", label: "Frequency" },
+  { value: "clicks", label: "Clicks (all)" },
+  { value: "link_clicks", label: "Link clicks" },
+  { value: "ctr", label: "CTR (%)" },
+  { value: "cpc", label: "CPC" },
+  { value: "cpm", label: "CPM" },
+  { value: "results", label: "Results" },
+  { value: "cost_per_result", label: "Cost per result" },
+  { value: "leads", label: "Leads" },
+  { value: "cost_per_lead", label: "Cost per lead" },
+  { value: "purchases", label: "Purchases" },
+  { value: "purchase_value", label: "Purchase value" },
+  { value: "roas", label: "ROAS" },
+  { value: "video_views", label: "Video plays (3s)" },
+];
+
+export const META_DEFAULT_METRICS: MetaInsightMetric[] = [
+  "spend",
+  "impressions",
+  "reach",
+  "clicks",
+  "ctr",
+  "cpc",
+  "cpm",
+  "results",
+  "cost_per_result",
+  "leads",
+];
 
 export const APP_ACTIONS: AppActionDescriptor[] = [
   {
@@ -112,6 +180,71 @@ export const APP_ACTIONS: AppActionDescriptor[] = [
       { key: "status", label: "HTTP status" },
       { key: "headers", label: "Response headers" },
       { key: "body", label: "Response body" },
+    ],
+  },
+  {
+    // Daily numbers straight from Facebook Ads Manager, as rows later steps can
+    // send anywhere (an HTTP step to Apps Script / Zapier / Make, a CRM step…).
+    // Belongs to no app: it needs a Meta connection (Workflows → Integrations).
+    key: "meta.get_insights",
+    appKey: "",
+    integration: "meta",
+    label: "Meta Ads: get insights",
+    description: "Fetch daily numbers from Facebook Ads Manager — one row per day per account, campaign, ad set or ad.",
+    icon: "ads_click",
+    params: [
+      {
+        key: "account_ids",
+        label: "Ad accounts",
+        kind: "meta_ad_accounts",
+        default: [],
+        help: "Leave empty to use every enabled ad account.",
+      },
+      {
+        key: "level",
+        label: "One row per",
+        kind: "select",
+        default: "campaign",
+        options: [
+          { value: "account", label: "Ad account" },
+          { value: "campaign", label: "Campaign" },
+          { value: "adset", label: "Ad set" },
+          { value: "ad", label: "Ad" },
+        ],
+      },
+      {
+        key: "date_preset",
+        label: "Dates",
+        kind: "select",
+        default: "yesterday",
+        options: [
+          { value: "yesterday", label: "Yesterday" },
+          { value: "today", label: "Today so far" },
+          { value: "last_3d", label: "Last 3 days" },
+          { value: "last_7d", label: "Last 7 days" },
+          { value: "last_14d", label: "Last 14 days" },
+          { value: "last_30d", label: "Last 30 days" },
+          { value: "this_month", label: "This month" },
+          { value: "last_month", label: "Last month" },
+        ],
+        help: "Days are counted in each ad account's own timezone. Facebook keeps revising the last few days, so re-fetching \"Last 3 days\" keeps a sheet accurate.",
+      },
+      {
+        key: "metrics",
+        label: "Metrics",
+        kind: "multi_select",
+        default: META_DEFAULT_METRICS,
+        options: META_INSIGHT_METRICS,
+      },
+    ],
+    outputs: [
+      { key: "rows", label: "Rows" },
+      { key: "row_count", label: "Rows fetched" },
+      { key: "spend", label: "Amount spent" },
+      { key: "date_from", label: "From" },
+      { key: "date_to", label: "To" },
+      { key: "accounts", label: "Ad accounts read" },
+      { key: "errors", label: "Errors" },
     ],
   },
   {

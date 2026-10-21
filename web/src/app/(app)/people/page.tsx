@@ -79,6 +79,8 @@ export default function PeoplePage() {
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteTier, setInviteTier] = useState<string>("member");
+  /** The member the owner is about to hand the workspace to (null = dialog closed). */
+  const [transferTo, setTransferTo] = useState<TeamMember | null>(null);
 
   const members = useMemo(
     () => (membersData ?? []).filter((m) => m.user && m.active !== false),
@@ -136,19 +138,23 @@ export default function PeoplePage() {
           .catch((e) => message.error(e instanceof Error ? e.message : "Couldn't remove.")),
     });
 
-  const transfer = (m: TeamMember) =>
-    modal.confirm({
-      title: "Transfer ownership?",
-      content: `Make ${name(m)} the workspace owner. You'll become an admin.`,
-      okText: "Transfer",
-      onOk: () => {
-        if (!activeTeam?.id || !m.user_id) return;
-        return transferOwnership
-          .mutateAsync({ teamId: activeTeam.id, toUserId: m.user_id })
-          .then(() => message.success("Ownership transferred."))
-          .catch((e) => message.error(e instanceof Error ? e.message : "Couldn't transfer."));
-      },
-    });
+  /**
+   * Handing the workspace over is a one-way door for the person doing it: once
+   * someone else is owner, only they (or the organization owner) can transfer it
+   * back. So it gets a dialog that names who is receiving it and says plainly
+   * what changes, rather than a one-line confirm.
+   */
+  const confirmTransfer = () => {
+    const m = transferTo;
+    if (!m || !activeTeam?.id || !m.user_id) return;
+    transferOwnership
+      .mutateAsync({ teamId: activeTeam.id, toUserId: m.user_id })
+      .then(() => {
+        setTransferTo(null);
+        message.success(`${name(m)} is now the owner of this workspace.`);
+      })
+      .catch((e) => message.error(e instanceof Error ? e.message : "Couldn't transfer."));
+  };
 
   const memberMenu = (m: TeamMember): MenuProps => ({
     items: [
@@ -163,7 +169,7 @@ export default function PeoplePage() {
           onClick: () => changeTier(m, t.value),
         })),
       },
-      ...(iAmOwner && m.user_id ? [{ type: "divider" as const }, { key: "transfer", label: "Transfer ownership", onClick: () => transfer(m) }] : []),
+      ...(iAmOwner && m.user_id ? [{ type: "divider" as const }, { key: "transfer", label: "Transfer ownership", onClick: () => setTransferTo(m) }] : []),
       { type: "divider" as const },
       { key: "remove", label: "Remove from workspace", danger: true, onClick: () => removeOne(m) },
     ],
@@ -359,6 +365,56 @@ export default function PeoplePage() {
           </div>
         </div>
       ) : null}
+
+      {/* Transfer ownership — the confirmation step for an irreversible handover */}
+      <Modal
+        title="Transfer ownership?"
+        open={transferTo !== null}
+        onCancel={() => setTransferTo(null)}
+        onOk={confirmTransfer}
+        okText="Transfer ownership"
+        okButtonProps={{ danger: true }}
+        confirmLoading={transferOwnership.isPending}
+        destroyOnHidden
+      >
+        {transferTo ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "10px 12px",
+                borderRadius: 10,
+                background: token.colorFillTertiary,
+              }}
+            >
+              <Avatar size={36} src={transferTo.user?.avatar_url ?? undefined}>
+                {initials(name(transferTo))}
+              </Avatar>
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: 14, fontWeight: 600, color: token.colorText }}>
+                  {name(transferTo)}
+                </span>
+                {transferTo.user?.email ? (
+                  <span style={{ display: "block", fontSize: 12.5, color: token.colorTextTertiary }}>
+                    {transferTo.user.email}
+                  </span>
+                ) : null}
+              </span>
+            </div>
+            <div style={{ fontSize: 13.5, color: token.colorText }}>
+              They become the owner of{" "}
+              <b>{activeTeam?.name ?? "this workspace"}</b>: full control, billing, and the ability to
+              remove members or hand ownership on again.
+            </div>
+            <div style={{ fontSize: 13.5, color: token.colorText }}>
+              You become an <b>Admin</b>. After this, only the new owner (or the organization owner) can
+              transfer ownership back to you.
+            </div>
+          </div>
+        ) : null}
+      </Modal>
 
       {/* Invite modal — tier picker with descriptions */}
       <Modal

@@ -86,6 +86,17 @@ function AppOutput({ action, output }: { action: string; output: Record<string, 
   const labelled = descriptor?.outputs.filter((o) => o.key in output) ?? [];
   const show = (v: unknown): string => {
     if (typeof v === "number") return v.toLocaleString();
+    if (Array.isArray(v)) {
+      if (!v.length) return "—";
+      if (v.every((x) => typeof x !== "object" || x === null)) return v.map(String).join("; ");
+      // A list of rows (Meta Ads insights) or of read accounts.
+      if (v.every((x) => x && typeof x === "object" && "name" in (x as object) && "rows" in (x as object))) {
+        return (v as { name: unknown; rows: unknown; error?: unknown }[])
+          .map((a) => `${String(a.name)} · ${typeof a.error === "string" ? "failed" : `${Number(a.rows).toLocaleString()} rows`}`)
+          .join(", ");
+      }
+      return `${v.length.toLocaleString()} row${v.length === 1 ? "" : "s"}`;
+    }
     if (v && typeof v === "object") {
       return (
         Object.entries(v as Record<string, unknown>)
@@ -96,22 +107,73 @@ function AppOutput({ action, output }: { action: string; output: Record<string, 
     return String(v ?? "—");
   };
   if (!labelled.length) return null;
+  // The first array of row objects gets a small preview table under the summary.
+  const rowsKey = labelled.find(
+    (o) =>
+      Array.isArray(output[o.key]) &&
+      (output[o.key] as unknown[]).length > 0 &&
+      (output[o.key] as unknown[]).every((x) => x && typeof x === "object" && !("rows" in (x as object))),
+  )?.key;
+  const preview = rowsKey ? (output[rowsKey] as Record<string, unknown>[]).slice(0, 5) : [];
+  const previewCols = preview.length ? Object.keys(preview[0]).slice(0, 8) : [];
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "auto 1fr",
-        gap: "2px 12px",
-        marginTop: 4,
-        fontSize: 12,
-      }}
-    >
-      {labelled.map((o) => (
-        <div key={o.key} style={{ display: "contents" }}>
-          <span style={{ color: token.colorTextSecondary }}>{o.label}</span>
-          <span style={{ color: token.colorText }}>{show(output[o.key])}</span>
+    <div style={{ marginTop: 4 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "auto 1fr",
+          gap: "2px 12px",
+          fontSize: 12,
+        }}
+      >
+        {labelled.map((o) => (
+          <div key={o.key} style={{ display: "contents" }}>
+            <span style={{ color: token.colorTextSecondary }}>{o.label}</span>
+            <span style={{ color: token.colorText }}>{show(output[o.key])}</span>
+          </div>
+        ))}
+      </div>
+      {preview.length ? (
+        <div style={{ overflowX: "auto", marginTop: 6 }}>
+          <table style={{ borderCollapse: "collapse", fontSize: 11.5, whiteSpace: "nowrap" }}>
+            <thead>
+              <tr>
+                {previewCols.map((c) => (
+                  <th
+                    key={c}
+                    style={{
+                      textAlign: "left",
+                      padding: "2px 8px 2px 0",
+                      color: token.colorTextSecondary,
+                      fontWeight: 600,
+                      borderBottom: `1px solid ${token.colorBorderSecondary}`,
+                    }}
+                  >
+                    {c}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {preview.map((r, i) => (
+                <tr key={i}>
+                  {previewCols.map((c) => (
+                    <td key={c} style={{ padding: "2px 8px 2px 0", color: token.colorText }}>
+                      {typeof r[c] === "number" ? (r[c] as number).toLocaleString() : String(r[c] ?? "—")}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {(output[rowsKey!] as unknown[]).length > preview.length ? (
+            <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
+              First {preview.length} of {(output[rowsKey!] as unknown[]).length.toLocaleString()} — the raw output below has every
+              row and column.
+            </span>
+          ) : null}
         </div>
-      ))}
+      ) : null}
     </div>
   );
 }

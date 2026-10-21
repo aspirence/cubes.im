@@ -53,8 +53,7 @@ create table if not exists public.app_sheets (
     constraint app_sheets_description_check
         check (description is null or char_length(description) <= 2000),
     constraint app_sheets_source_check
-        check (source in ('custom', 'tasks', 'content_studio_items',
-
+        check (source in ('custom', 'tasks', 'content_studio_items')),
     constraint app_sheets_source_config_check
         check (jsonb_typeof(source_config) = 'object'),
     constraint app_sheets_columns_check
@@ -245,8 +244,7 @@ create table if not exists public.app_sheet_templates (
     constraint app_sheet_templates_icon_check
         check (icon is null or char_length(icon) <= 60),
     constraint app_sheet_templates_source_check
-        check (source in ('custom', 'tasks', 'content_studio_items',
-
+        check (source in ('custom', 'tasks', 'content_studio_items')),
     constraint app_sheet_templates_source_config_check
         check (jsonb_typeof(source_config) = 'object'),
     constraint app_sheet_templates_columns_check

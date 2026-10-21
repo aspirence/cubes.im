@@ -1,6 +1,7 @@
 import { safeErrorText } from "@/lib/apps/auth";
 import { sheetsActions } from "@/lib/sheets/workflow-actions";
 import { crmActions } from "@/lib/crm/workflow-actions";
+import { metaActions } from "@/lib/meta/workflow-actions";
 import { appActionByKey, type AppActionKey } from "./app-action-catalog";
 import { runHttpStep, type HttpStepConfig } from "./http-step";
 import type { AppActionContext, AppActionHandler, AppActionResult } from "./app-action-types";
@@ -15,6 +16,9 @@ import type { AppActionContext, AppActionHandler, AppActionResult } from "./app-
 const HANDLERS: Record<AppActionKey, AppActionHandler> = {
   ...sheetsActions,
   ...crmActions,
+  // Facebook Ads Manager — a platform integration (Workflows → Integrations),
+  // not an app: it checks its own connection when it runs.
+  ...metaActions,
   // The outbound HTTP step belongs to no app — it is the engine's own escape
   // hatch — so its handler lives here rather than in an app's module. The
   // guards (https only, per-team host allowlist, no private addresses,

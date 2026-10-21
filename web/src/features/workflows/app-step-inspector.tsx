@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Alert, Input, InputNumber, Segmented, Select, Switch, Tag, Typography, theme } from "antd";
+import { Alert, Button, Input, InputNumber, Segmented, Select, Switch, Tag, Typography, theme } from "antd";
 import {
   appActionByKey,
   appActionParamsComplete,
@@ -18,6 +18,8 @@ import {
   useWorkflowCrmStageOptions,
   useWorkflowSheetOptions,
 } from "./use-app-step-data";
+import { useActiveTeam } from "@/features/teams/use-teams";
+import { metaConnectUrl, useMetaIntegration } from "./use-meta-ads";
 
 /**
  * Inspector for an "app" step: which action it runs and that action's params,
@@ -81,6 +83,79 @@ function SheetPicker({ value, onChange, disabled }: { value: unknown; onChange: 
       {typeof value === "string" && data?.available && !isLoading && !selected ? (
         <Typography.Text type="danger" style={{ fontSize: 12 }}>
           The chosen sheet no longer exists or was archived — pick another.
+        </Typography.Text>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * Ad accounts from the workspace's Facebook connections (Workflows →
+ * Integrations). The stored value is a list of our account row ids; an empty
+ * list means "every enabled account", so a newly shared account is picked up
+ * without editing the workflow.
+ */
+function MetaAccountsPicker({ value, onChange, disabled }: { value: unknown; onChange: (v: unknown) => void; disabled?: boolean }) {
+  const { data, isLoading } = useMetaIntegration();
+  const { data: team } = useActiveTeam();
+  if (data?.notReady) {
+    return (
+      <Alert type="warning" showIcon message="Facebook connections need a database update before this step can be set up." />
+    );
+  }
+  const accounts = (data?.connections ?? []).flatMap((c) =>
+    c.accounts.map((a) => ({ ...a, connectionName: c.meta_user_name ?? "Facebook" })),
+  );
+  if (data && accounts.length === 0) {
+    const returnTo = typeof window !== "undefined" ? window.location.pathname : "/workflows";
+    return (
+      <Alert
+        type="info"
+        showIcon
+        message="Connect Facebook to pick ad accounts."
+        description={
+          <span>
+            {team?.id ? (
+              <Button size="small" type="primary" href={metaConnectUrl(team.id, returnTo)} style={{ marginRight: 8 }}>
+                Continue with Facebook
+              </Button>
+            ) : null}
+            <Link href="/workflows/integrations">Open Integrations</Link>
+          </span>
+        }
+      />
+    );
+  }
+  const selected = Array.isArray(value) ? (value as string[]) : [];
+  const enabled = accounts.filter((a) => a.enabled);
+  const missing = selected.filter((id) => !enabled.some((a) => a.id === id));
+  return (
+    <>
+      <Select
+        mode="multiple"
+        allowClear
+        style={{ width: "100%" }}
+        disabled={disabled}
+        loading={isLoading}
+        optionFilterProp="label"
+        placeholder="All enabled ad accounts"
+        value={selected.filter((id) => enabled.some((a) => a.id === id))}
+        options={enabled.map((a) => ({
+          value: a.id,
+          label: `${a.name}${a.currency ? ` · ${a.currency}` : ""}${a.business_name ? ` · ${a.business_name}` : ""}`,
+        }))}
+        onChange={onChange}
+      />
+      {missing.length ? (
+        <Typography.Text type="warning" style={{ fontSize: 12, display: "block" }}>
+          {missing.length} chosen account{missing.length === 1 ? " is" : "s are"} switched off or no longer shared — it
+          won&rsquo;t be read.
+        </Typography.Text>
+      ) : null}
+      {accounts.length > enabled.length ? (
+        <Typography.Text type="secondary" style={{ fontSize: 12, display: "block" }}>
+          {accounts.length - enabled.length} more account{accounts.length - enabled.length === 1 ? " is" : "s are"} switched
+          off in <Link href="/workflows/integrations">Integrations</Link>.
         </Typography.Text>
       ) : null}
     </>
@@ -248,6 +323,8 @@ function ParamInput({
       return <Switch disabled={disabled} checked={Boolean(value ?? param.default)} onChange={onChange} />;
     case "sheet":
       return <SheetPicker value={value} onChange={onChange} disabled={disabled} />;
+    case "meta_ad_accounts":
+      return <MetaAccountsPicker value={value} onChange={onChange} disabled={disabled} />;
     case "crm_stage":
       return <CrmLookupPicker kind="stage" value={value} onChange={onChange} groups={groups} disabled={disabled} />;
     case "crm_campaign":
@@ -371,7 +448,7 @@ export function AppStepInspector({
         {action.description}
       </Typography.Paragraph>
 
-      {installed && (!install || !install.enabled) ? (
+      {action.appKey && installed && (!install || !install.enabled) ? (
         <Alert
           style={{ marginBottom: 14 }}
           type="warning"
@@ -427,8 +504,15 @@ export function AppStepInspector({
           ))}
         </div>
         <div style={{ marginTop: 6 }}>
-          It runs on the server right after the steps before it, so a run pauses here for as long as the
-          sync takes.
+          {action.key === "meta.get_insights" ? (
+            <>
+              To send the rows on, set a later step&rsquo;s field to exactly{" "}
+              <Typography.Text code style={{ fontSize: 11.5 }}>{`{{steps.${stepKey}.rows}}`}</Typography.Text> — it receives
+              the whole list, e.g. as an HTTP step&rsquo;s body.
+            </>
+          ) : (
+            "It runs on the server right after the steps before it, so a run pauses here for as long as the sync takes."
+          )}
         </div>
       </div>
     </div>

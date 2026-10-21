@@ -272,6 +272,9 @@ export function appActionTiles(
   installed: { app_key: string; enabled: boolean }[],
 ): (AppActionDescriptor & { available: boolean; reason?: string })[] {
   return APP_ACTIONS.map((a) => {
+    // A platform integration needs no installed app; the step itself asks for
+    // its connection (e.g. Meta Ads → Workflows → Integrations).
+    if (!a.appKey) return { ...a, available: true };
     const row = installed.find((i) => i.app_key === a.appKey);
     if (!row) return { ...a, available: false, reason: `Install the ${a.appKey} app to use this step.` };
     if (!row.enabled) return { ...a, available: false, reason: `The ${a.appKey} app is turned off.` };
