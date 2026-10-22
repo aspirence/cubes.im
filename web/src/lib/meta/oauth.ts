@@ -285,3 +285,45 @@ export function sanitizeMetaError(code: string): string {
       return "Facebook rejected the request. Try connecting again.";
   }
 }
+
+// -----------------------------------------------------------------------------
+// signed_request (deauthorize + data deletion callbacks)
+// -----------------------------------------------------------------------------
+
+/**
+ * Facebook POSTs `signed_request=<base64url sig>.<base64url payload>` to the
+ * deauthorize and data-deletion callbacks. The signature is HMAC-SHA256 of the
+ * payload keyed with the app secret — the only thing proving the call really
+ * came from Facebook, since these endpoints carry no session.
+ *
+ * Returns null when the shape, algorithm or signature is wrong.
+ */
+export function parseSignedRequest(raw: string): { userId: string | null; issuedAt: number | null } | null {
+  const secret = config().appSecret;
+  if (!secret || !raw || !raw.includes(".")) return null;
+  const [sig, payload] = raw.split(".", 2);
+  if (!sig || !payload) return null;
+  let expected: Buffer;
+  let given: Buffer;
+  try {
+    expected = createHmac("sha256", secret).update(payload).digest();
+    given = Buffer.from(sig, "base64url");
+  } catch {
+    return null;
+  }
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null;
+  try {
+    const body = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
+      algorithm?: unknown;
+      user_id?: unknown;
+      issued_at?: unknown;
+    };
+    if (String(body.algorithm ?? "").toUpperCase() !== "HMAC-SHA256") return null;
+    return {
+      userId: typeof body.user_id === "string" && body.user_id ? body.user_id : null,
+      issuedAt: typeof body.issued_at === "number" ? body.issued_at : null,
+    };
+  } catch {
+    return null;
+  }
+}
