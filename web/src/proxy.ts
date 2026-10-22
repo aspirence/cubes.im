@@ -39,6 +39,9 @@ const PUBLIC_PATHS = [
   "/terms",
   "/privacy",
   "/refunds",
+  // Where Facebook sends someone after a data deletion request, and what an app
+  // reviewer opens from the Meta App Dashboard — both without an account here.
+  "/meta-data-deletion",
 ];
 
 /** When a logged-in user hits one of these, send them into the app. */
