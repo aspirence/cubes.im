@@ -26,8 +26,15 @@ const GRAPH_HOST = "https://graph.facebook.com";
 const META_TIMEOUT_MS = 10_000;
 const STATE_MAX_AGE_MS = 10 * 60 * 1000;
 
-/** Permissions for the classic flow (a Login for Business config sets its own). */
-export const META_SCOPES = "ads_read,business_management";
+/**
+ * Permissions for the classic flow (a Login for Business config sets its own).
+ *
+ * `ads_read` alone covers everything this integration does: listing the ad
+ * accounts the person can see (/me/adaccounts) and reading their statistics
+ * (/act_<id>/insights). Asking for more than the use case needs is a common
+ * reason App Review refuses a permission, so nothing else is requested.
+ */
+export const META_SCOPES = "ads_read";
 
 /** Name of the cookie carrying the CSRF nonce. */
 export const META_OAUTH_COOKIE = "meta_oauth";
