@@ -53,6 +53,7 @@ export type MetricKind =
   | "due-today"
   | "due-week"
   | "in-progress"
+  | "in-review"
   | "completed-week"
   | "total";
 export type TaskScope = "team" | "me";
@@ -192,6 +193,7 @@ export const METRIC_OPTIONS: { value: MetricKind; label: string }[] = [
   { value: "due-today", label: "Due today" },
   { value: "due-week", label: "Due this week" },
   { value: "in-progress", label: "In progress" },
+  { value: "in-review", label: "In Review" },
   { value: "completed-week", label: "Completed this week" },
   { value: "total", label: "Total tasks" },
 ];
@@ -282,6 +284,7 @@ export function defaultDashboardCards(): DashboardCard[] {
     metricCard("Overdue", "overdue"),
     metricCard("Due this week", "due-week"),
     metricCard("Completed this week", "completed-week"),
+    metricCard("In Review", "in-review"),
     chartCard("Open tasks by assignee", "bar", "assignee", "half"),
     chartCard("Tasks by status", "donut", "status", "half"),
     chartCard("Workload by project", "hbar", "project", "half"),

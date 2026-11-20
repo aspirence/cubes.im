@@ -28,6 +28,43 @@ const VALID_KINDS: CardKind[] = [
   "todo",
 ];
 
+/**
+ * Adds the "In Review" tile to a stored layout that predates it.
+ *
+ * A saved layout wins over `defaultDashboardCards()` — that is the whole point
+ * of saving one — so a tile added to the defaults can never reach anyone who
+ * already has a row. This backfills it the same way the "Open tasks" → "To do"
+ * conversion below does: only where the stock metric row is still untouched.
+ *
+ * Deliberately conservative. If the "Completed this week" tile has been
+ * renamed, reconfigured or removed, the row is the user's own arrangement and
+ * nothing is inserted — they can still add the card from the gallery. Nothing
+ * is written to the database either; this shapes what the query returns, and
+ * the stored row only changes if the user saves their dashboard themselves.
+ */
+function withInReviewTile(cards: DashboardCard[]): DashboardCard[] {
+  if (cards.some((c) => c.kind === "metric" && c.metric === "in-review")) {
+    return cards;
+  }
+  const anchor = cards.findIndex(
+    (c) =>
+      c.kind === "metric" &&
+      c.metric === "completed-week" &&
+      c.title === "Completed this week",
+  );
+  if (anchor === -1) return cards;
+  const tile: DashboardCard = {
+    id: "seed-metric-in-review",
+    kind: "metric",
+    title: "In Review",
+    span: "half",
+    w: 1,
+    metric: "in-review",
+    filter: { ...DEFAULT_FILTER },
+  };
+  return [...cards.slice(0, anchor + 1), tile, ...cards.slice(anchor + 1)];
+}
+
 /** Coerce a stored JSON entry into a valid DashboardCard, or null if unusable. */
 function parseCard(raw: unknown): DashboardCard | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
@@ -108,10 +145,11 @@ export function useDashboardCards() {
               ? { ...c, metric: "todo" as const, title: "To do" }
               : c,
           );
+        const upgraded = withInReviewTile(cards);
         // A genuinely-empty saved array means the user cleared the dashboard —
         // honor it. Only fall back to defaults when the row is absent or the
         // stored array is a legacy/non-parseable form (non-empty → 0 cards).
-        if (cards.length > 0 || layout.length === 0) return cards;
+        if (cards.length > 0 || layout.length === 0) return upgraded;
       }
       return defaultDashboardCards();
     },

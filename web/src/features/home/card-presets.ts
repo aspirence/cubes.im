@@ -155,6 +155,27 @@ export const CARD_PRESETS: CardPreset[] = [
     },
   },
   {
+    key: "load-in-review-by-member",
+    title: "In Review by member",
+    description: "Who is holding work in review right now — the approval queue, per person.",
+    icon: "rate_review",
+    category: "Workload",
+    level: "team",
+    featured: true,
+    card: {
+      kind: "chart",
+      title: "In Review by member",
+      span: "half",
+      w: 2,
+      chart: "bar",
+      groupBy: "assignee",
+      // Status NAMES, because that is what a card filter matches on. The
+      // "In Review" tile uses the status category instead; this preset is a
+      // starting point the admin can retarget to whatever their teams call it.
+      filter: filter({ statuses: ["In Review"] }),
+    },
+  },
+  {
     key: "load-by-project",
     title: "Workload by project",
     description: "Where the open work is concentrated across projects.",
@@ -429,6 +450,22 @@ export const CARD_PRESETS: CardPreset[] = [
       span: "half",
       w: 1,
       metric: "completed-week",
+      filter: filter(),
+    },
+  },
+  {
+    key: "kpi-in-review",
+    title: "In Review",
+    description: "One number: open work waiting on review or approval.",
+    icon: "rate_review",
+    category: "KPIs",
+    level: "team",
+    card: {
+      kind: "metric",
+      title: "In Review",
+      span: "half",
+      w: 1,
+      metric: "in-review",
       filter: filter(),
     },
   },

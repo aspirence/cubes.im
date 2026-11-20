@@ -421,6 +421,22 @@ export function tasksForMetric(
       return pop
         .filter((t) => isOpen(t) && t.status?.category?.is_doing)
         .sort(byDue);
+    case "in-review":
+      // Open work that has left "to do" and "doing" but isn't closed either —
+      // the review / awaiting-approval bucket. Until now this sat in no tile at
+      // all: `todo` wants is_todo, `in-progress` wants is_doing, and completed
+      // metrics want `done`, so review work was only ever visible inside `open`.
+      //
+      // Keyed off the status CATEGORY, not the status name, to match how `todo`
+      // and `in-progress` decide: a team that renames "In Review" to "QA" or
+      // "Client approval" keeps counting, and a project whose statuses carry no
+      // category is left out rather than silently swept in.
+      return pop
+        .filter((t) => {
+          const c = t.status?.category;
+          return Boolean(c) && isOpen(t) && !c!.is_todo && !c!.is_doing && !c!.is_done;
+        })
+        .sort(byDue);
     case "completed-week":
       if (windowOverride) {
         return pop
