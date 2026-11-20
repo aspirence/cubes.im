@@ -217,6 +217,33 @@ export function metricLabelForRange(
   return base;
 }
 
+/**
+ * The metrics that MEASURE a window of time. Everything else is a state: a
+ * count of how things stand right now, which no period can narrow.
+ *
+ * The header's range lens filters the whole task population (a task survives
+ * only if it was created, started, due or completed inside the period). That is
+ * right for a window metric and wrong for a state one: with the lens on
+ * "Today", work that has been sitting in review for a fortnight drops out of
+ * the population entirely and the tile reads 0, even though the queue is full.
+ *
+ * `metricLabelForRange` already draws this line for the LABEL — a window metric
+ * is renamed to the period ("Due this week" -> "Due today") and a state metric
+ * keeps its name. A tile still called "In Review" while silently counting only
+ * today's review work contradicts its own label, so the population has to
+ * follow the same split.
+ */
+export const WINDOW_METRICS: MetricKind[] = [
+  "due-today",
+  "due-week",
+  "completed-week",
+];
+
+/** True when the metric measures a period, so the header lens should narrow it. */
+export function isWindowMetric(metric: MetricKind): boolean {
+  return WINDOW_METRICS.includes(metric);
+}
+
 export const DUE_FILTER_OPTIONS: { value: DueFilter; label: string }[] = [
   { value: "any", label: "Any due date" },
   { value: "overdue", label: "Overdue" },

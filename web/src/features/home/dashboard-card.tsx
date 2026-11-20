@@ -29,6 +29,7 @@ import {
 import type { Bounds } from "./date-range";
 import {
   METRIC_OPTIONS,
+  isWindowMetric,
   metricLabelForRange,
   type DashboardCard,
 } from "./dashboard-types";
@@ -69,25 +70,34 @@ function initials(name: string): string {
 function MetricBody({
   card,
   tasks,
+  stateTasks,
   myTeamMemberId,
   globalRange,
 }: {
   card: DashboardCard;
   tasks: TeamTaskWithProject[];
+  /** The same population without the header's range lens applied. */
+  stateTasks: TeamTaskWithProject[];
   myTeamMemberId: string | undefined;
   globalRange?: GlobalRangeLens;
 }) {
   const { token } = theme.useToken();
   const [drillOpen, setDrillOpen] = useState(false);
   const metric = card.metric ?? "open";
+  // A window metric measures the period, so it reads the lensed population and
+  // the lens's bounds. A state metric counts how things stand right now, which
+  // no period narrows — it reads the full population, so "In Review" shows the
+  // whole queue rather than emptying out whenever the lens is not "All time".
+  const windowed = isWindowMetric(metric);
+  const population = windowed ? tasks : stateTasks;
   // The tile's number IS this list's length, so the drill-down can never
   // disagree with the figure the user clicked.
   const drilled = tasksForMetric(
-    tasks,
+    population,
     card.filter,
     metric,
     myTeamMemberId,
-    globalRange?.bounds ?? null,
+    windowed ? (globalRange?.bounds ?? null) : null,
   );
   const value = drilled.length;
   const label = globalRange
@@ -509,6 +519,7 @@ function TodoBody() {
 export function DashboardCardView({
   card: rawCard,
   tasks,
+  stateTasks,
   tasksLoading,
   myTeamMemberId,
   editMode,
@@ -520,6 +531,8 @@ export function DashboardCardView({
 }: {
   card: DashboardCard;
   tasks: TeamTaskWithProject[];
+  /** Population without the range lens — state metrics read this. */
+  stateTasks: TeamTaskWithProject[];
   tasksLoading: boolean;
   myTeamMemberId: string | undefined;
   editMode: boolean;
@@ -610,6 +623,7 @@ export function DashboardCardView({
           <MetricBody
             card={card}
             tasks={tasks}
+            stateTasks={stateTasks}
             myTeamMemberId={myTeamMemberId}
             globalRange={globalRange}
           />

@@ -103,6 +103,7 @@ function SortableCard({
   card,
   editMode,
   tasks,
+  stateTasks,
   tasksLoading,
   myTeamMemberId,
   onEdit,
@@ -114,6 +115,7 @@ function SortableCard({
   card: DashboardCard;
   editMode: boolean;
   tasks: DashboardCardProps["tasks"];
+  stateTasks: DashboardCardProps["tasks"];
   tasksLoading: boolean;
   myTeamMemberId: string | undefined;
   onEdit: () => void;
@@ -253,6 +255,7 @@ function SortableCard({
         <DashboardCardView
           card={card}
           tasks={tasks}
+          stateTasks={stateTasks}
           tasksLoading={tasksLoading}
           myTeamMemberId={myTeamMemberId}
           editMode={editMode}
@@ -335,15 +338,26 @@ export default function HomePage() {
   }
   const rangeLabel = RANGE_OPTIONS.find((o) => o.key === range)?.label ?? "All time";
   const bounds = useMemo(() => rangeBounds(range), [range]);
-  const scopedTasks = useMemo(() => {
-    let list = bounds ? tasks.filter((t) => taskInRange(t, bounds)) : tasks;
-    if (assigneeId) {
-      list = list.filter((t) =>
-        t.assignees.some((a) => a.team_member_id === assigneeId),
-      );
-    }
-    return list;
-  }, [tasks, bounds, assigneeId]);
+  // Everything the member filter allows, WITHOUT the range lens. State metrics
+  // ("To do", "Overdue", "In Review" — counts of how things stand right now)
+  // read this, because a period cannot narrow a state: on "Today" the ranged
+  // list drops every task that was not created, started, due or completed
+  // today, which empties those tiles while the queues they count are full.
+  const memberScopedTasks = useMemo(() => {
+    if (!assigneeId) return tasks;
+    return tasks.filter((t) =>
+      t.assignees.some((a) => a.team_member_id === assigneeId),
+    );
+  }, [tasks, assigneeId]);
+  // The same list narrowed to the lens — for charts, task lists, and the window
+  // metrics that genuinely measure the period.
+  const scopedTasks = useMemo(
+    () =>
+      bounds
+        ? memberScopedTasks.filter((t) => taskInRange(t, bounds))
+        : memberScopedTasks,
+    [memberScopedTasks, bounds],
+  );
   // Threaded to metric cards so window tiles re-measure + re-label to the lens.
   const globalRange = useMemo(
     () => ({ key: range, label: rangeLabel, bounds }),
@@ -614,6 +628,7 @@ export default function HomePage() {
                   card={card}
                   editMode={editMode}
                   tasks={scopedTasks}
+                  stateTasks={memberScopedTasks}
                   tasksLoading={tasksLoading}
                   myTeamMemberId={myTeamMemberId}
                   globalRange={globalRange}
