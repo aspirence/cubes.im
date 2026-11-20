@@ -13,6 +13,7 @@ import {
   type DashboardCard,
   type CardKind,
   DEFAULT_FILTER,
+  GRID_COLS,
   defaultDashboardCards,
 } from "./dashboard-types";
 
@@ -53,12 +54,17 @@ function withInReviewTile(cards: DashboardCard[]): DashboardCard[] {
       c.title === "Completed this week",
   );
   if (anchor === -1) return cards;
+  // Full width, so the tile takes a row of its own. The four stock tiles are a
+  // quarter each and fill their row exactly; a narrower fifth tile wraps and
+  // stands beside the first chart, which pushes every chart out of its pair and
+  // strands a gap further down the page. At full width nothing below it moves,
+  // and no card the user already has changes size.
   const tile: DashboardCard = {
     id: "seed-metric-in-review",
     kind: "metric",
     title: "In Review",
-    span: "half",
-    w: 1,
+    span: "full",
+    w: GRID_COLS,
     metric: "in-review",
     filter: { ...DEFAULT_FILTER },
   };

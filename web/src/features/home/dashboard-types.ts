@@ -264,13 +264,21 @@ function metricCard(
   title: string,
   metric: MetricKind,
   filter: Partial<CardFilter> = {},
+  /**
+   * Column span. The stock tiles are a quarter each, so four of them fill the
+   * row exactly; a fifth at any width under the full grid wraps and strands a
+   * gap — either beside itself, or further down once it has broken the charts
+   * out of their pairs. A full-width fifth tile takes a row of its own and
+   * leaves every chart pairing below it exactly as it was.
+   */
+  w = 1,
 ): DashboardCard {
   return {
     id: seedId("metric"),
     kind: "metric",
     title,
-    span: "half",
-    w: 1,
+    span: w >= GRID_COLS ? "full" : "half",
+    w,
     metric,
     filter: { ...DEFAULT_FILTER, ...filter },
   };
@@ -284,7 +292,7 @@ export function defaultDashboardCards(): DashboardCard[] {
     metricCard("Overdue", "overdue"),
     metricCard("Due this week", "due-week"),
     metricCard("Completed this week", "completed-week"),
-    metricCard("In Review", "in-review"),
+    metricCard("In Review", "in-review", {}, GRID_COLS),
     chartCard("Open tasks by assignee", "bar", "assignee", "half"),
     chartCard("Tasks by status", "donut", "status", "half"),
     chartCard("Workload by project", "hbar", "project", "half"),
