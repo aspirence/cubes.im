@@ -84,12 +84,13 @@ function MetricBody({
   const { token } = theme.useToken();
   const [drillOpen, setDrillOpen] = useState(false);
   const metric = card.metric ?? "open";
-  // A window metric measures the period, so it reads the lensed population and
-  // the lens's bounds. A state metric counts how things stand right now, which
-  // no period narrows — it reads the full population, so "In Review" shows the
-  // whole queue rather than emptying out whenever the lens is not "All time".
-  const windowed = isWindowMetric(metric);
-  const population = windowed ? tasks : stateTasks;
+  // A window metric measures the period through the shared population filter,
+  // so it reads the lensed list. Everything else reads the full one — either
+  // because it counts a state that no period narrows ("To do", "Overdue"), or
+  // because it narrows on a clock the shared filter doesn't know ("In Review"
+  // measures status_changed_at). The bounds go to every metric; the engine
+  // decides which ones they mean anything to.
+  const population = isWindowMetric(metric) ? tasks : stateTasks;
   // The tile's number IS this list's length, so the drill-down can never
   // disagree with the figure the user clicked.
   const drilled = tasksForMetric(
@@ -97,7 +98,7 @@ function MetricBody({
     card.filter,
     metric,
     myTeamMemberId,
-    windowed ? (globalRange?.bounds ?? null) : null,
+    globalRange?.bounds ?? null,
   );
   const value = drilled.length;
   const label = globalRange
@@ -405,7 +406,7 @@ function TodoBody() {
   const updateTodo = useUpdateTodo();
   const deleteTodo = useDeleteTodo();
   // Both already cached by the dashboard's own queries — no extra fetch.
-  const { data: teamTasks } = useAllTeamTasks();
+  const { data: teamTasks } = useAllTeamTasks({ includeSubtasks: true });
   const { data: members } = useTeamMembers();
   const [text, setText] = useState("");
   // Labels the user actually PICKED this compose session → their entity. Only

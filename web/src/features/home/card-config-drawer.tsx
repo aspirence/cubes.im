@@ -66,7 +66,7 @@ function CardPreview({ draft }: { draft: DashboardCard }) {
   const { user } = useAuth();
   const dark = useUIStore((s) => s.themeMode === "dark");
   const { data: members } = useTeamMembers();
-  const { data: teamTasks } = useAllTeamTasks();
+  const { data: teamTasks } = useAllTeamTasks({ includeSubtasks: true });
   const tasks = teamTasks ?? [];
   const myTeamMemberId = (members ?? []).find((m) => m.user?.id === user?.id)?.id;
 
@@ -166,7 +166,7 @@ export function CardConfigDrawer({
 }) {
   const { data: projects } = useProjects();
   const { data: members } = useTeamMembers();
-  const { data: teamTasks } = useAllTeamTasks();
+  const { data: teamTasks } = useAllTeamTasks({ includeSubtasks: true });
   const { user } = useAuth();
 
   const { token } = theme.useToken();

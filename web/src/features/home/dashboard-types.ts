@@ -214,6 +214,12 @@ export function metricLabelForRange(
   const period = rangeLabel.toLowerCase();
   if (metric === "due-week" || metric === "due-today") return `Due ${period}`;
   if (metric === "completed-week") return `Completed ${period}`;
+  // Under a lens these count what ENTERED the state in the period, not the
+  // whole queue, so the caption has to say so — a bare "In Review" over
+  // today's handful would read as the queue being that shallow.
+  if (metric === "in-review") return `In review ${period}`;
+  if (metric === "todo") return `To do ${period}`;
+  if (metric === "overdue") return `Overdue ${period}`;
   return base;
 }
 
@@ -227,11 +233,11 @@ export function metricLabelForRange(
  * "Today", work that has been sitting in review for a fortnight drops out of
  * the population entirely and the tile reads 0, even though the queue is full.
  *
- * `metricLabelForRange` already draws this line for the LABEL — a window metric
- * is renamed to the period ("Due this week" -> "Due today") and a state metric
- * keeps its name. A tile still called "In Review" while silently counting only
- * today's review work contradicts its own label, so the population has to
- * follow the same split.
+ * "In Review" is deliberately NOT in this list even though the lens narrows it.
+ * It measures `status_changed_at` — when the task entered its current status —
+ * which the shared population filter knows nothing about, so narrowing it there
+ * would drop the very tasks it counts. It takes the full population and applies
+ * the bounds itself, in `tasksForMetric`.
  */
 export const WINDOW_METRICS: MetricKind[] = [
   "due-today",

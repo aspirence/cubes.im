@@ -75,6 +75,15 @@ function colorForKey(key: string, palette: string[]): string {
 
 const isOpen = (t: TeamTaskWithProject) => !t.done;
 
+/**
+ * When the task entered the status it is in now. A trigger maintains
+ * `status_changed_at`; rows written before that column existed fall back to
+ * creation, the same reading the board's "recent status" ordering takes.
+ */
+function enteredStatusAt(t: TeamTaskWithProject): string | null {
+  return t.status_changed_at ?? t.created_at ?? null;
+}
+
 function matchesDue(t: TeamTaskWithProject, due: DueFilter): boolean {
   if (due === "any") return true;
   if (!t.end_date) return due === "no-date";
@@ -390,14 +399,32 @@ export function tasksForMetric(
     case "todo":
       // Open tasks sitting in a "to do" status category (not yet started) —
       // narrower than `open`, which also counts doing/review/backlog.
-      return pop
-        .filter((t) => isOpen(t) && t.status?.category?.is_todo)
-        .sort(byDue);
-    case "overdue":
+      //
+      // Under the header lens, the same clock as In Review: what REACHED the
+      // to-do column inside the period. A task created in the period counts
+      // from its creation, since that is when it first landed there.
       return pop
         .filter(
-          (t) => isOpen(t) && t.end_date && dayjs(t.end_date).isBefore(today),
+          (t) =>
+            isOpen(t) &&
+            Boolean(t.status?.category?.is_todo) &&
+            (!windowOverride || inWindow(enteredStatusAt(t))),
         )
+        .sort(byDue);
+    case "overdue":
+      // Under the lens: what BECAME overdue inside the period, not what was
+      // due inside it. A task is late from the morning after its due date, so
+      // that moment — not the due date itself — is what the period has to
+      // contain. Measuring the due date instead would make "Overdue today"
+      // permanently zero, since nothing due today is late yet.
+      return pop
+        .filter((t) => {
+          if (!isOpen(t) || !t.end_date) return false;
+          const due = dayjs(t.end_date);
+          if (!due.isBefore(today)) return false;
+          if (!windowOverride) return true;
+          return inWindow(due.add(1, "day").startOf("day").toISOString());
+        })
         .sort(byDue);
     case "due-today":
       if (windowOverride) {
@@ -431,10 +458,22 @@ export function tasksForMetric(
       // and `in-progress` decide: a team that renames "In Review" to "QA" or
       // "Client approval" keeps counting, and a project whose statuses carry no
       // category is left out rather than silently swept in.
+      //
+      // Under the header lens it narrows on its OWN clock — status_changed_at,
+      // when the task entered its current status — because the shared
+      // population filter knows only created/started/due/completed, none of
+      // which say when work reached review.
       return pop
         .filter((t) => {
           const c = t.status?.category;
-          return Boolean(c) && isOpen(t) && !c!.is_todo && !c!.is_doing && !c!.is_done;
+          return (
+            Boolean(c) &&
+            isOpen(t) &&
+            !c!.is_todo &&
+            !c!.is_doing &&
+            !c!.is_done &&
+            (!windowOverride || inWindow(enteredStatusAt(t)))
+          );
         })
         .sort(byDue);
     case "completed-week":

@@ -316,7 +316,7 @@ export default function HomePage() {
   const firstName = profile?.name?.split(" ")[0] ?? "there";
 
   const { data: members } = useTeamMembers();
-  const { data: teamTasks, isLoading: tasksLoading } = useAllTeamTasks();
+  const { data: teamTasks, isLoading: tasksLoading } = useAllTeamTasks({ includeSubtasks: true });
   const tasks = useMemo(() => teamTasks ?? [], [teamTasks]);
 
   // Global lenses: time range + person — narrow the task universe every card

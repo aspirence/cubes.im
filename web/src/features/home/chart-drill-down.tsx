@@ -16,6 +16,32 @@ function MIcon({ name, size = 15, color }: { name: string; size?: number; color?
   );
 }
 
+/**
+ * Who is holding this exact set of tasks, biggest share first.
+ *
+ * It counts the list the modal was handed, so it always agrees with whatever
+ * narrowed that list — the tile's own rule and the header's period. On "Today"
+ * the "In Review" tile hands over the work that reached review today, and this
+ * reads as who put it there; on "All time" it reads as who is sitting on the
+ * queue. A task with two assignees counts for both, so the parts can add up to
+ * more than the total; a task with none is counted once as unassigned.
+ */
+function countByAssignee(
+  tasks: TeamTaskWithProject[],
+): { name: string; count: number }[] {
+  const tally = new Map<string, number>();
+  for (const t of tasks) {
+    const names = t.assignees
+      .map((a) => a.team_member?.user?.name)
+      .filter((n): n is string => Boolean(n));
+    const keys = names.length > 0 ? names : ["Unassigned"];
+    for (const k of keys) tally.set(k, (tally.get(k) ?? 0) + 1);
+  }
+  return [...tally.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
 function priorityColor(p: string | null | undefined): string | undefined {
   switch ((p ?? "").toLowerCase()) {
     case "high":
@@ -47,6 +73,7 @@ export function ChartDrillDown({
 }) {
   const { token } = theme.useToken();
   const openTask = useTaskDrawer((s) => s.open);
+  const byAssignee = countByAssignee(tasks);
 
   return (
     <Modal
@@ -65,6 +92,37 @@ export function ChartDrillDown({
       {tasks.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No tasks in this group" />
       ) : (
+        <>
+        {byAssignee.length > 1 ? (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+              padding: "2px 0 10px",
+              borderBottom: `1px solid ${token.colorSplit}`,
+            }}
+          >
+            {byAssignee.map((a) => (
+              <span
+                key={a.name}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "3px 9px",
+                  borderRadius: 999,
+                  fontSize: 12,
+                  background: token.colorFillQuaternary,
+                  color: token.colorText,
+                }}
+              >
+                {a.name}
+                <b style={{ fontVariantNumeric: "tabular-nums" }}>{a.count}</b>
+              </span>
+            ))}
+          </div>
+        ) : null}
         <div style={{ maxHeight: "60vh", overflowY: "auto", margin: "4px -8px 0" }}>
           {tasks.map((t) => {
             const due = t.end_date ? dayjs(t.end_date) : null;
@@ -141,6 +199,7 @@ export function ChartDrillDown({
             );
           })}
         </div>
+        </>
       )}
       <div style={{ marginTop: 12, textAlign: "right" }}>
         <Link href="/home/my-tasks" style={{ fontSize: 12.5 }} onClick={onClose}>
